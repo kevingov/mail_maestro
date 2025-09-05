@@ -2,7 +2,7 @@
 🚂 Main entry point for Railway deployment
 """
 
-from railway_app import app
+from railway_app_with_db import app
 
 if __name__ == '__main__':
     import os
