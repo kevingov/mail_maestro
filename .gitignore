@@ -5,9 +5,7 @@
 *
 
 # But keep these essential files for Railway
-!main.py
-!railway_app_minimal.py
-!email_tracker.py
+!railway_app_simple.py
 !requirements_minimal.txt
 !Procfile
 !runtime.txt
