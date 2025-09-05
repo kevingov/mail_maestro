@@ -58,3 +58,4 @@ Embed in emails as:
 - `email_opens` - Email open events with metadata
 
 Data persists across deployments and container restarts.
+# Force redeploy - Fri Sep  5 14:26:39 EDT 2025
