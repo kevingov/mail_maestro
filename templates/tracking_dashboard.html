@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Tracking Dashboard</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .stats-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .stats-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+        }
+        .stats-label {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+        .chart-container {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .campaign-table {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .progress-bar-custom {
+            height: 8px;
+            border-radius: 4px;
+        }
+        .refresh-btn {
+            background: #667eea;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .refresh-btn:hover {
+            background: #5a6fd8;
+        }
+    </style>
+</head>
+<body style="background-color: #f8f9fa;">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h1 class="mt-4 mb-0">📧 Email Tracking Dashboard</h1>
+                    <button class="refresh-btn" onclick="loadDashboardData()">
+                        🔄 Refresh Data
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="stats-number" id="total-sent">-</div>
+                    <div class="stats-label">Total Sent</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="stats-number" id="total-opened">-</div>
+                    <div class="stats-label">Total Unique Opens</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="stats-number" id="open-rate">-</div>
+                    <div class="stats-label">Open Rate (%)</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="stats-number" id="campaigns-count">-</div>
+                    <div class="stats-label">Active Campaigns</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <div class="chart-container">
+                    <h4>📈 Daily Email Performance</h4>
+                    <div id="daily-chart"></div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="chart-container">
+                    <h4>📊 Campaign Open Rates</h4>
+                    <div id="campaign-chart"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Campaign Table -->
+        <div class="row">
+            <div class="col-12">
+                <div class="campaign-table">
+                    <h4>📋 Campaign Performance Details</h4>
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Campaign Name</th>
+                                    <th>Total Sent</th>
+                                    <th>Unique Opens</th>
+                                    <th>Open Rate</th>
+                                    <th>Performance</th>
+                                </tr>
+                            </thead>
+                            <tbody id="campaign-table-body">
+                                <!-- Campaign data will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function loadDashboardData() {
+            // Load overall stats
+            $.get('/api/dashboard-data', function(data) {
+                updateStats(data.stats);
+                updateCampaignTable(data.campaigns);
+            });
+
+            // Load charts
+            $.get('/api/charts', function(chartData) {
+                // Create campaign performance chart
+                const campaignTrace = {
+                    x: chartData.campaign_names,
+                    y: chartData.open_rates,
+                    type: 'bar',
+                    name: 'Open Rate (%)',
+                    marker: {
+                        color: 'rgba(54, 162, 235, 0.8)'
+                    }
+                };
+                
+                const campaignLayout = {
+                    title: 'Campaign Open Rates',
+                    xaxis: { title: 'Campaign' },
+                    yaxis: { title: 'Open Rate (%)' },
+                    height: 400
+                };
+                
+                Plotly.newPlot('campaign-chart', [campaignTrace], campaignLayout);
+                
+                // Create simple daily chart (placeholder)
+                const dailyTrace = {
+                    x: ['Today'],
+                    y: [chartData.open_rates.reduce((a, b) => a + b, 0) / chartData.open_rates.length],
+                    type: 'bar',
+                    name: 'Average Open Rate',
+                    marker: {
+                        color: 'rgba(255, 99, 132, 0.8)'
+                    }
+                };
+                
+                const dailyLayout = {
+                    title: 'Overall Performance',
+                    xaxis: { title: 'Period' },
+                    yaxis: { title: 'Open Rate (%)' },
+                    height: 400
+                };
+                
+                Plotly.newPlot('daily-chart', [dailyTrace], dailyLayout);
+            });
+        }
+
+        function updateStats(stats) {
+            $('#total-sent').text(stats.total_sent);
+            $('#total-opened').text(stats.total_opened);
+            $('#open-rate').text(stats.open_rate + '%');
+        }
+
+        function updateCampaignTable(campaigns) {
+            $('#campaigns-count').text(campaigns.length);
+            
+            let tableBody = '';
+            campaigns.forEach(function(campaign) {
+                const performanceClass = campaign.open_rate >= 25 ? 'success' : 
+                                       campaign.open_rate >= 15 ? 'warning' : 'danger';
+                
+                tableBody += `
+                    <tr>
+                        <td><strong>${campaign.campaign_name}</strong></td>
+                        <td>${campaign.total_sent}</td>
+                        <td>${campaign.unique_opens}</td>
+                        <td>${campaign.open_rate}%</td>
+                        <td>
+                            <div class="progress progress-bar-custom">
+                                <div class="progress-bar bg-${performanceClass}" 
+                                     style="width: ${Math.min(campaign.open_rate, 100)}%">
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            $('#campaign-table-body').html(tableBody);
+        }
+
+        // Load data on page load
+        $(document).ready(function() {
+            loadDashboardData();
+            
+            // Auto-refresh every 30 seconds
+            setInterval(loadDashboardData, 30000);
+        });
+    </script>
+</body>
+</html>

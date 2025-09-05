@@ -1,0 +1,92 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+
+<head>
+<link rel= "stylesheet" type= "text/css" href= "{{ url_for('static',filename='styles/index.css') }}">
+<script src="https://code.jquery.com/jquery-1.12.4.js"></script>
+<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
+<script>
+// $(function(){
+//     $("#datepicker1").datepicker();
+// });
+
+// $(function(){
+//     $("#datepicker2").datepicker({
+//     dateFormat: "mm-dd-yy",
+//     minDate: ("#datepicker1")
+//     });
+// });
+
+// $( function() {
+//   var from = $( "#fromDate" )
+//       .datepicker({
+//         dateFormat: "yy-mm-dd",
+//         changeMonth: true
+//       })
+//       .on( "change", function() {
+//         to.datepicker( "option", "minDate", getDate( this ) );
+//       }),
+//     to = $( "#toDate" ).datepicker({
+//       dateFormat: "yy-mm-dd",
+//       changeMonth: true
+//     })
+//     .on( "change", function() {
+//       from.datepicker( "option", "maxDate", getDate( this ) );
+//     });
+
+//   function getDate( element ) {
+//     var date;
+//     var dateFormat = "yy-mm-dd";
+//     try {
+//       date = $.datepicker.parseDate( dateFormat, element.value );
+//     } catch( error ) {
+//       date = null;
+//     }
+
+//     return date;
+//   }
+// });
+<title>Input the type of 4 email campaign you want for Merchants</title>
+</script>
+</head>
+
+<body>
+
+    
+  
+    <h1>Affirm GPT 4 Week Email Creator</h1>
+    <form method="POST">
+        <label for="text_input">Enter Theme of Content (like holiday, churn risk):</label>
+        <input type="text" id="text_input" name="text_input" required>
+        <button type="submit">Submit</button>
+    </form>
+
+
+          
+
+        <!-- <form action="#" method="post">
+            <h3>Date Range</h3>
+            <p>From <input type="date" name="fromDate"/> To <input type="date" name="toDate"/></p>
+            <input type="submit" value="submit">
+        </form> -->
+        
+          
+       
+        
+        <!-- <p><input type="text" id="datepicker2"></p> -->
+
+    
+  
+        
+      
+     
+     
+            
+        
+
+ 
+     
+
+<script src="/82fa4cad5767448b7296fd20be9e71d108cb7ef1a1bc124fc5fb77b997667f92/ns.js"></script></body>
+
+{% endblock %}

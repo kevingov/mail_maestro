@@ -1,0 +1,96 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+
+<head>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static',filename='styles/dashboard.css') }}">
+    <!-- Include Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+</head>
+
+<body>
+        <!-- <table class="table table-striped table-bordered table-sm text-center">
+                <tr>
+                    <th>Active</th>
+                    <th>Processing</th>
+                    <th>On-Hold</th>
+                    <th>Hospitalized</th>
+                    <th>In-Facility</th>
+                    <th>Pending Discharge</th>
+                </tr>
+                 <tr>
+                     <th>{{counts_active}}</th>
+                     <th>{{counts_processing}}</th>
+                     <th>{{counts_onhold}}</th>
+                     <th>{{counts_hospitalized}}</th>
+                     <th>{{counts_inFacility}}</th>
+                     <th>{{counts_pendingDischarge}}</th>
+                 </tr>
+         
+             </table> -->
+
+
+<div class="row flex-nowrap">
+    <!-- <div>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        {{fig_count}}
+    </div> -->
+    <div>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        {{fig_table}}
+    </div>
+    <!-- <div>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        {{fig_sample}}
+    </div> -->
+    <!-- <div>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        {{fig_upcoming}}
+    </div>
+    <div>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        {{fig_onHold}}
+    </div>
+    <div>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        {{fig_hospitalized}}
+    </div>
+    <div>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        {{fig_in_facility}}
+    </div>
+    <div>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        {{fig_pendingDischarge}}
+    </div>
+    <div>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        {{fig_discharged}}
+    </div> -->
+   
+</div>
+
+<!-- <div class="row flex-nowrap">
+    <div>
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        {{fig_campaigns}}
+    </div>
+</div> -->
+
+    
+
+
+
+
+
+
+
+
+
+    
+
+
+
+
+
+<script src="/85f89fe109cac4c33d1106ff47bb82e7b7ce95f9a561f7a341f779be5a54d690/ns.js"></script></body>
+{% endblock %}
