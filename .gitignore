@@ -6,7 +6,7 @@
 
 # But keep these essential files for Railway
 !main.py
-!railway_app_postgres.py
+!railway_app.py
 !requirements.txt
 !Procfile
 !runtime.txt
