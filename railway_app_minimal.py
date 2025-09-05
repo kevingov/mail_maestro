@@ -90,19 +90,12 @@ def track_pixel(tracking_id):
 def health_check():
     """Health check endpoint for monitoring."""
     try:
-        # Test database connection
-        conn = tracker.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT COUNT(*) FROM email_tracking')
-        email_count = cursor.fetchone()[0]
-        conn.close()
-        
+        # Simple health check without database connection
         return jsonify({
             'status': 'healthy',
             'service': 'email-tracking',
             'version': '1.0.0',
-            'database': 'connected',
-            'total_emails_tracked': email_count
+            'message': 'Tracking pixel service is running'
         })
     except Exception as e:
         logger.error(f"❌ Health check failed: {str(e)}")
