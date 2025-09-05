@@ -1,24 +1,60 @@
-# 🚂 Email Tracking Pixel - Railway Deployment
+# 🚂 Email Tracking Pixel - Railway PostgreSQL Deployment
 
-Minimal email tracking pixel service for Railway deployment.
+Email tracking pixel service with PostgreSQL database for persistent data storage.
+
+## Features
+
+- 📧 **Email Tracking Pixel** - 1x1 transparent image for tracking email opens
+- 🗄️ **PostgreSQL Database** - Persistent data storage on Railway
+- 📊 **Tracking Statistics** - Open rates, IP addresses, user agents
+- 🌐 **Global Access** - Works from any device, anywhere
+- 🔒 **Secure** - No sensitive data stored
 
 ## Files Included
 
-- `railway_app_minimal.py` - Main Flask app with tracking pixel endpoint
-- `email_tracker.py` - Email tracking logic and database management
-- `requirements_minimal.txt` - Essential Python dependencies
+- `main.py` - Entry point for Railway deployment
+- `railway_app_postgres.py` - Flask app with PostgreSQL integration
+- `requirements.txt` - Python dependencies including psycopg2-binary
 - `Procfile` - Railway deployment configuration
+- `runtime.txt` - Python 3.12 specification
 
 ## Endpoints
 
 - `GET /` - Service info
 - `GET /track/<tracking_id>` - Tracking pixel (main endpoint)
-- `GET /api/health` - Health check
+- `GET /api/health` - Health check with database status
+- `GET /api/stats` - Tracking statistics and recent opens
+
+## Railway Setup
+
+1. **Add PostgreSQL Service:**
+   - Go to Railway dashboard
+   - Click "New" → "Database" → "Add PostgreSQL"
+   - Connect it to your app
+
+2. **Environment Variables:**
+   - Railway automatically provides `DATABASE_URL`
+   - No additional setup needed
+
+3. **Deploy:**
+   - Push to GitHub
+   - Railway auto-deploys from main branch
 
 ## Usage
 
-This service provides a tracking pixel that can be embedded in emails to track when they are opened. The pixel is a 1x1 transparent image that records open events when loaded by email clients.
+The tracking pixel URL format:
+```
+https://your-app.up.railway.app/track/{tracking_id}
+```
 
-## Deployment
+Embed in emails as:
+```html
+<img src="https://your-app.up.railway.app/track/unique-id" width="1" height="1" style="display:none;" />
+```
 
-Deployed on Railway with automatic HTTPS and global availability.
+## Database Schema
+
+- `email_tracking` - Email send records
+- `email_opens` - Email open events with metadata
+
+Data persists across deployments and container restarts.

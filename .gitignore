@@ -1,4 +1,4 @@
-# Minimal .gitignore for Railway deployment
+# Minimal .gitignore for Railway deployment with PostgreSQL
 # Only include essential files
 
 # Ignore everything by default
@@ -6,8 +6,7 @@
 
 # But keep these essential files for Railway
 !main.py
-!railway_app_with_db.py
-!email_tracker.py
+!railway_app_postgres.py
 !requirements.txt
 !Procfile
 !runtime.txt

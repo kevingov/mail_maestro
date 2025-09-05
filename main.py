@@ -1,8 +1,8 @@
 """
-🚂 Main entry point for Railway deployment
+🚂 Main entry point for Railway deployment with PostgreSQL
 """
 
-from railway_app import app
+from railway_app_postgres import app
 
 if __name__ == '__main__':
     import os
