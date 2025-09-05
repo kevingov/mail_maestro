@@ -1,20 +1,41 @@
-# Keep only essential files for Railway deployment
-# Ignore everything except what we need
+# Minimal .gitignore for Railway deployment
+# Only include essential files
 
-# Keep these files (don't ignore):
-# railway_app_minimal.py
-# email_tracker.py  
-# requirements_minimal.txt
-# Procfile
-# README.md (if you want)
-
-# Ignore everything else
+# Ignore everything by default
 *
 
-# But keep the essential files
+# But keep these essential files for Railway
 !railway_app_minimal.py
 !email_tracker.py
 !requirements_minimal.txt
 !Procfile
 !.gitignore
 !README.md
+
+# Ignore virtual environments
+flask_env/
+yodavenv/
+venv/
+env/
+.venv/
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Ignore sensitive files
+.env
+*.env
+credentials.json
+token.pickle
