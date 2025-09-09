@@ -165,21 +165,16 @@ def track_email_send():
 
 @app.route('/track/<tracking_id>')
 def track_pixel(tracking_id):
-    """Serve tracking pixel and log the request to PostgreSQL with Google Image Proxy filtering only."""
+    """Serve tracking pixel and log the request to PostgreSQL with 30-second delay filtering only."""
     try:
         # Log the tracking request
         user_agent = request.headers.get('User-Agent', '')
         ip_address = request.remote_addr
         referer = request.headers.get('Referer', '')
         
-        # Simple filtering - only filter Google Image Proxy
+        # Simple filtering - only filter opens within 30 seconds of sending
         is_false_open = False
         false_open_reasons = []
-        
-        # Check for Google Image Proxy only
-        if 'GoogleImageProxy' in user_agent:
-            is_false_open = True
-            false_open_reasons.append("Google Image Proxy detected")
         
         # Try to track in database if available
         if DB_AVAILABLE:
@@ -205,6 +200,26 @@ def track_pixel(tracking_id):
                         # Get the sent_at time for the new record
                         cursor.execute('SELECT tracking_id, sent_at FROM email_tracking WHERE tracking_id = %s', (tracking_id,))
                         email_record = cursor.fetchone()
+                    
+                    # Check for instant opens (within 30 seconds of sending)
+                    if email_record:
+                        sent_at = email_record[1]  # sent_at timestamp
+                        
+                        from datetime import datetime
+                        current_time = datetime.now()
+                        
+                        # Handle timezone-aware datetime comparison
+                        if sent_at.tzinfo is None:
+                            # If sent_at is naive, assume UTC
+                            sent_at = sent_at.replace(tzinfo=None)
+                            current_time = current_time.replace(tzinfo=None)
+                        
+                        time_diff = (current_time - sent_at).total_seconds()
+                        
+                        # Filter out instant opens (30 seconds or less)
+                        if time_diff < 30:
+                            is_false_open = True
+                            false_open_reasons.append(f"Instant open: {time_diff:.1f}s after send")
                     
                     # Always insert the open record (for debugging)
                     cursor.execute('''
