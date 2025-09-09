@@ -165,43 +165,16 @@ def track_email_send():
 
 @app.route('/track/<tracking_id>')
 def track_pixel(tracking_id):
-    """Serve tracking pixel and log the request to PostgreSQL with false open filtering."""
+    """Serve tracking pixel and log the request to PostgreSQL with simplified filtering."""
     try:
         # Log the tracking request
         user_agent = request.headers.get('User-Agent', '')
         ip_address = request.remote_addr
         referer = request.headers.get('Referer', '')
         
-        # Filter out false opens
+        # Simple filtering - only filter very rapid opens (within 2 seconds)
         is_false_open = False
         false_open_reasons = []
-        
-        # Check for known automated user agents
-        automated_agents = [
-            'googleimageproxy',
-            'ggpht.com',
-            'microsoft office',
-            'outlook',
-            'thunderbird',
-            'apple mail',
-            'mail.app',
-            'preview',
-            'imageproxy',
-            'crawler',
-            'bot',
-            'spider',
-            'scanner',
-            'python-requests',
-            'curl',
-            'wget'
-        ]
-        
-        user_agent_lower = user_agent.lower()
-        for agent in automated_agents:
-            if agent in user_agent_lower:
-                is_false_open = True
-                false_open_reasons.append(f"Automated agent: {agent}")
-                break
         
         # Try to track in database if available
         if DB_AVAILABLE:
@@ -211,8 +184,10 @@ def track_pixel(tracking_id):
                     cursor = conn.cursor()
                     
                     # Check if tracking_id exists in email_tracking table
-                    cursor.execute('SELECT tracking_id FROM email_tracking WHERE tracking_id = %s', (tracking_id,))
-                    if not cursor.fetchone():
+                    cursor.execute('SELECT tracking_id, sent_at FROM email_tracking WHERE tracking_id = %s', (tracking_id,))
+                    email_record = cursor.fetchone()
+                    
+                    if not email_record:
                         logger.warning(f"Tracking ID {tracking_id} not found in email_tracking table")
                         # Create a placeholder record
                         cursor.execute('''
@@ -221,24 +196,50 @@ def track_pixel(tracking_id):
                             ON CONFLICT (tracking_id) DO NOTHING
                         ''', (tracking_id, 'unknown@example.com', 'unknown@example.com', 'Unknown', 'Unknown'))
                         conn.commit()
+                        
+                        # Get the sent_at time for the new record
+                        cursor.execute('SELECT sent_at FROM email_tracking WHERE tracking_id = %s', (tracking_id,))
+                        email_record = cursor.fetchone()
                     
-                    # Check for rapid successive opens (within 5 seconds)
-                    cursor.execute('''
-                        SELECT opened_at FROM email_opens 
-                        WHERE tracking_id = %s 
-                        ORDER BY opened_at DESC 
-                        LIMIT 1
-                    ''', (tracking_id,))
-                    
-                    last_open = cursor.fetchone()
-                    if last_open:
+                    if email_record:
+                        sent_at = email_record[1]  # sent_at timestamp
+                        
+                        # Check for very rapid opens (within 2 seconds of sending) - much more lenient
                         from datetime import datetime, timedelta
-                        last_open_time = last_open[0]
                         current_time = datetime.now()
                         
-                        if (current_time - last_open_time).total_seconds() < 5:
+                        # Handle timezone-aware datetime comparison
+                        if sent_at.tzinfo is None:
+                            # If sent_at is naive, assume UTC
+                            sent_at = sent_at.replace(tzinfo=None)
+                            current_time = current_time.replace(tzinfo=None)
+                        
+                        time_diff = (current_time - sent_at).total_seconds()
+                        
+                        # Only filter out very rapid opens (2 seconds or less)
+                        if time_diff < 2:
                             is_false_open = True
-                            false_open_reasons.append("Rapid successive open")
+                            false_open_reasons.append(f"Very rapid open: {time_diff:.1f}s after send")
+                        
+                        # Check for rapid successive opens (within 2 seconds of last open)
+                        cursor.execute('''
+                            SELECT opened_at FROM email_opens 
+                            WHERE tracking_id = %s 
+                            ORDER BY opened_at DESC 
+                            LIMIT 1
+                        ''', (tracking_id,))
+                        
+                        last_open = cursor.fetchone()
+                        if last_open:
+                            last_open_time = last_open[0]
+                            
+                            # Handle timezone-aware datetime comparison
+                            if last_open_time.tzinfo is None:
+                                last_open_time = last_open_time.replace(tzinfo=None)
+                            
+                            if (current_time - last_open_time).total_seconds() < 2:
+                                is_false_open = True
+                                false_open_reasons.append("Rapid successive open")
                     
                     # Only insert if it's not a false open
                     if not is_false_open:
@@ -256,7 +257,7 @@ def track_pixel(tracking_id):
                         ''', (tracking_id,))
                         
                         conn.commit()
-                        logger.info(f"📧 Real email opened! Tracking ID: {tracking_id}")
+                        logger.info(f"✅ Real email opened! Tracking ID: {tracking_id}")
                     else:
                         # Log false open for debugging (but don't count it)
                         cursor.execute('''
@@ -282,9 +283,9 @@ def track_pixel(tracking_id):
         # Log details
         if not is_false_open:
             logger.info(f"🌐 IP: {ip_address}")
-            logger.info(f"🔍 User Agent: {user_agent}")
+            logger.info(f" User Agent: {user_agent}")
         else:
-            logger.info(f"🤖 Filtered - IP: {ip_address}")
+            logger.info(f" Filtered - IP: {ip_address}")
             logger.info(f"🤖 Filtered - User Agent: {user_agent}")
         
         # Create and return the pixel
@@ -353,7 +354,7 @@ def health_check():
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    """Get email tracking statistics, filtering out false opens."""
+    """Get email tracking statistics with instant open filtering only."""
     try:
         if not DB_AVAILABLE:
             return jsonify({'error': 'Database not available'}), 503
@@ -368,57 +369,23 @@ def get_stats():
         cursor.execute('SELECT COUNT(*) FROM email_tracking')
         total_emails_sent = cursor.fetchone()[0]
         
-        # Get real opens only (filter out automated user agents)
-        cursor.execute('''
-            SELECT COUNT(*) FROM email_opens 
-            WHERE user_agent NOT ILIKE '%googleimageproxy%'
-            AND user_agent NOT ILIKE '%ggpht.com%'
-            AND user_agent NOT ILIKE '%microsoft%'
-            AND user_agent NOT ILIKE '%outlook%'
-            AND user_agent NOT ILIKE '%thunderbird%'
-            AND user_agent NOT ILIKE '%apple mail%'
-            AND user_agent NOT ILIKE '%mail.app%'
-            AND user_agent NOT ILIKE '%preview%'
-            AND user_agent NOT ILIKE '%imageproxy%'
-            AND user_agent NOT ILIKE '%crawler%'
-            AND user_agent NOT ILIKE '%bot%'
-            AND user_agent NOT ILIKE '%spider%'
-            AND user_agent NOT ILIKE '%scanner%'
-            AND user_agent NOT ILIKE '%python-requests%'
-            AND user_agent NOT ILIKE '%curl%'
-            AND user_agent NOT ILIKE '%wget%'
-        ''')
-        total_real_opens = cursor.fetchone()[0]
+        # Get all opens (no user agent filtering - only instant open filtering is applied at insert time)
+        cursor.execute('SELECT COUNT(*) FROM email_opens')
+        total_opens = cursor.fetchone()[0]
         
-        # Calculate real open rate
-        real_open_rate = (total_real_opens / total_emails_sent * 100) if total_emails_sent > 0 else 0
+        # Calculate open rate
+        open_rate = (total_opens / total_emails_sent * 100) if total_emails_sent > 0 else 0
         
-        # Get recent real opens
+        # Get recent opens
         cursor.execute('''
             SELECT tracking_id, opened_at, user_agent, ip_address 
             FROM email_opens 
-            WHERE user_agent NOT ILIKE '%googleimageproxy%'
-            AND user_agent NOT ILIKE '%ggpht.com%'
-            AND user_agent NOT ILIKE '%microsoft%'
-            AND user_agent NOT ILIKE '%outlook%'
-            AND user_agent NOT ILIKE '%thunderbird%'
-            AND user_agent NOT ILIKE '%apple mail%'
-            AND user_agent NOT ILIKE '%mail.app%'
-            AND user_agent NOT ILIKE '%preview%'
-            AND user_agent NOT ILIKE '%imageproxy%'
-            AND user_agent NOT ILIKE '%crawler%'
-            AND user_agent NOT ILIKE '%bot%'
-            AND user_agent NOT ILIKE '%spider%'
-            AND user_agent NOT ILIKE '%scanner%'
-            AND user_agent NOT ILIKE '%python-requests%'
-            AND user_agent NOT ILIKE '%curl%'
-            AND user_agent NOT ILIKE '%wget%'
             ORDER BY opened_at DESC 
             LIMIT 10
         ''')
-        recent_real_opens = []
+        recent_opens = []
         for row in cursor.fetchall():
-            recent_real_opens.append({
+            recent_opens.append({
                 'tracking_id': row[0],
                 'opened_at': row[1].isoformat(),
                 'user_agent': row[2],
@@ -445,9 +412,9 @@ def get_stats():
         
         return jsonify({
             'total_emails_sent': total_emails_sent,
-            'total_opens': total_real_opens,  # Only real opens
-            'open_rate': round(real_open_rate, 2),  # Real open rate
-            'recent_opens': recent_real_opens,
+            'total_opens': total_opens,
+            'open_rate': round(open_rate, 2),
+            'recent_opens': recent_opens,
             'recent_sends': recent_sends
         })
         
