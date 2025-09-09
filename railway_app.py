@@ -165,12 +165,43 @@ def track_email_send():
 
 @app.route('/track/<tracking_id>')
 def track_pixel(tracking_id):
-    """Serve tracking pixel and log the request to PostgreSQL."""
+    """Serve tracking pixel and log the request to PostgreSQL with false open filtering."""
     try:
         # Log the tracking request
         user_agent = request.headers.get('User-Agent', '')
         ip_address = request.remote_addr
         referer = request.headers.get('Referer', '')
+        
+        # Filter out false opens
+        is_false_open = False
+        false_open_reasons = []
+        
+        # Check for known automated user agents
+        automated_agents = [
+            'googleimageproxy',
+            'ggpht.com',
+            'microsoft office',
+            'outlook',
+            'thunderbird',
+            'apple mail',
+            'mail.app',
+            'preview',
+            'imageproxy',
+            'crawler',
+            'bot',
+            'spider',
+            'scanner',
+            'python-requests',
+            'curl',
+            'wget'
+        ]
+        
+        user_agent_lower = user_agent.lower()
+        for agent in automated_agents:
+            if agent in user_agent_lower:
+                is_false_open = True
+                false_open_reasons.append(f"Automated agent: {agent}")
+                break
         
         # Try to track in database if available
         if DB_AVAILABLE:
@@ -191,32 +222,70 @@ def track_pixel(tracking_id):
                         ''', (tracking_id, 'unknown@example.com', 'unknown@example.com', 'Unknown', 'Unknown'))
                         conn.commit()
                     
-                    # Insert open record
+                    # Check for rapid successive opens (within 5 seconds)
                     cursor.execute('''
-                        INSERT INTO email_opens (tracking_id, user_agent, ip_address, referer)
-                        VALUES (%s, %s, %s, %s)
-                    ''', (tracking_id, user_agent, ip_address, referer))
-                    
-                    # Update open count
-                    cursor.execute('''
-                        UPDATE email_tracking 
-                        SET open_count = open_count + 1, last_opened_at = CURRENT_TIMESTAMP
-                        WHERE tracking_id = %s
+                        SELECT opened_at FROM email_opens 
+                        WHERE tracking_id = %s 
+                        ORDER BY opened_at DESC 
+                        LIMIT 1
                     ''', (tracking_id,))
                     
-                    conn.commit()
+                    last_open = cursor.fetchone()
+                    if last_open:
+                        from datetime import datetime, timedelta
+                        last_open_time = last_open[0]
+                        current_time = datetime.now()
+                        
+                        if (current_time - last_open_time).total_seconds() < 5:
+                            is_false_open = True
+                            false_open_reasons.append("Rapid successive open")
+                    
+                    # Only insert if it's not a false open
+                    if not is_false_open:
+                        # Insert open record
+                        cursor.execute('''
+                            INSERT INTO email_opens (tracking_id, user_agent, ip_address, referer)
+                            VALUES (%s, %s, %s, %s)
+                        ''', (tracking_id, user_agent, ip_address, referer))
+                        
+                        # Update open count
+                        cursor.execute('''
+                            UPDATE email_tracking 
+                            SET open_count = open_count + 1, last_opened_at = CURRENT_TIMESTAMP
+                            WHERE tracking_id = %s
+                        ''', (tracking_id,))
+                        
+                        conn.commit()
+                        logger.info(f"📧 Real email opened! Tracking ID: {tracking_id}")
+                    else:
+                        # Log false open for debugging (but don't count it)
+                        cursor.execute('''
+                            INSERT INTO email_opens (tracking_id, user_agent, ip_address, referer)
+                            VALUES (%s, %s, %s, %s)
+                        ''', (tracking_id, user_agent, ip_address, referer))
+                        
+                        conn.commit()
+                        logger.info(f"🤖 False open filtered: {tracking_id} - {'; '.join(false_open_reasons)}")
+                    
                     conn.close()
-                    logger.info(f"📧 Email opened! Tracking ID: {tracking_id} (saved to DB)")
                 except Exception as db_error:
                     logger.error(f"Database error: {db_error}")
                     if conn:
                         conn.close()
                     logger.info(f"📧 Email opened! Tracking ID: {tracking_id} (DB error, logged to console)")
         else:
-            logger.info(f"📧 Email opened! Tracking ID: {tracking_id} (no DB)")
+            if not is_false_open:
+                logger.info(f"📧 Email opened! Tracking ID: {tracking_id} (no DB)")
+            else:
+                logger.info(f"🤖 False open filtered: {tracking_id} - {'; '.join(false_open_reasons)} (no DB)")
         
-        logger.info(f"🌐 IP: {ip_address}")
-        logger.info(f"🔍 User Agent: {user_agent}")
+        # Log details
+        if not is_false_open:
+            logger.info(f"🌐 IP: {ip_address}")
+            logger.info(f"🔍 User Agent: {user_agent}")
+        else:
+            logger.info(f"🤖 Filtered - IP: {ip_address}")
+            logger.info(f"🤖 Filtered - User Agent: {user_agent}")
         
         # Create and return the pixel
         img = Image.new('RGBA', (1, 1), (0, 0, 0, 0))
@@ -240,7 +309,16 @@ def track_pixel(tracking_id):
         img_io = BytesIO()
         img.save(img_io, format='PNG')
         img_io.seek(0)
-        return Response(img_io.getvalue(), mimetype='image/png')
+        
+        return Response(
+            img_io.getvalue(),
+            mimetype='image/png',
+            headers={
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            }
+        )
 
 @app.route('/api/health')
 def health_check():
@@ -273,76 +351,108 @@ def health_check():
         'database': 'Memory mode (no persistence)'
     })
 
-@app.route('/api/stats')
-def tracking_stats():
-    """Get tracking statistics from PostgreSQL."""
-    if not DB_AVAILABLE:
-        return jsonify({
-            'error': 'Database not connected',
-            'message': 'PostgreSQL database is not available - running in memory mode',
-            'tracking_pixel': 'Still works for email tracking'
-        })
-    
+@app.route('/api/stats', methods=['GET'])
+def get_stats():
+    """Get email tracking statistics, filtering out false opens."""
     try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+        
         conn = get_db_connection()
         if not conn:
-            return jsonify({
-                'error': 'Database connection failed',
-                'message': 'Cannot connect to PostgreSQL'
-            }), 503
+            return jsonify({'error': 'Database connection failed'}), 503
         
         cursor = conn.cursor()
         
         # Get total emails sent
-        cursor.execute("SELECT COUNT(*) FROM email_tracking")
-        total_sent = cursor.fetchone()[0]
+        cursor.execute('SELECT COUNT(*) FROM email_tracking')
+        total_emails_sent = cursor.fetchone()[0]
         
-        # Get total opens
-        cursor.execute("SELECT COUNT(*) FROM email_opens")
-        total_opens = cursor.fetchone()[0]
+        # Get real opens only (filter out automated user agents)
+        cursor.execute('''
+            SELECT COUNT(*) FROM email_opens 
+            WHERE user_agent NOT ILIKE '%googleimageproxy%'
+            AND user_agent NOT ILIKE '%ggpht.com%'
+            AND user_agent NOT ILIKE '%microsoft%'
+            AND user_agent NOT ILIKE '%outlook%'
+            AND user_agent NOT ILIKE '%thunderbird%'
+            AND user_agent NOT ILIKE '%apple mail%'
+            AND user_agent NOT ILIKE '%mail.app%'
+            AND user_agent NOT ILIKE '%preview%'
+            AND user_agent NOT ILIKE '%imageproxy%'
+            AND user_agent NOT ILIKE '%crawler%'
+            AND user_agent NOT ILIKE '%bot%'
+            AND user_agent NOT ILIKE '%spider%'
+            AND user_agent NOT ILIKE '%scanner%'
+            AND user_agent NOT ILIKE '%python-requests%'
+            AND user_agent NOT ILIKE '%curl%'
+            AND user_agent NOT ILIKE '%wget%'
+        ''')
+        total_real_opens = cursor.fetchone()[0]
         
-        # Get recent opens
-        cursor.execute("""
-            SELECT tracking_id, opened_at, ip_address, user_agent 
+        # Calculate real open rate
+        real_open_rate = (total_real_opens / total_emails_sent * 100) if total_emails_sent > 0 else 0
+        
+        # Get recent real opens
+        cursor.execute('''
+            SELECT tracking_id, opened_at, user_agent, ip_address 
             FROM email_opens 
+            WHERE user_agent NOT ILIKE '%googleimageproxy%'
+            AND user_agent NOT ILIKE '%ggpht.com%'
+            AND user_agent NOT ILIKE '%microsoft%'
+            AND user_agent NOT ILIKE '%outlook%'
+            AND user_agent NOT ILIKE '%thunderbird%'
+            AND user_agent NOT ILIKE '%apple mail%'
+            AND user_agent NOT ILIKE '%mail.app%'
+            AND user_agent NOT ILIKE '%preview%'
+            AND user_agent NOT ILIKE '%imageproxy%'
+            AND user_agent NOT ILIKE '%crawler%'
+            AND user_agent NOT ILIKE '%bot%'
+            AND user_agent NOT ILIKE '%spider%'
+            AND user_agent NOT ILIKE '%scanner%'
+            AND user_agent NOT ILIKE '%python-requests%'
+            AND user_agent NOT ILIKE '%curl%'
+            AND user_agent NOT ILIKE '%wget%'
             ORDER BY opened_at DESC 
             LIMIT 10
-        """)
-        recent_opens = cursor.fetchall()
+        ''')
+        recent_real_opens = []
+        for row in cursor.fetchall():
+            recent_real_opens.append({
+                'tracking_id': row[0],
+                'opened_at': row[1].isoformat(),
+                'user_agent': row[2],
+                'ip_address': row[3]
+            })
         
         # Get recent sends
-        cursor.execute("""
+        cursor.execute('''
             SELECT tracking_id, recipient_email, subject, sent_at 
             FROM email_tracking 
             ORDER BY sent_at DESC 
             LIMIT 10
-        """)
-        recent_sends = cursor.fetchall()
+        ''')
+        recent_sends = []
+        for row in cursor.fetchall():
+            recent_sends.append({
+                'tracking_id': row[0],
+                'recipient_email': row[1],
+                'subject': row[2],
+                'sent_at': row[3].isoformat()
+            })
         
         conn.close()
         
         return jsonify({
-            'total_emails_sent': total_sent,
-            'total_opens': total_opens,
-            'open_rate': (total_opens / total_sent * 100) if total_sent > 0 else 0,
-            'recent_opens': [
-                {
-                    'tracking_id': row[0],
-                    'opened_at': row[1].isoformat() if row[1] else None,
-                    'ip_address': row[2],
-                    'user_agent': row[3]
-                } for row in recent_opens
-            ],
-            'recent_sends': [
-                {
-                    'tracking_id': row[0],
-                    'recipient_email': row[1],
-                    'subject': row[2],
-                    'sent_at': row[3].isoformat() if row[3] else None
-                } for row in recent_sends
-            ]
+            'total_emails_sent': total_emails_sent,
+            'total_opens': total_real_opens,  # Only real opens
+            'open_rate': round(real_open_rate, 2),  # Real open rate
+            'recent_opens': recent_real_opens,
+            'recent_sends': recent_sends
         })
+        
     except Exception as e:
+        logger.error(f"Error getting stats: {e}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
