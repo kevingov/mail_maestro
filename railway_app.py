@@ -203,17 +203,17 @@ def track_pixel(tracking_id):
                         conn.commit()
                         
                         # Get the sent_at time for the new record
-                        cursor.execute('SELECT sent_at FROM email_tracking WHERE tracking_id = %s', (tracking_id,))
+                        cursor.execute('SELECT tracking_id, sent_at FROM email_tracking WHERE tracking_id = %s', (tracking_id,))
                         email_record = cursor.fetchone()
                     
-                    # Only insert if it's not a false open
+                    # Always insert the open record (for debugging)
+                    cursor.execute('''
+                        INSERT INTO email_opens (tracking_id, user_agent, ip_address, referer)
+                        VALUES (%s, %s, %s, %s)
+                    ''', (tracking_id, user_agent, ip_address, referer))
+                    
+                    # Only update open count if it's not a false open
                     if not is_false_open:
-                        # Insert open record
-                        cursor.execute('''
-                            INSERT INTO email_opens (tracking_id, user_agent, ip_address, referer)
-                            VALUES (%s, %s, %s, %s)
-                        ''', (tracking_id, user_agent, ip_address, referer))
-                        
                         # Update open count
                         cursor.execute('''
                             UPDATE email_tracking 
@@ -224,12 +224,6 @@ def track_pixel(tracking_id):
                         conn.commit()
                         logger.info(f"✅ Real email opened! Tracking ID: {tracking_id}")
                     else:
-                        # Log false open for debugging (but don't count it)
-                        cursor.execute('''
-                            INSERT INTO email_opens (tracking_id, user_agent, ip_address, referer)
-                            VALUES (%s, %s, %s, %s)
-                        ''', (tracking_id, user_agent, ip_address, referer))
-                        
                         conn.commit()
                         logger.info(f"🤖 False open filtered: {tracking_id} - {'; '.join(false_open_reasons)}")
                     
