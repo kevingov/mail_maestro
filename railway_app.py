@@ -165,16 +165,37 @@ def track_email_send():
 
 @app.route('/track/<tracking_id>')
 def track_pixel(tracking_id):
-    """Serve tracking pixel and log the request to PostgreSQL with simplified filtering."""
+    """Serve tracking pixel and log the request to PostgreSQL with improved filtering."""
     try:
         # Log the tracking request
         user_agent = request.headers.get('User-Agent', '')
         ip_address = request.remote_addr
         referer = request.headers.get('Referer', '')
         
-        # Simple filtering - only filter very rapid opens (within 2 seconds)
+        # Enhanced filtering for false opens
         is_false_open = False
         false_open_reasons = []
+        
+        # Check for Google Image Proxy and other automated scanners
+        automated_indicators = [
+            'ggpht.com',
+            'googleimageproxy',
+            'google-image-proxy',
+            'outlook.com',
+            'office365',
+            'microsoft',
+            'bot',
+            'crawler',
+            'spider',
+            'scanner'
+        ]
+        
+        user_agent_lower = user_agent.lower()
+        for indicator in automated_indicators:
+            if indicator in user_agent_lower:
+                is_false_open = True
+                false_open_reasons.append(f"Automated scanner: {indicator}")
+                break
         
         # Try to track in database if available
         if DB_AVAILABLE:
@@ -204,7 +225,7 @@ def track_pixel(tracking_id):
                     if email_record:
                         sent_at = email_record[1]  # sent_at timestamp
                         
-                        # Check for very rapid opens (within 2 seconds of sending) - much more lenient
+                        # Check for instant opens (within 15 seconds of sending) - more lenient
                         from datetime import datetime, timedelta
                         current_time = datetime.now()
                         
@@ -216,12 +237,12 @@ def track_pixel(tracking_id):
                         
                         time_diff = (current_time - sent_at).total_seconds()
                         
-                        # Only filter out very rapid opens (2 seconds or less)
-                        if time_diff < 2:
+                        # Filter out instant opens (15 seconds or less)
+                        if time_diff < 15:
                             is_false_open = True
-                            false_open_reasons.append(f"Very rapid open: {time_diff:.1f}s after send")
+                            false_open_reasons.append(f"Instant open: {time_diff:.1f}s after send")
                         
-                        # Check for rapid successive opens (within 2 seconds of last open)
+                        # Check for rapid successive opens (within 5 seconds of last open)
                         cursor.execute('''
                             SELECT opened_at FROM email_opens 
                             WHERE tracking_id = %s 
@@ -237,7 +258,7 @@ def track_pixel(tracking_id):
                             if last_open_time.tzinfo is None:
                                 last_open_time = last_open_time.replace(tzinfo=None)
                             
-                            if (current_time - last_open_time).total_seconds() < 2:
+                            if (current_time - last_open_time).total_seconds() < 5:
                                 is_false_open = True
                                 false_open_reasons.append("Rapid successive open")
                     
