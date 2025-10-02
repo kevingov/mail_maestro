@@ -1,1 +1,1 @@
-web: python railway_app.py
+web: python main.py
