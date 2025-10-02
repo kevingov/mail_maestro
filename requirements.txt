@@ -1,14 +1,4 @@
-Flask==2.3.3
-Pillow==9.5.0
+Flask==3.0.0
+Pillow==8.4.0
 psycopg2-binary==2.9.7
 gunicorn==21.2.0
-openai==0.28.1
-simple-salesforce==1.12.4
-python-dotenv==1.0.0
-google-api-python-client==2.100.0
-google-auth-httplib2==0.1.1
-google-auth-oauthlib==1.1.0
-google-auth==2.23.3
-markupsafe==2.1.3
-werkzeug==2.3.7
-requests==2.31.0
