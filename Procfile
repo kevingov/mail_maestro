@@ -1,1 +1,1 @@
-web: python 2025_hackathon.py
+web: python 2025_hackathon_deploy.py
