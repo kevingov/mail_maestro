@@ -230,19 +230,19 @@ def track_pixel(tracking_id):
                     # Only update open count if it's not a false open
                     if not is_false_open:
                     # Update open count
-                    cursor.execute('''
-                        UPDATE email_tracking 
-                        SET open_count = open_count + 1, last_opened_at = CURRENT_TIMESTAMP
-                        WHERE tracking_id = %s
-                    ''', (tracking_id,))
-                    
-                    conn.commit()
+                        cursor.execute('''
+                            UPDATE email_tracking 
+                            SET open_count = open_count + 1, last_opened_at = CURRENT_TIMESTAMP
+                            WHERE tracking_id = %s
+                        ''', (tracking_id,))
+                        
+                        conn.commit()
                         logger.info(f"✅ Real email opened! Tracking ID: {tracking_id}")
                     else:
                         conn.commit()
                         logger.info(f"🤖 False open filtered: {tracking_id} - {'; '.join(false_open_reasons)}")
-                    
-                    conn.close()
+                        
+                        conn.close()
                 except Exception as db_error:
                     logger.error(f"Database error: {db_error}")
                     if conn:
@@ -250,16 +250,16 @@ def track_pixel(tracking_id):
                     logger.info(f"📧 Email opened! Tracking ID: {tracking_id} (DB error, logged to console)")
         else:
             if not is_false_open:
-            logger.info(f"📧 Email opened! Tracking ID: {tracking_id} (no DB)")
+                logger.info(f"📧 Email opened! Tracking ID: {tracking_id} (no DB)")
             else:
                 logger.info(f"🤖 False open filtered: {tracking_id} - {'; '.join(false_open_reasons)} (no DB)")
         
         # Log details
         if not is_false_open:
-        logger.info(f"🌐 IP: {ip_address}")
+            logger.info(f"🌐 IP: {ip_address}")
             logger.info(f" User Agent: {user_agent}")
         else:
-            logger.info(f" Filtered - IP: {ip_address}")
+            logger.info(f"🤖 Filtered - IP: {ip_address}")
             logger.info(f"🤖 Filtered - User Agent: {user_agent}")
         
         # Create and return the pixel
