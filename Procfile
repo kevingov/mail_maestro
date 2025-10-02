@@ -1,1 +1,1 @@
-web: python main.py
+web: python 2025_hackathon.py

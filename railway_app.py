@@ -196,7 +196,7 @@ def track_pixel(tracking_id):
                             ON CONFLICT (tracking_id) DO NOTHING
                         ''', (tracking_id, 'unknown@example.com', 'unknown@example.com', 'Unknown', 'Unknown'))
                         conn.commit()
-                        
+                    
                         # Get the sent_at time for the new record
                         cursor.execute('SELECT tracking_id, sent_at FROM email_tracking WHERE tracking_id = %s', (tracking_id,))
                         email_record = cursor.fetchone()
@@ -229,14 +229,14 @@ def track_pixel(tracking_id):
                     
                     # Only update open count if it's not a false open
                     if not is_false_open:
-                        # Update open count
-                        cursor.execute('''
-                            UPDATE email_tracking 
-                            SET open_count = open_count + 1, last_opened_at = CURRENT_TIMESTAMP
-                            WHERE tracking_id = %s
-                        ''', (tracking_id,))
-                        
-                        conn.commit()
+                    # Update open count
+                    cursor.execute('''
+                        UPDATE email_tracking 
+                        SET open_count = open_count + 1, last_opened_at = CURRENT_TIMESTAMP
+                        WHERE tracking_id = %s
+                    ''', (tracking_id,))
+                    
+                    conn.commit()
                         logger.info(f"✅ Real email opened! Tracking ID: {tracking_id}")
                     else:
                         conn.commit()
@@ -250,13 +250,13 @@ def track_pixel(tracking_id):
                     logger.info(f"📧 Email opened! Tracking ID: {tracking_id} (DB error, logged to console)")
         else:
             if not is_false_open:
-                logger.info(f"📧 Email opened! Tracking ID: {tracking_id} (no DB)")
+            logger.info(f"📧 Email opened! Tracking ID: {tracking_id} (no DB)")
             else:
                 logger.info(f"🤖 False open filtered: {tracking_id} - {'; '.join(false_open_reasons)} (no DB)")
         
         # Log details
         if not is_false_open:
-            logger.info(f"🌐 IP: {ip_address}")
+        logger.info(f"🌐 IP: {ip_address}")
             logger.info(f" User Agent: {user_agent}")
         else:
             logger.info(f" Filtered - IP: {ip_address}")
@@ -330,7 +330,7 @@ def health_check():
 def get_stats():
     """Get email tracking statistics with instant open filtering only."""
     try:
-        if not DB_AVAILABLE:
+    if not DB_AVAILABLE:
             return jsonify({'error': 'Database not available'}), 503
         
         conn = get_db_connection()
