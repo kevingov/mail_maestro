@@ -818,6 +818,18 @@ def get_stats():
         logger.error(f"Error getting stats: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/debug/env', methods=['GET'])
+def debug_env():
+    """Debug endpoint to check environment variables."""
+    return jsonify({
+        'gmail_client_id_exists': bool(os.environ.get('GMAIL_CLIENT_ID')),
+        'gmail_client_secret_exists': bool(os.environ.get('GMAIL_CLIENT_SECRET')),
+        'gmail_refresh_token_exists': bool(os.environ.get('GMAIL_REFRESH_TOKEN')),
+        'openai_api_key_exists': bool(os.environ.get('OPENAI_API_KEY')),
+        'gmail_client_id_length': len(os.environ.get('GMAIL_CLIENT_ID', '')),
+        'gmail_refresh_token_length': len(os.environ.get('GMAIL_REFRESH_TOKEN', ''))
+    })
+
 # 🔹 Workato Endpoints for Email Automation
 
 @app.route('/api/workato/reply-to-emails', methods=['POST'])
