@@ -826,6 +826,8 @@ def debug_env():
         'gmail_client_secret_exists': bool(os.environ.get('GMAIL_CLIENT_SECRET')),
         'gmail_refresh_token_exists': bool(os.environ.get('GMAIL_REFRESH_TOKEN')),
         'openai_api_key_exists': bool(os.environ.get('OPENAI_API_KEY')),
+        'openai_api_key_length': len(os.environ.get('OPENAI_API_KEY', '')),
+        'openai_api_key_starts_with': os.environ.get('OPENAI_API_KEY', '')[:10] if os.environ.get('OPENAI_API_KEY') else '',
         'gmail_client_id_length': len(os.environ.get('GMAIL_CLIENT_ID', '')),
         'gmail_refresh_token_length': len(os.environ.get('GMAIL_REFRESH_TOKEN', ''))
     })
