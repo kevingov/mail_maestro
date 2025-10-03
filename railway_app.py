@@ -895,17 +895,6 @@ def workato_reply_to_emails():
     }
     """
     try:
-        # Check API key authentication
-        api_key = request.headers.get('X-API-Key')
-        expected_api_key = os.environ.get('WORKATO_API_KEY', 'your-secret-key-here')
-        
-        if not api_key or api_key != expected_api_key:
-            return jsonify({
-                'status': 'error',
-                'message': 'Invalid or missing API key',
-                'timestamp': datetime.datetime.now().isoformat()
-            }), 401
-        
         data = request.get_json() if request.is_json else {}
         
         # Validate input
