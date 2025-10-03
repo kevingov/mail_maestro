@@ -330,10 +330,10 @@ def health_check():
 def get_stats():
     """Get email tracking statistics with instant open filtering only."""
     try:
-    if not DB_AVAILABLE:
+        if not DB_AVAILABLE:
             return jsonify({'error': 'Database not available'}), 503
-        
-        conn = get_db_connection()
+            
+            conn = get_db_connection()
         if not conn:
             return jsonify({'error': 'Database connection failed'}), 503
         
