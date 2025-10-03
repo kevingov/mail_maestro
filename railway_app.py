@@ -11,6 +11,20 @@ from io import BytesIO
 from PIL import Image
 import uuid
 import datetime
+import base64
+import email
+import pickle
+import re
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+# Gmail and Google API imports
+from googleapiclient.discovery import build
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+
+# OpenAI import
+from openai import OpenAI
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -93,20 +107,374 @@ def init_database():
 # Initialize database on startup
 init_database()
 
+# Gmail API configuration
+SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.send']
+
+def authenticate_gmail():
+    """Authenticate with Gmail API using stored credentials."""
+    creds = None
+    # Load token from file if exists
+    if os.path.exists('token.pickle'):
+        with open('token.pickle', 'rb') as token:
+            creds = pickle.load(token)
+    
+    # If there are no (valid) credentials available, let the user log in.
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                'credentials_kevin_uncommonestate.json', SCOPES)
+            creds = flow.run_local_server(port=0)
+        # Save the credentials for the next run
+        with open('token.pickle', 'wb') as token:
+            pickle.dump(creds, token)
+    
+    return creds
+
+def extract_email_body(payload):
+    """Extract the body of an email, handling both plain text and HTML."""
+    body = ""
+
+    # Case 1: If the email has multiple parts (HTML, plain text, etc.)
+    if 'parts' in payload:
+        for part in payload['parts']:
+            mime_type = part['mimeType']
+            body_data = part.get('body', {}).get('data')
+
+            if body_data:
+                decoded_body = base64.urlsafe_b64decode(body_data).decode("utf-8")
+
+                # Prefer plain text over HTML
+                if mime_type == 'text/plain':
+                    return decoded_body  # Return first plain text body found
+                elif mime_type == 'text/html':
+                    body = decoded_body  # Store HTML if no plain text is found
+
+    # Case 2: If the email is a single part (plain text or HTML)
+    else:
+        body_data = payload.get('body', {}).get('data')
+        if body_data:
+            body = base64.urlsafe_b64decode(body_data).decode("utf-8")
+
+    return body
+
+def has_been_replied_to(email_id, service):
+    """Check if the LATEST message in the thread is from us (Jake Morgan)."""
+    try:
+        # Get the thread ID for this email
+        email_data = service.users().messages().get(userId='me', id=email_id).execute()
+        thread_id = email_data.get('threadId')
+        
+        if not thread_id:
+            return False
+            
+        # Get all messages in the thread
+        thread_data = service.users().threads().get(userId='me', id=thread_id).execute()
+        messages = thread_data.get('messages', [])
+        
+        if not messages:
+            return False
+            
+        # Get the latest message (last in the array)
+        latest_message = messages[-1]
+        latest_msg_data = service.users().messages().get(userId='me', id=latest_message['id']).execute()
+        headers = latest_msg_data['payload']['headers']
+        sender = next((h['value'] for h in headers if h['name'] == 'From'), '')
+        
+        # Check if the latest message is from us
+        is_from_us = 'jake.morgan@affirm.com' in sender.lower()
+        
+        return is_from_us
+        
+    except Exception as e:
+        logger.error(f"Error checking reply status for email {email_id}: {e}")
+        return False
+
+def generate_ai_response(email_body, sender_name, recipient_name, conversation_history=None):
+    """Generate an AI response using OpenAI."""
+    try:
+        client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
+        
+        # Build conversation context if provided
+        conversation_context = ""
+        if conversation_history:
+            conversation_context = f"\n\nConversation Context:\n{conversation_history}"
+        
+        prompt = f"""
+You are Jake Morgan, Business Development at Affirm. Write a professional, helpful email response.
+
+Email to respond to:
+From: {recipient_name}
+Body: {email_body}
+
+{conversation_context}
+
+Write a professional response that:
+1. Addresses their specific questions or concerns
+2. Provides helpful information about Affirm's services
+3. Maintains a friendly, professional tone
+4. Includes a clear call-to-action if appropriate
+
+Format your response as:
+**Subject Line:** [subject]
+**Email Body:** [body]
+"""
+        
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1000,
+            temperature=0.7
+        )
+        
+        response_text = response.choices[0].message.content
+        
+        # Extract Subject Line and Email Body using regex
+        subject_line_match = re.search(r"\*\*Subject Line:\*\*\s*(.*)", response_text)
+        email_body_match = re.search(r"\*\*Email Body:\*\*\s*(.*)", response_text, re.DOTALL)
+
+        subject_line = subject_line_match.group(1).strip() if subject_line_match else f"Re: Your Message"
+        email_body = email_body_match.group(1).strip() if email_body_match else f"Hi {recipient_name},\n\nThank you for your message. I'll be happy to help you with any questions about Affirm.\n\nBest regards,\n{sender_name}"
+
+        return email_body
+        
+    except Exception as e:
+        logger.error(f"Error generating AI response: {e}")
+        return f"Hi {recipient_name},\n\nThank you for your message. I'll be happy to help you with any questions about Affirm.\n\nBest regards,\n{sender_name}"
+
+def send_threaded_email_reply(to_email, subject, reply_content, original_message_id, sender_name):
+    """Send a threaded email reply that maintains the conversation thread."""
+    try:
+        creds = authenticate_gmail()
+        service = build('gmail', 'v1', credentials=creds)
+
+        logger.info(f"Preparing to send threaded reply to {to_email} with subject: {subject}")
+
+        message = MIMEMultipart()
+        message["to"] = to_email
+        message["subject"] = subject
+        message["from"] = "jake.morgan@affirm.com"
+        
+        # Add threading headers if we have the original message ID
+        if original_message_id:
+            message["In-Reply-To"] = original_message_id
+            message["References"] = original_message_id
+
+        message.attach(MIMEText(reply_content, "html"))
+
+        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+        message_body = {'raw': raw_message}
+
+        response = service.users().messages().send(userId='me', body=message_body).execute()
+        logger.info("Threaded email successfully sent! Response: %s", response)
+        
+        return {
+            'status': f"Reply sent to {to_email}",
+            'message_id': response.get('id')
+        }
+        
+    except Exception as e:
+        logger.error(f"Error sending threaded email reply: {e}")
+        raise e
+
+def reply_to_emails_with_accounts(accounts):
+    """Process email replies using accounts provided by Workato instead of querying Salesforce."""
+    try:
+        # Get emails needing replies using the provided accounts
+        emails_needing_replies = get_emails_needing_replies_with_accounts(accounts)
+        responses = []
+
+        logger.info(f"Processing {len(emails_needing_replies)} threads individually...")
+        
+        # Process each thread individually
+        for i, email in enumerate(emails_needing_replies):
+            thread_id = email.get('threadId', 'No ID')
+            logger.info(f"Processing thread {i+1}/{len(emails_needing_replies)}: {thread_id}")
+            
+            # Extract contact information
+            contact_name = email.get('contact_name', email['sender'].split("@")[0].capitalize())
+            contact_email = email['sender']
+            account_id = email.get('account_id')
+            contact_id = email.get('contact_id')
+            
+            # Sender information
+            sender_name = "Jake Morgan"
+            
+            # For single email, use it as the conversation context
+            conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {email['body']}"
+            
+            try:
+                # Generate AI response using the email content
+                ai_response = generate_ai_response(email['body'], sender_name, contact_name, conversation_content)
+                
+                # Send threaded reply
+                email_result = send_threaded_email_reply(
+                    to_email=contact_email,
+                    subject=f"Re: {email['subject']}",
+                    reply_content=ai_response,
+                    original_message_id=email.get('message_id'),
+                    sender_name=sender_name
+                )
+                
+                # Log success
+                response_info = {
+                    'thread_id': thread_id,
+                    'contact_name': contact_name,
+                    'contact_email': contact_email,
+                    'subject': email['subject'],
+                    'status': 'success',
+                    'account_id': account_id,
+                    'contact_id': contact_id
+                }
+                
+                responses.append(response_info)
+                logger.info(f"Reply sent successfully to {contact_name} ({contact_email})")
+                
+            except Exception as e:
+                logger.error(f"Error processing email for {contact_name}: {e}")
+                response_info = {
+                    'thread_id': thread_id,
+                    'contact_name': contact_name,
+                    'contact_email': contact_email,
+                    'subject': email['subject'],
+                    'status': 'error',
+                    'error': str(e),
+                    'account_id': account_id,
+                    'contact_id': contact_id
+                }
+                responses.append(response_info)
+        
+        # Return results
+        successful_replies = len([r for r in responses if r['status'] == 'success'])
+        
+        return {
+            'message': f'Processed {len(emails_needing_replies)} conversation threads',
+            'emails_processed': len(emails_needing_replies),
+            'replies_sent': successful_replies,
+            'responses': responses
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in reply_to_emails_with_accounts: {e}")
+        raise e
+
+def get_emails_needing_replies_with_accounts(accounts):
+    """Get emails needing replies using accounts provided by Workato instead of Salesforce query."""
+    creds = authenticate_gmail()
+    service = build('gmail', 'v1', credentials=creds)
+
+    logger.info("Connected to Gmail API")
+
+    # Create a lookup dictionary for email addresses from Workato accounts
+    account_emails = {}
+    for account in accounts:
+        email_addr = account.get('email', '').lower()
+        if email_addr:
+            account_emails[email_addr] = {
+                'contact_id': account.get('contact_id'),
+                'account_id': account.get('account_id'),
+                'contact_name': account.get('name')
+            }
+
+    logger.info(f"Processing {len(account_emails)} email addresses from Workato")
+
+    # Fetch ALL emails from inbox (not just unread)
+    results = service.users().messages().list(userId='me', labelIds=['INBOX'], maxResults=100).execute()
+    messages = results.get('messages', [])
+    if not messages:
+        logger.warning("No emails found in inbox!")
+        return []
+
+    logger.info(f"Found {len(messages)} total emails in inbox")
+
+    emails = []
+    for msg in messages:
+        msg_id = msg['id']
+        message = service.users().messages().get(userId='me', id=msg_id).execute()
+        
+        # Extract email details
+        headers = message['payload'].get('headers', [])
+        sender = next((h['value'] for h in headers if h['name'] == 'From'), '')
+        subject = next((h['value'] for h in headers if h['name'] == 'Subject'), '')
+        date = next((h['value'] for h in headers if h['name'] == 'Date'), '')
+        message_id = next((h['value'] for h in headers if h['name'] == 'Message-ID'), '')
+        thread_id = message.get('threadId')
+        
+        # Extract sender email address
+        sender_email = sender
+        if '<' in sender and '>' in sender:
+            sender_email = sender.split('<')[1].split('>')[0]
+        sender_email = sender_email.lower()
+        
+        # Check if this email is from one of the Workato-provided accounts
+        if sender_email in account_emails:
+            # Get email body
+            body = extract_email_body(message['payload'])
+            
+            # Add account information from Workato
+            account_info = account_emails[sender_email]
+            
+            email_data = {
+                'id': msg_id,
+                'threadId': thread_id,
+                'sender': sender,
+                'subject': subject,
+                'body': body,
+                'date': date,
+                'message_id': message_id,
+                'contact_name': account_info['contact_name'],
+                'account_id': account_info['account_id'],
+                'contact_id': account_info['contact_id']
+            }
+            emails.append(email_data)
+            logger.info(f"Found email from Workato account: {sender} - {subject}")
+
+    logger.info(f"Found {len(emails)} emails from Workato-provided accounts")
+
+    # Group emails by conversation thread (threadId)
+    thread_emails = {}
+    for email in emails:
+        thread_id = email.get('threadId')
+        if thread_id:
+            if thread_id not in thread_emails:
+                thread_emails[thread_id] = []
+            thread_emails[thread_id].append(email)
+    
+    emails_needing_replies = []
+    
+    # Check each conversation thread - only the latest email per thread
+    for thread_id, emails_in_thread in thread_emails.items():
+        # Sort emails by date to get the latest one
+        emails_in_thread.sort(key=lambda x: x.get('date', ''), reverse=True)
+        latest_email = emails_in_thread[0]  # Most recent email in this thread
+        
+        # Check if this thread needs a reply (is the latest message from the contact?)
+        if not has_been_replied_to(latest_email['id'], service):
+            emails_needing_replies.append(latest_email)
+            logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply")
+        else:
+            logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} already has a reply")
+
+    logger.info(f"Found {len(emails_needing_replies)} conversation threads needing replies")
+    return emails_needing_replies
+
 @app.route('/')
 def home():
     """Home page with service info."""
     db_status = "PostgreSQL (connected)" if DB_AVAILABLE else "Memory mode (no persistence)"
     return jsonify({
-        'service': 'Email Tracking System',
+        'service': 'Email Tracking System with Workato Integration',
         'status': 'running',
-        'version': '1.0.0',
+        'version': '2.0.0',
         'database': db_status,
         'endpoints': {
             'track_email_send': 'POST /api/track-send',
             'tracking_pixel': 'GET /track/<tracking_id>',
             'health_check': 'GET /api/health',
-            'tracking_stats': 'GET /api/stats'
+            'tracking_stats': 'GET /api/stats',
+            'workato_reply_emails': 'POST /api/workato/reply-to-emails',
+            'workato_reply_status': 'POST /api/workato/reply-to-emails/status'
         }
     })
 
@@ -395,6 +763,143 @@ def get_stats():
     except Exception as e:
         logger.error(f"Error getting stats: {e}")
         return jsonify({'error': str(e)}), 500
+
+# 🔹 Workato Endpoints for Email Automation
+
+@app.route('/api/workato/reply-to-emails', methods=['POST'])
+def workato_reply_to_emails():
+    """
+    Workato endpoint to process email replies using Salesforce accounts provided by Workato.
+    
+    Expected input format:
+    {
+        "accounts": [
+            {
+                "email": "contact@example.com",
+                "name": "Contact Name", 
+                "account_id": "SF_Account_ID",
+                "contact_id": "SF_Contact_ID"
+            }
+        ]
+    }
+    """
+    try:
+        data = request.get_json() if request.is_json else {}
+        
+        # Validate input
+        if not data or 'accounts' not in data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing required "accounts" parameter in request body',
+                'timestamp': datetime.datetime.now().isoformat(),
+                'emails_processed': 0
+            }), 400
+        
+        accounts = data['accounts']
+        if not isinstance(accounts, list) or len(accounts) == 0:
+            return jsonify({
+                'status': 'error', 
+                'message': 'Accounts must be a non-empty array',
+                'timestamp': datetime.datetime.now().isoformat(),
+                'emails_processed': 0
+            }), 400
+        
+        logger.info(f"📧 Workato triggered reply_to_emails at {datetime.datetime.now().isoformat()}")
+        logger.info(f"📊 Processing {len(accounts)} accounts from Workato")
+        
+        # Call the function with Workato-provided accounts
+        result = reply_to_emails_with_accounts(accounts)
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Reply to emails completed successfully',
+            'timestamp': datetime.datetime.now().isoformat(),
+            'accounts_processed': len(accounts),
+            'emails_processed': result.get('emails_processed', 0),
+            'replies_sent': result.get('replies_sent', 0),
+            'results': result
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Workato reply_to_emails error: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        return jsonify({
+            'status': 'error',
+            'message': f'Error processing replies: {str(e)}',
+            'timestamp': datetime.datetime.now().isoformat(),
+            'emails_processed': 0
+        }), 500
+
+@app.route('/api/workato/reply-to-emails/status', methods=['POST'])
+def workato_reply_status():
+    """
+    Get status of emails needing replies for Workato using provided accounts.
+    
+    Expected input format:
+    {
+        "accounts": [
+            {
+                "email": "contact@example.com",
+                "name": "Contact Name", 
+                "account_id": "SF_Account_ID",
+                "contact_id": "SF_Contact_ID"
+            }
+        ]
+    }
+    """
+    try:
+        data = request.get_json() if request.is_json else {}
+        
+        # Validate input
+        if not data or 'accounts' not in data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing required "accounts" parameter in request body',
+                'timestamp': datetime.datetime.now().isoformat(),
+                'emails_needing_replies': 0
+            }), 400
+        
+        accounts = data['accounts']
+        if not isinstance(accounts, list):
+            return jsonify({
+                'status': 'error', 
+                'message': 'Accounts must be an array',
+                'timestamp': datetime.datetime.now().isoformat(),
+                'emails_needing_replies': 0
+            }), 400
+        
+        # Get emails needing replies using Workato-provided accounts
+        emails_needing_replies = get_emails_needing_replies_with_accounts(accounts)
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Found {len(emails_needing_replies)} emails needing replies',
+            'timestamp': datetime.datetime.now().isoformat(),
+            'accounts_processed': len(accounts),
+            'emails_needing_replies': len(emails_needing_replies),
+            'emails': [
+                {
+                    'thread_id': email.get('threadId', 'No ID'),
+                    'sender': email['sender'],
+                    'subject': email['subject'],
+                    'contact_name': email.get('contact_name', email['sender'].split("@")[0].capitalize()),
+                    'account_id': email.get('account_id'),
+                    'contact_id': email.get('contact_id')
+                }
+                for email in emails_needing_replies
+            ]
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Workato reply status error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Error getting reply status: {str(e)}',
+            'timestamp': datetime.datetime.now().isoformat(),
+            'emails_needing_replies': 0
+        }), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
