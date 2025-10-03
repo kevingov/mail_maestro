@@ -248,7 +248,13 @@ def has_been_replied_to(email_id, service):
 def generate_ai_response(email_body, sender_name, recipient_name, conversation_history=None):
     """Generate an AI response using OpenAI."""
     try:
-        client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
+        api_key = os.environ.get('OPENAI_API_KEY')
+        logger.info(f"OpenAI API key exists: {bool(api_key)}, length: {len(api_key) if api_key else 0}")
+        
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable not set")
+        
+        client = OpenAI(api_key=api_key)
         
         # Build conversation context if provided
         conversation_context = ""
@@ -295,6 +301,9 @@ Format your response as:
         
     except Exception as e:
         logger.error(f"Error generating AI response: {e}")
+        logger.error(f"Error type: {type(e).__name__}")
+        if hasattr(e, 'response'):
+            logger.error(f"OpenAI response: {e.response}")
         return f"Hi {recipient_name},\n\nThank you for your message. I'll be happy to help you with any questions about Affirm.\n\nBest regards,\n{sender_name}"
 
 def send_threaded_email_reply(to_email, subject, reply_content, original_message_id, sender_name):
@@ -831,6 +840,37 @@ def debug_env():
         'gmail_client_id_length': len(os.environ.get('GMAIL_CLIENT_ID', '')),
         'gmail_refresh_token_length': len(os.environ.get('GMAIL_REFRESH_TOKEN', ''))
     })
+
+@app.route('/api/debug/openai', methods=['GET'])
+def debug_openai():
+    """Test OpenAI API connection."""
+    try:
+        api_key = os.environ.get('OPENAI_API_KEY')
+        if not api_key:
+            return jsonify({'error': 'OPENAI_API_KEY not set'}), 400
+        
+        client = OpenAI(api_key=api_key)
+        
+        # Simple test request
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": "Say 'Hello World'"}],
+            max_tokens=10
+        )
+        
+        return jsonify({
+            'status': 'success',
+            'response': response.choices[0].message.content,
+            'api_key_length': len(api_key),
+            'api_key_prefix': api_key[:10]
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'error_type': type(e).__name__
+        }), 500
 
 # 🔹 Workato Endpoints for Email Automation
 
