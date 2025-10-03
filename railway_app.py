@@ -111,9 +111,48 @@ init_database()
 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.send']
 
 def authenticate_gmail():
-    """Authenticate with Gmail API using stored credentials."""
+    """Authenticate with Gmail API using environment variables or stored credentials."""
     creds = None
-    # Load token from file if exists
+    
+    # Method 1: Try OAuth2 credentials from environment variables (for Railway)
+    client_id = os.environ.get('GMAIL_CLIENT_ID')
+    client_secret = os.environ.get('GMAIL_CLIENT_SECRET') 
+    refresh_token = os.environ.get('GMAIL_REFRESH_TOKEN')
+    
+    if client_id and client_secret and refresh_token:
+        from google.oauth2.credentials import Credentials
+        
+        try:
+            creds = Credentials(
+                token=None,  # Will be refreshed
+                refresh_token=refresh_token,
+                token_uri='https://oauth2.googleapis.com/token',
+                client_id=client_id,
+                client_secret=client_secret,
+                scopes=SCOPES
+            )
+            # Refresh the token
+            creds.refresh(Request())
+            logger.info("Using Gmail OAuth2 credentials from environment variables")
+            return creds
+        except Exception as e:
+            logger.warning(f"Failed to use OAuth2 credentials from environment: {e}")
+    
+    # Method 2: Try JSON credentials from environment variable
+    gmail_creds_json = os.environ.get('GMAIL_CREDENTIALS_JSON')
+    if gmail_creds_json:
+        import json
+        from google.oauth2.credentials import Credentials
+        
+        try:
+            creds_data = json.loads(gmail_creds_json)
+            creds = Credentials.from_authorized_user_info(creds_data, SCOPES)
+            logger.info("Using Gmail credentials from GMAIL_CREDENTIALS_JSON environment variable")
+            return creds
+        except Exception as e:
+            logger.warning(f"Failed to load credentials from GMAIL_CREDENTIALS_JSON: {e}")
+    
+    # Method 3: Fallback to file-based authentication (for local development)
     if os.path.exists('token.pickle'):
         with open('token.pickle', 'rb') as token:
             creds = pickle.load(token)
@@ -123,12 +162,27 @@ def authenticate_gmail():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials_kevin_uncommonestate.json', SCOPES)
-            creds = flow.run_local_server(port=0)
-        # Save the credentials for the next run
-        with open('token.pickle', 'wb') as token:
-            pickle.dump(creds, token)
+            # Try multiple credential file names
+            credential_files = [
+                'credentials_jake_morgan.json',
+                'credentials_kevin_uncommonestate.json', 
+                'credentials.json'
+            ]
+            
+            credential_file = None
+            for file in credential_files:
+                if os.path.exists(file):
+                    credential_file = file
+                    break
+            
+            if credential_file:
+                flow = InstalledAppFlow.from_client_secrets_file(credential_file, SCOPES)
+                creds = flow.run_local_server(port=0)
+                # Save the credentials for the next run
+                with open('token.pickle', 'wb') as token:
+                    pickle.dump(creds, token)
+            else:
+                raise FileNotFoundError("Gmail credentials not found. Please set Gmail environment variables (GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN) or provide a credentials file.")
     
     return creds
 
@@ -771,6 +825,9 @@ def workato_reply_to_emails():
     """
     Workato endpoint to process email replies using Salesforce accounts provided by Workato.
     
+    Authentication: API Key required in header
+    Header: X-API-Key: your-secret-api-key
+    
     Expected input format:
     {
         "accounts": [
@@ -784,6 +841,17 @@ def workato_reply_to_emails():
     }
     """
     try:
+        # Check API key authentication
+        api_key = request.headers.get('X-API-Key')
+        expected_api_key = os.environ.get('WORKATO_API_KEY', 'your-secret-key-here')
+        
+        if not api_key or api_key != expected_api_key:
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid or missing API key',
+                'timestamp': datetime.datetime.now().isoformat()
+            }), 401
+        
         data = request.get_json() if request.is_json else {}
         
         # Validate input
