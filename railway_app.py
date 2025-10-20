@@ -764,7 +764,7 @@ def get_stats():
         if not DB_AVAILABLE:
             return jsonify({'error': 'Database not available'}), 503
             
-            conn = get_db_connection()
+        conn = get_db_connection()
         if not conn:
             return jsonify({'error': 'Database connection failed'}), 503
         
