@@ -1187,7 +1187,10 @@ def reply_to_emails_with_accounts(accounts):
                     'subject': email['subject'],
                     'status': 'success',
                     'account_id': account_id,
-                    'contact_id': contact_id
+                    'contact_id': contact_id,
+                    'ai_reply_content': ai_response,
+                    'original_email_body': email['body'],
+                    'conversation_context': conversation_content
                 }
                 
                 responses.append(response_info)
@@ -1203,7 +1206,10 @@ def reply_to_emails_with_accounts(accounts):
                     'status': 'error',
                     'error': str(e),
                     'account_id': account_id,
-                    'contact_id': contact_id
+                    'contact_id': contact_id,
+                    'ai_reply_content': None,
+                    'original_email_body': email['body'],
+                    'conversation_context': conversation_content
                 }
                 responses.append(response_info)
         
