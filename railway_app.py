@@ -877,46 +877,45 @@ def debug_openai():
 @app.route('/api/workato/reply-to-emails', methods=['POST'])
 def workato_reply_to_emails():
     """
-    Workato endpoint to process email replies using Salesforce accounts provided by Workato.
-    
-    Authentication: API Key required in header
-    Header: X-API-Key: your-secret-api-key
+    Workato endpoint to process email replies - ULTRA SIMPLE VERSION.
     
     Expected input format:
     {
-        "accounts": [
-            {
-                "email": "contact@example.com",
-                "name": "Contact Name", 
-                "account_id": "SF_Account_ID",
-                "contact_id": "SF_Contact_ID"
-            }
-        ]
+        "email": "contact@example.com"
     }
     """
     try:
         data = request.get_json() if request.is_json else {}
         
-        # Validate input
-        if not data or 'accounts' not in data:
+        # Debug logging
+        print(f"🔍 DEBUG: Received data: {data}")
+        print(f"🔍 DEBUG: Data type: {type(data)}")
+        print(f"🔍 DEBUG: Is JSON: {request.is_json}")
+        print(f"🔍 DEBUG: Raw request data: {request.get_data()}")
+        
+        # Simple validation - only accept email field
+        if not data or 'email' not in data:
             return jsonify({
                 'status': 'error',
-                'message': 'Missing required "accounts" parameter in request body',
+                'message': f'Missing required "email" parameter in request body. Received: {data}',
                 'timestamp': datetime.datetime.now().isoformat(),
                 'emails_processed': 0
             }), 400
         
-        accounts = data['accounts']
-        if not isinstance(accounts, list) or len(accounts) == 0:
+        email = data['email']
+        if not email or not isinstance(email, str):
             return jsonify({
                 'status': 'error', 
-                'message': 'Accounts must be a non-empty array',
+                'message': 'Email must be a valid string',
                 'timestamp': datetime.datetime.now().isoformat(),
                 'emails_processed': 0
             }), 400
         
-        logger.info(f"📧 Workato triggered reply_to_emails at {datetime.datetime.now().isoformat()}")
-        logger.info(f"📊 Processing {len(accounts)} accounts from Workato")
+        print(f"📧 Workato triggered reply_to_emails at {datetime.datetime.now().isoformat()}")
+        print(f"📊 Processing email: {email}")
+        
+        # Convert single email to account format for the function
+        accounts = [{'email': email, 'name': email.split('@')[0].capitalize()}]
         
         # Call the function with Workato-provided accounts
         result = reply_to_emails_with_accounts(accounts)
