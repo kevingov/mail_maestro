@@ -1424,6 +1424,32 @@ if __name__ == '__main__':
 
 
 
+# 🔹 Test endpoint for debugging
+@app.route('/api/workato/test', methods=['POST'])
+def workato_test():
+    """Simple test endpoint to debug Workato requests"""
+    try:
+        print("🧪 TEST ENDPOINT HIT!")
+        data = request.get_json() if request.is_json else {}
+        print(f"🧪 Received data: {data}")
+        print(f"🧪 Data type: {type(data)}")
+        print(f"🧪 Is JSON: {request.is_json}")
+        print(f"🧪 Raw data: {request.get_data()}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Test endpoint working',
+            'received_data': data,
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        print(f"🧪 Test endpoint error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
 # 🔹 Workato Endpoint for Reply to Emails (No Salesforce Dependencies)
 @app.route('/api/workato/reply-to-emails', methods=['POST'])
 def workato_reply_to_emails():
