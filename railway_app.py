@@ -33,6 +33,53 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 
+# HTML Email Template (same as 2025_hackathon.py)
+pardot_email_template = """<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Affirm Email</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+        <style>
+         
+        </style>
+    </head>
+    <body>
+
+        <!-- 🔹 Email Wrapper -->
+        <div class="container">
+
+            <!-- 🔹 Affirm Logo (Header) -->
+            <div class="logo-container">
+               
+            </div>
+    
+
+            <!-- 🔹 Email Content -->
+            <p style="line-height: 1.6;">{{EMAIL_CONTENT}}</p>
+
+
+        
+        </div>
+
+      
+
+    </body>
+    </html>"""
+
+def format_pardot_email(first_name, email_content, recipient_email, sender_name):
+    """
+    Inserts dynamic data into the Pardot email template.
+    Ensures email content is formatted correctly with line breaks.
+    """
+    formatted_email = email_content.replace("\n", "<br>")  # ✅ Convert newlines to <br> for HTML
+
+    return pardot_email_template.replace("{{FIRST_NAME}}", first_name) \
+                                .replace("{{EMAIL_CONTENT}}", formatted_email) \
+                                .replace("{{SENDER_NAME}}", sender_name) \
+                                .replace("{{RECIPIENT_EMAIL}}", recipient_email) \
+                                .replace("{{UNSUBSCRIBE_LINK}}", "https://www.affirm.com/unsubscribe")
+
 # Global database connection status
 DB_AVAILABLE = False
 
@@ -297,14 +344,22 @@ Format your response as:
         subject_line = subject_line_match.group(1).strip() if subject_line_match else f"Re: Your Message"
         email_body = email_body_match.group(1).strip() if email_body_match else f"Hi {recipient_name},\n\nThank you for your message. I'll be happy to help you with any questions about Affirm.\n\nBest regards,\n{sender_name}"
 
-        return email_body
+        # Format with HTML template (same as 2025_hackathon.py)
+        return format_pardot_email(first_name=recipient_name, 
+                                   email_content=email_body, 
+                                   recipient_email="recipient@email.com", 
+                                   sender_name=sender_name)
         
     except Exception as e:
         logger.error(f"Error generating AI response: {e}")
         logger.error(f"Error type: {type(e).__name__}")
         if hasattr(e, 'response'):
             logger.error(f"OpenAI response: {e.response}")
-        return f"Hi {recipient_name},\n\nThank you for your message. I'll be happy to help you with any questions about Affirm.\n\nBest regards,\n{sender_name}"
+        fallback_response = f"Hi {recipient_name},\n\nThank you for your message. I'll be happy to help you with any questions about Affirm.\n\nBest regards,\n{sender_name}"
+        return format_pardot_email(first_name=recipient_name, 
+                                   email_content=fallback_response, 
+                                   recipient_email="recipient@email.com", 
+                                   sender_name=sender_name)
 
 def send_threaded_email_reply(to_email, subject, reply_content, original_message_id, sender_name):
     """
