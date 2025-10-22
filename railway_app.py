@@ -330,11 +330,16 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
         message_body = {'raw': raw_message}
 
         response = service.users().messages().send(userId='me', body=message_body).execute()
-        logger.info("Threaded email successfully sent! Response: %s", response)
+        logger.info("📧 EMAIL SENT SUCCESSFULLY!")
+        logger.info(f"📧 To: {to_email}")
+        logger.info(f"📧 Subject: {subject}")
+        logger.info(f"📧 Gmail Message ID: {response.get('id')}")
+        logger.info(f"📧 Full Response: {response}")
         
         return {
             'status': f"Reply sent to {to_email}",
-            'message_id': response.get('id')
+            'message_id': response.get('id'),
+            'gmail_response': response
         }
         
     except Exception as e:
@@ -347,6 +352,12 @@ def reply_to_emails_with_accounts(accounts):
         # Get emails needing replies using the provided accounts
         emails_needing_replies = get_emails_needing_replies_with_accounts(accounts)
         responses = []
+
+        logger.info(f"🔍 DEBUG: Found {len(emails_needing_replies)} emails needing replies")
+        if emails_needing_replies:
+            logger.info(f"🔍 DEBUG: First email details: {emails_needing_replies[0]}")
+        else:
+            logger.info("🔍 DEBUG: No emails found - this might be why no emails are sent")
 
         logger.info(f"Processing {len(emails_needing_replies)} threads individually...")
         
