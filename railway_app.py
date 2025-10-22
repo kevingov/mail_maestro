@@ -457,11 +457,28 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
         email_username = os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com')
         email_password = os.getenv('EMAIL_PASSWORD')
         
-        with smtplib.SMTP(email_host, email_port) as server:
-            server.starttls()
-            server.login(email_username, email_password)
-            server.ehlo()
-            server.sendmail(email_username, to_email, msg.as_string())
+        logger.info(f"📧 Attempting SMTP connection to {email_host}:{email_port}")
+        logger.info(f"📧 Using username: {email_username}")
+        logger.info(f"📧 Password exists: {bool(email_password)}")
+        
+        if not email_password:
+            logger.error("❌ EMAIL_PASSWORD environment variable not set!")
+            raise ValueError("EMAIL_PASSWORD environment variable not set")
+        
+        try:
+            with smtplib.SMTP(email_host, email_port, timeout=30) as server:
+                logger.info("📧 SMTP connection established")
+                server.starttls()
+                logger.info("📧 TLS started")
+                server.login(email_username, email_password)
+                logger.info("📧 SMTP login successful")
+                server.ehlo()
+                logger.info("📧 EHLO sent")
+                server.sendmail(email_username, to_email, msg.as_string())
+                logger.info("📧 Email sent via SMTP")
+        except Exception as smtp_error:
+            logger.error(f"❌ SMTP Error: {smtp_error}")
+            raise smtp_error
         
         logger.info("📧 EMAIL SENT SUCCESSFULLY VIA SMTP!")
         logger.info(f"📧 To: {to_email}")
@@ -1061,7 +1078,9 @@ def workato_reply_to_emails():
         accounts = [{'email': email, 'name': email.split('@')[0].capitalize()}]
         
         # Call the function with Workato-provided accounts
+        logger.info("🚀 Starting email processing...")
         result = reply_to_emails_with_accounts(accounts)
+        logger.info("✅ Email processing completed")
         
         return jsonify({
             'status': 'success',
