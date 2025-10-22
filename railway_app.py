@@ -33,6 +33,12 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 
+# Email configuration (same as 2025_hackathon.py)
+EMAIL_HOST = os.getenv("EMAIL_HOST")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT"))
+EMAIL_USERNAME = os.getenv("EMAIL_USERNAME")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+
 # HTML Email Template (same as 2025_hackathon.py)
 pardot_email_template = """<!DOCTYPE html>
     <html>
@@ -451,36 +457,14 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
         logger.info(f"⏱️ Waiting {delay:.1f} seconds before sending...")
         time.sleep(delay)
         
-        # Send email via SMTP (same as 2025_hackathon.py)
-        email_host = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
-        email_port = int(os.getenv('EMAIL_PORT', '587'))
-        email_username = os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com')
-        email_password = os.getenv('EMAIL_PASSWORD')
+        # Send email via SMTP (exact same as 2025_hackathon.py)
+        with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
+            server.starttls()
+            server.login(EMAIL_USERNAME, EMAIL_PASSWORD)
+            server.ehlo()
+            server.sendmail(EMAIL_USERNAME, to_email, msg.as_string())
         
-        logger.info(f"📧 Attempting SMTP connection to {email_host}:{email_port}")
-        logger.info(f"📧 Using username: {email_username}")
-        logger.info(f"📧 Password exists: {bool(email_password)}")
-        
-        if not email_password:
-            logger.error("❌ EMAIL_PASSWORD environment variable not set!")
-            raise ValueError("EMAIL_PASSWORD environment variable not set")
-        
-        try:
-            with smtplib.SMTP(email_host, email_port, timeout=30) as server:
-                logger.info("📧 SMTP connection established")
-                server.starttls()
-                logger.info("📧 TLS started")
-                server.login(email_username, email_password)
-                logger.info("📧 SMTP login successful")
-                server.ehlo()
-                logger.info("📧 EHLO sent")
-                server.sendmail(email_username, to_email, msg.as_string())
-                logger.info("📧 Email sent via SMTP")
-        except Exception as smtp_error:
-            logger.error(f"❌ SMTP Error: {smtp_error}")
-            raise smtp_error
-        
-        logger.info("📧 EMAIL SENT SUCCESSFULLY VIA SMTP!")
+        logger.info("📧 EMAIL SENT SUCCESSFULLY!")
         logger.info(f"📧 To: {to_email}")
         logger.info(f"📧 Subject: {subject}")
         logger.info(f"📧 Tracking ID: {tracking_id}")
