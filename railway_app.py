@@ -457,16 +457,40 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
         logger.info(f"⏱️ Waiting {delay:.1f} seconds before sending...")
         time.sleep(delay)
         
-        # Send email via SMTP (exact same as 2025_hackathon.py)
-        if not EMAIL_PASSWORD:
-            logger.error("❌ EMAIL_PASSWORD environment variable not set!")
-            raise ValueError("EMAIL_PASSWORD environment variable not set")
-        
-        with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
-            server.starttls()
-            server.login(EMAIL_USERNAME, EMAIL_PASSWORD)
-            server.ehlo()
-            server.sendmail(EMAIL_USERNAME, to_email, msg.as_string())
+        # Send email via Gmail API (Railway network can't reach SMTP)
+        # But use the same email formatting as 2025_hackathon.py
+        try:
+            creds = authenticate_gmail()
+            service = build('gmail', 'v1', credentials=creds)
+            
+            # Create message for Gmail API with same formatting as SMTP
+            message = MIMEMultipart()
+            message["to"] = to_email
+            message["subject"] = subject
+            message["from"] = "jake.morgan@affirm.com"
+            
+            # Add threading headers (same as SMTP version)
+            if original_message_id:
+                original_message_id_header = get_original_message_id(original_message_id)
+                if original_message_id_header:
+                    message['In-Reply-To'] = original_message_id_header
+                    message['References'] = original_message_id_header
+                else:
+                    message['In-Reply-To'] = f"<{original_message_id}@gmail.com>"
+                    message['References'] = f"<{original_message_id}@gmail.com>"
+            
+            message.attach(MIMEText(tracked_email_content, "html"))
+            
+            raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+            message_body = {'raw': raw_message}
+            
+            response = service.users().messages().send(userId='me', body=message_body).execute()
+            logger.info("📧 Email sent successfully via Gmail API!")
+            logger.info(f"📧 Gmail Message ID: {response.get('id')}")
+            
+        except Exception as gmail_error:
+            logger.error(f"❌ Gmail API Error: {gmail_error}")
+            raise gmail_error
         
         logger.info("📧 EMAIL SENT SUCCESSFULLY!")
         logger.info(f"📧 To: {to_email}")
