@@ -307,39 +307,84 @@ Format your response as:
         return f"Hi {recipient_name},\n\nThank you for your message. I'll be happy to help you with any questions about Affirm.\n\nBest regards,\n{sender_name}"
 
 def send_threaded_email_reply(to_email, subject, reply_content, original_message_id, sender_name):
-    """Send a threaded email reply that maintains the conversation thread."""
+    """
+    Send a threaded email reply that maintains the conversation thread.
+    Uses SMTP like 2025_hackathon.py for better outbox visibility.
+    """
     try:
-        creds = authenticate_gmail()
-        service = build('gmail', 'v1', credentials=creds)
-
-        logger.info(f"Preparing to send threaded reply to {to_email} with subject: {subject}")
-
-        message = MIMEMultipart()
-        message["to"] = to_email
-        message["subject"] = subject
-        message["from"] = "jake.morgan@affirm.com"
+        import smtplib
+        import time
+        import random
+        from email_tracker import EmailTracker
         
-        # Add threading headers if we have the original message ID
+        logger.info(f"Preparing to send threaded reply to {to_email} with subject: {subject}")
+        
+        # Initialize email tracker (same as 2025_hackathon.py)
+        tracker = EmailTracker()
+        
+        # Track the email and get tracking ID
+        tracking_id = tracker.track_email_sent(
+            recipient_email=to_email,
+            sender_email=os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com'),
+            subject=subject,
+            campaign_name="AI Email Reply"
+        )
+        
+        # Add tracking pixel to email content
+        tracked_email_content = tracker.add_tracking_to_email(reply_content, tracking_id, "https://web-production-6dfbd.up.railway.app")
+        
+        # Create email message with enhanced headers (same as 2025_hackathon.py)
+        msg = MIMEMultipart()
+        msg["From"] = f"Jake Morgan - Affirm <{os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com')}>"
+        msg["To"] = to_email
+        msg["Subject"] = f"Re: {subject}" if not subject.startswith('Re:') else subject
+        msg["Reply-To"] = os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com')
+        msg["Return-Path"] = os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com')
+        msg["Message-ID"] = f"<{tracking_id}@affirm.com>"
+        msg["X-Mailer"] = "Affirm Business Development"
+        msg["X-Priority"] = "3"
+        msg["X-MSMail-Priority"] = "Normal"
+        msg["Importance"] = "Normal"
+        msg["List-Unsubscribe"] = f"<mailto:unsubscribe@affirm.com?subject=unsubscribe>"
+        msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+        msg["X-Affirm-Campaign"] = "AI Email Reply"
+        msg["X-Affirm-Source"] = "Business Development"
+        
+        # Add threading headers
         if original_message_id:
-            message["In-Reply-To"] = original_message_id
-            message["References"] = original_message_id
-
-        message.attach(MIMEText(reply_content, "html"))
-
-        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
-        message_body = {'raw': raw_message}
-
-        response = service.users().messages().send(userId='me', body=message_body).execute()
-        logger.info("📧 EMAIL SENT SUCCESSFULLY!")
+            msg['In-Reply-To'] = f"<{original_message_id}@gmail.com>"
+            msg['References'] = f"<{original_message_id}@gmail.com>"
+        
+        # Create HTML part
+        html_part = MIMEText(tracked_email_content, 'html')
+        msg.attach(html_part)
+        
+        # Add random delay (same as 2025_hackathon.py)
+        delay = random.uniform(2, 5)
+        logger.info(f"⏱️ Waiting {delay:.1f} seconds before sending...")
+        time.sleep(delay)
+        
+        # Send email via SMTP (same as 2025_hackathon.py)
+        email_host = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+        email_port = int(os.getenv('EMAIL_PORT', '587'))
+        email_username = os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com')
+        email_password = os.getenv('EMAIL_PASSWORD')
+        
+        with smtplib.SMTP(email_host, email_port) as server:
+            server.starttls()
+            server.login(email_username, email_password)
+            server.ehlo()
+            server.sendmail(email_username, to_email, msg.as_string())
+        
+        logger.info("📧 EMAIL SENT SUCCESSFULLY VIA SMTP!")
         logger.info(f"📧 To: {to_email}")
         logger.info(f"📧 Subject: {subject}")
-        logger.info(f"📧 Gmail Message ID: {response.get('id')}")
-        logger.info(f"📧 Full Response: {response}")
+        logger.info(f"📧 Tracking ID: {tracking_id}")
         
         return {
             'status': f"Reply sent to {to_email}",
-            'message_id': response.get('id'),
-            'gmail_response': response
+            'tracking_id': tracking_id,
+            'tracking_url': f"https://web-production-6dfbd.up.railway.app/tracking/details/{tracking_id}"
         }
         
     except Exception as e:
