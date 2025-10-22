@@ -260,6 +260,33 @@ def extract_email_body(payload):
 
     return body
 
+def get_original_message_id(gmail_message_id):
+    """
+    Get the actual Message-ID header from the original Gmail message.
+    This is needed for proper email threading.
+    """
+    try:
+        creds = authenticate_gmail()
+        service = build('gmail', 'v1', credentials=creds)
+        
+        # Get the message data
+        message_data = service.users().messages().get(userId='me', id=gmail_message_id).execute()
+        headers = message_data['payload']['headers']
+        
+        # Find the Message-ID header
+        message_id = next((h['value'] for h in headers if h['name'] == 'Message-ID'), None)
+        
+        if message_id:
+            logger.info(f"📧 Found original Message-ID: {message_id}")
+            return message_id
+        else:
+            logger.info(f"⚠️ No Message-ID found in original email, using Gmail ID: {gmail_message_id}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"❌ Error getting original Message-ID: {e}")
+        return None
+
 def has_been_replied_to(email_id, service):
     """Check if the LATEST message in the thread is from us (Jake Morgan)."""
     try:
@@ -405,8 +432,13 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
         msg["X-Affirm-Campaign"] = "AI Email Reply"
         msg["X-Affirm-Source"] = "Business Development"
         
-        # Add threading headers
-        if original_message_id:
+        # Add proper threading headers using the actual Message-ID (same as 2025_hackathon.py)
+        original_message_id_header = get_original_message_id(original_message_id)
+        if original_message_id_header:
+            msg['In-Reply-To'] = original_message_id_header
+            msg['References'] = original_message_id_header
+        else:
+            # Fallback to Gmail message ID if we can't get the original Message-ID
             msg['In-Reply-To'] = f"<{original_message_id}@gmail.com>"
             msg['References'] = f"<{original_message_id}@gmail.com>"
         
@@ -487,7 +519,7 @@ def reply_to_emails_with_accounts(accounts):
                     to_email=contact_email,
                     subject=f"Re: {email['subject']}",
                     reply_content=ai_response,
-                    original_message_id=email.get('message_id'),
+                    original_message_id=email['id'],  # Use Gmail message ID like 2025_hackathon.py
                     sender_name=sender_name
                 )
                 
