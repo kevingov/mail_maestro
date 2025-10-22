@@ -34,9 +34,9 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 
 # Email configuration (same as 2025_hackathon.py)
-EMAIL_HOST = os.getenv("EMAIL_HOST")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT"))
-EMAIL_USERNAME = os.getenv("EMAIL_USERNAME")
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_USERNAME = os.getenv("EMAIL_USERNAME", "jake.morgan@affirm.com")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 
 # HTML Email Template (same as 2025_hackathon.py)
@@ -458,6 +458,10 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
         time.sleep(delay)
         
         # Send email via SMTP (exact same as 2025_hackathon.py)
+        if not EMAIL_PASSWORD:
+            logger.error("❌ EMAIL_PASSWORD environment variable not set!")
+            raise ValueError("EMAIL_PASSWORD environment variable not set")
+        
         with smtplib.SMTP(EMAIL_HOST, EMAIL_PORT) as server:
             server.starttls()
             server.login(EMAIL_USERNAME, EMAIL_PASSWORD)
