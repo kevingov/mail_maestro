@@ -1438,11 +1438,17 @@ def workato_reply_to_emails():
     try:
         data = request.get_json() if request.is_json else {}
         
+        # Debug logging
+        print(f"🔍 DEBUG: Received data: {data}")
+        print(f"🔍 DEBUG: Data type: {type(data)}")
+        print(f"🔍 DEBUG: Is JSON: {request.is_json}")
+        print(f"🔍 DEBUG: Raw request data: {request.get_data()}")
+        
         # Simple validation - only accept email field
         if not data or 'email' not in data:
             return jsonify({
                 'status': 'error',
-                'message': 'Missing required "email" parameter in request body',
+                'message': f'Missing required "email" parameter in request body. Received: {data}',
                 'timestamp': datetime.now().isoformat(),
                 'emails_processed': 0
             }), 400
