@@ -7,6 +7,7 @@
 # But keep these essential files for Railway
 !main.py
 !railway_app.py
+!2025_hackathon.py
 !requirements.txt
 !Procfile
 !runtime.txt
