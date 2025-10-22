@@ -1428,43 +1428,54 @@ if __name__ == '__main__':
 @app.route('/api/workato/reply-to-emails', methods=['POST'])
 def workato_reply_to_emails():
     """
-    Workato endpoint to process email replies using Salesforce accounts provided by Workato.
+    Workato endpoint to process email replies - SIMPLIFIED VERSION.
     
-    Expected input format:
+    Expected input format (much simpler):
     {
-        "accounts": [
-            {
-                "email": "contact@example.com",
-                "name": "Contact Name", 
-                "account_id": "SF_Account_ID",
-                "contact_id": "SF_Contact_ID"
-            }
-        ]
+        "emails": ["contact@example.com", "another@example.com"]
+    }
+    
+    OR even simpler:
+    {
+        "email": "contact@example.com"
     }
     """
     try:
         data = request.get_json() if request.is_json else {}
         
-        # Validate input
-        if not data or 'accounts' not in data:
+        # Handle both simple formats
+        emails = []
+        if 'email' in data:
+            # Single email format
+            emails = [data['email']]
+        elif 'emails' in data:
+            # Multiple emails format
+            emails = data['emails']
+        elif 'accounts' in data:
+            # Legacy format - extract emails from accounts
+            accounts = data['accounts']
+            emails = [account.get('email') for account in accounts if account.get('email')]
+        else:
             return jsonify({
                 'status': 'error',
-                'message': 'Missing required "accounts" parameter in request body',
+                'message': 'Missing required parameter. Send either "email", "emails", or "accounts"',
                 'timestamp': datetime.now().isoformat(),
                 'emails_processed': 0
             }), 400
         
-        accounts = data['accounts']
-        if not isinstance(accounts, list) or len(accounts) == 0:
+        if not emails or len(emails) == 0:
             return jsonify({
                 'status': 'error', 
-                'message': 'Accounts must be a non-empty array',
+                'message': 'No valid email addresses provided',
                 'timestamp': datetime.now().isoformat(),
                 'emails_processed': 0
             }), 400
         
         print(f"📧 Workato triggered reply_to_emails at {datetime.now().isoformat()}")
-        print(f"📊 Processing {len(accounts)} accounts from Workato")
+        print(f"📊 Processing {len(emails)} email addresses from Workato")
+        
+        # Convert emails to simple account format for the function
+        accounts = [{'email': email, 'name': email.split('@')[0].capitalize()} for email in emails]
         
         # Call the new function with Workato-provided accounts
         result = reply_to_emails_with_accounts(accounts)
@@ -1490,6 +1501,7 @@ def workato_reply_to_emails():
             'timestamp': datetime.now().isoformat(),
             'emails_processed': 0
         }), 500
+
 
 @app.route('/api/workato/reply-to-emails/status', methods=['POST'])
 def workato_reply_status():
