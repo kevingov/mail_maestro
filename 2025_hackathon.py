@@ -1506,51 +1506,40 @@ def workato_reply_to_emails():
 @app.route('/api/workato/reply-to-emails/status', methods=['POST'])
 def workato_reply_status():
     """
-    Get status of emails needing replies for Workato - SIMPLIFIED VERSION.
+    Get status of emails needing replies for Workato using provided accounts.
     
-    Expected input format (much simpler):
+    Expected input format:
     {
-        "emails": ["contact@example.com", "another@example.com"]
-    }
-    
-    OR even simpler:
-    {
-        "email": "contact@example.com"
+        "accounts": [
+            {
+                "email": "contact@example.com",
+                "name": "Contact Name", 
+                "account_id": "SF_Account_ID",
+                "contact_id": "SF_Contact_ID"
+            }
+        ]
     }
     """
     try:
         data = request.get_json() if request.is_json else {}
         
-        # Handle both simple formats
-        emails = []
-        if 'email' in data:
-            # Single email format
-            emails = [data['email']]
-        elif 'emails' in data:
-            # Multiple emails format
-            emails = data['emails']
-        elif 'accounts' in data:
-            # Legacy format - extract emails from accounts
-            accounts = data['accounts']
-            emails = [account.get('email') for account in accounts if account.get('email')]
-        else:
+        # Validate input
+        if not data or 'accounts' not in data:
             return jsonify({
                 'status': 'error',
-                'message': 'Missing required parameter. Send either "email", "emails", or "accounts"',
+                'message': 'Missing required "accounts" parameter in request body',
                 'timestamp': datetime.now().isoformat(),
                 'emails_needing_replies': 0
             }), 400
         
-        if not emails or len(emails) == 0:
+        accounts = data['accounts']
+        if not isinstance(accounts, list):
             return jsonify({
                 'status': 'error', 
-                'message': 'No valid email addresses provided',
+                'message': 'Accounts must be an array',
                 'timestamp': datetime.now().isoformat(),
                 'emails_needing_replies': 0
             }), 400
-        
-        # Convert emails to simple account format for the function
-        accounts = [{'email': email, 'name': email.split('@')[0].capitalize()} for email in emails]
         
         # Get emails needing replies using Workato-provided accounts
         emails_needing_replies = get_emails_needing_replies_with_accounts(accounts)
