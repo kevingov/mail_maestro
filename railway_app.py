@@ -1325,6 +1325,21 @@ def workato_reply_to_emails():
         result = reply_to_emails_with_accounts(accounts)
         logger.info("✅ Email processing completed")
         
+        # Extract AI response content from results for clean text response
+        ai_responses = []
+        if 'responses' in result:
+            for response in result['responses']:
+                if 'ai_response' in response:
+                    # Clean the AI response - remove HTML tags and line breaks
+                    import re
+                    clean_response = response['ai_response']
+                    # Remove HTML tags
+                    clean_response = re.sub(r'<[^>]+>', '', clean_response)
+                    # Remove line breaks and extra whitespace
+                    clean_response = clean_response.replace('\n', ' ').replace('\r', ' ').strip()
+                    clean_response = re.sub(r'\s+', ' ', clean_response)
+                    ai_responses.append(clean_response)
+        
         return jsonify({
             'status': 'success',
             'message': 'Reply to emails completed successfully',
@@ -1332,6 +1347,7 @@ def workato_reply_to_emails():
             'accounts_processed': len(accounts),
             'emails_processed': result.get('emails_processed', 0),
             'replies_sent': result.get('replies_sent', 0),
+            'ai_responses': ai_responses,
             'results': result
         })
         
