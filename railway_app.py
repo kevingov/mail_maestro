@@ -1427,10 +1427,10 @@ def workato_send_new_email():
             return jsonify({
                 "status": "error",
                 "message": "No JSON data provided",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.datetime.now().isoformat()
             }), 400
         
-        logger.info(f"📧 Workato triggered send_new_email at {datetime.now().isoformat()}")
+        logger.info(f"📧 Workato triggered send_new_email at {datetime.datetime.now().isoformat()}")
         logger.info(f"📊 Processing contact data from Workato")
         
         # Extract contact information from Workato request
@@ -1460,7 +1460,7 @@ def workato_send_new_email():
             return jsonify({
                 "status": "error",
                 "message": "Missing required 'contact_email' parameter",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.datetime.now().isoformat()
             }), 400
         
         logger.info(f"📧 Sending personalized email to {contact_name} ({contact_email})")
@@ -1511,7 +1511,7 @@ def workato_send_new_email():
         return jsonify({
             "status": "success",
             "message": "Personalized email sent successfully",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.datetime.now().isoformat(),
             "contact": contact_name,
             "account": account_name,
             "email_status": email_status + tracking_info,
@@ -1527,7 +1527,7 @@ def workato_send_new_email():
         return jsonify({
             "status": "error",
             "message": f"Error sending personalized email: {str(e)}",
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.datetime.now().isoformat()
         }), 500
 
 if __name__ == '__main__':
