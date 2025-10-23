@@ -1422,7 +1422,23 @@ def workato_reply_status():
 def workato_send_new_email():
     """Workato endpoint for sending new personalized emails - replicates send_new_email from 2025_hackathon.py."""
     try:
-        data = request.get_json()
+        # Add debugging for request data
+        logger.info(f"🔍 DEBUG: Received request to send-new-email")
+        logger.info(f"🔍 DEBUG: Content-Type: {request.content_type}")
+        logger.info(f"🔍 DEBUG: Is JSON: {request.is_json}")
+        logger.info(f"🔍 DEBUG: Raw data: {request.get_data()}")
+        
+        try:
+            data = request.get_json()
+            logger.info(f"🔍 DEBUG: Parsed JSON data: {data}")
+        except Exception as json_error:
+            logger.error(f"❌ JSON parsing error: {json_error}")
+            return jsonify({
+                "status": "error",
+                "message": f"Invalid JSON format: {str(json_error)}",
+                "timestamp": datetime.datetime.now().isoformat()
+            }), 400
+        
         if not data:
             return jsonify({
                 "status": "error",
