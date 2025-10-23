@@ -431,6 +431,185 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
                                    recipient_email="recipient@email.com", 
                                    sender_name=sender_name)
 
+def generate_message(merchant_name, last_activity, merchant_industry, merchant_website, sender_name, account_description="", account_revenue=0, account_employees=0, account_location="", contact_title="", account_gmv=0):
+    """
+    Creates an Affirm-branded outreach email using AI with detailed Salesforce data.
+    Exact copy from 2025_hackathon.py.
+    """
+    # Handle None values and format them properly
+    account_revenue_str = f"${account_revenue:,}" if account_revenue and account_revenue > 0 else "Not specified"
+    account_employees_str = f"{account_employees:,}" if account_employees and account_employees > 0 else "Not specified"
+    account_gmv_str = f"${account_gmv:,.2f}" if account_gmv and account_gmv > 0 else "Not available"
+    account_description_str = account_description if account_description else "Not provided"
+    account_location_str = account_location if account_location else "Not specified"
+    contact_title_str = contact_title if contact_title else "Not specified"
+    merchant_industry_str = merchant_industry if merchant_industry else "Business"
+    merchant_website_str = merchant_website if merchant_website else "Not provided"
+    
+    prompt = f"""
+    {AFFIRM_VOICE_GUIDELINES}
+    
+    Generate a **professional, Affirm-branded business email** to re-engage {merchant_name}, a merchant in the {merchant_industry_str} industry, who has completed technical integration with Affirm but has **not yet launched**. The goal is to encourage them to go live — without offering a meeting or call.
+
+    **Context:**
+    - Contact Name: {merchant_name}
+    - Contact Title: {contact_title_str}
+    - Industry: {merchant_industry_str}
+    - Website: {merchant_website_str}
+    - Sender: {sender_name}
+    - Status: Integrated with Affirm, not yet live
+    - Account Description: {account_description_str}
+    - Annual Revenue: {account_revenue_str}
+    - Trailing 12M GMV: {account_gmv_str}
+    - Employees: {account_employees_str}
+    - Location: {account_location_str}
+
+    **Tone & Style Guidelines:**
+    - Use Affirm's brand voice: smart, approachable, efficient
+    - Do **not** offer a call or meeting
+    - Make it feel like a 1:1 business development check-in
+    - Be helpful, not pushy
+    - Reference their specific industry and business context
+
+    **Spam Avoidance Rules:**
+    - No excessive punctuation or all-caps
+    - Avoid trigger words like "FREE," "ACT NOW," or "LIMITED TIME"
+    - Avoid heavy use of numbers or dollar signs
+
+    **Include in the Email:**
+    - **Subject Line**: Under 50 characters, straightforward and relevant
+    - **Opening Line**: Greet the merchant by name and acknowledge that integration is complete
+    - **Body**: 
+        - Reiterate the value of Affirm to their specific industry or customer base
+        - Reference their business context (size, industry, etc.) if relevant
+        - Encourage them to take the final step to go live
+        - Offer light-touch support or resources (but **not** a meeting)
+    - **CTA**: Prompt action, but keep it casual and async — e.g., "Let us know when you're ready," or "We're here if you need anything."
+
+    **Output Format:**
+    - **Subject Line:** [Concise subject line]
+    - **Email Body:** [Email message]
+
+    Keep the email under 130 words. Make it feel natural and human, not like marketing automation.
+    """
+
+    try:
+        api_key = os.environ.get('OPENAI_API_KEY')
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable not set")
+        
+        client = OpenAI(api_key=api_key)
+        
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        if response and response.choices:
+            response_text = response.choices[0].message.content.strip()
+
+            # Extract Subject Line and Email Body using regex
+            subject_line_match = re.search(r"\*\*Subject Line:\*\*\s*(.*)", response_text)
+            email_body_match = re.search(r"\*\*Email Body:\*\*\s*(.*)", response_text, re.DOTALL)
+
+            subject_line = subject_line_match.group(1).strip() if subject_line_match else f"Hi {merchant_name}, Let's Connect!"
+            email_body = email_body_match.group(1).strip() if email_body_match else "Let's connect to discuss how Affirm can benefit your business."
+
+            return subject_line, email_body
+
+        else:
+            return f"Hi {merchant_name}, Let's Connect!", "Let's connect to discuss how Affirm can benefit your business."
+
+        
+    except Exception as e:
+        logger.error(f"❌ Error generating AI response: {e}")
+        return f"Hi {merchant_name}, Let's Connect!", "Let's connect to discuss how Affirm can benefit your business."
+
+def send_email(to_email, merchant_name, subject_line, email_content, campaign_name=None, base_url="https://web-production-6dfbd.up.railway.app"):
+    """Send email with tracking - exact copy from 2025_hackathon.py."""
+    try:
+        from email_tracker import EmailTracker
+        import time
+        import random
+        
+        # Initialize email tracker
+        tracker = EmailTracker()
+        
+        # Track the email and get tracking ID
+        tracking_id = tracker.track_email_sent(
+            recipient_email=to_email,
+            sender_email=os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com'),
+            subject=subject_line,
+            campaign_name=campaign_name or "Personalized Outreach"
+        )
+        
+        # Add tracking pixel to email content
+        tracked_email_content = tracker.add_tracking_to_email(email_content, tracking_id, base_url)
+        
+        # Create email message with enhanced headers
+        msg = MIMEMultipart()
+        msg["From"] = f"Jake Morgan - Affirm <{os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com')}>"
+        msg["To"] = to_email
+        msg["Subject"] = subject_line
+        msg["Reply-To"] = os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com')
+        msg["Return-Path"] = os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com')
+        msg["Message-ID"] = f"<{tracking_id}@affirm.com>"
+        msg["X-Mailer"] = "Affirm Business Development"
+        msg["X-Priority"] = "3"
+        msg["X-MSMail-Priority"] = "Normal"
+        msg["Importance"] = "Normal"
+        msg["List-Unsubscribe"] = f"<mailto:unsubscribe@affirm.com?subject=unsubscribe>"
+        msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+        msg["X-Affirm-Campaign"] = campaign_name or "Personalized Outreach"
+        msg["X-Affirm-Source"] = "Business Development"
+        
+        # Create HTML part
+        html_part = MIMEText(tracked_email_content, 'html')
+        msg.attach(html_part)
+        
+        # Add random delay
+        delay = random.uniform(2, 5)
+        logger.info(f"⏱️ Waiting {delay:.1f} seconds before sending...")
+        time.sleep(delay)
+        
+        # Send email via Gmail API (Railway network can't reach SMTP)
+        try:
+            creds = authenticate_gmail()
+            service = build('gmail', 'v1', credentials=creds)
+            
+            raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+            message_body = {'raw': raw_message}
+            
+            response = service.users().messages().send(userId='me', body=message_body).execute()
+            logger.info("📧 Email sent successfully via Gmail API!")
+            logger.info(f"📧 Gmail Message ID: {response.get('id')}")
+            logger.info(f"📧 Thread ID: {response.get('threadId')}")
+            logger.info(f"📧 Label IDs: {response.get('labelIds')}")
+            
+        except Exception as gmail_error:
+            logger.error(f"❌ Gmail API Error: {gmail_error}")
+            raise gmail_error
+        
+        logger.info("📧 EMAIL SENT SUCCESSFULLY!")
+        logger.info(f"📧 To: {to_email}")
+        logger.info(f"📧 Subject: {subject_line}")
+        logger.info(f"📧 Tracking ID: {tracking_id}")
+        
+        return {
+            'status': 'success',
+            'tracking_id': tracking_id,
+            'tracking_url': f"{base_url}/track/{tracking_id}",
+            'message_id': response.get('id'),
+            'thread_id': response.get('threadId')
+        }
+        
+    except Exception as e:
+        logger.error(f"Error sending email: {e}")
+        return {
+            'status': 'error',
+            'error': str(e)
+        }
+
 def send_threaded_email_reply(to_email, subject, reply_content, original_message_id, sender_name):
     """
     Send a threaded email reply that maintains the conversation thread.
@@ -1237,6 +1416,118 @@ def workato_reply_status():
             'message': f'Error getting reply status: {str(e)}',
             'timestamp': datetime.datetime.now().isoformat(),
             'emails_needing_replies': 0
+        }), 500
+
+@app.route('/api/workato/send-new-email', methods=['POST'])
+def workato_send_new_email():
+    """Workato endpoint for sending new personalized emails - replicates send_new_email from 2025_hackathon.py."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "No JSON data provided",
+                "timestamp": datetime.now().isoformat()
+            }), 400
+        
+        logger.info(f"📧 Workato triggered send_new_email at {datetime.now().isoformat()}")
+        logger.info(f"📊 Processing contact data from Workato")
+        
+        # Extract contact information from Workato request
+        contact_name = data.get('contact_name', '')
+        contact_email = data.get('contact_email', '')
+        contact_title = data.get('contact_title', '')
+        contact_phone = data.get('contact_phone', '')
+        
+        # Account information
+        account_name = data.get('account_name', '')
+        account_industry = data.get('account_industry', 'Business')
+        account_website = data.get('account_website', '')
+        account_description = data.get('account_description', '')
+        account_revenue = data.get('account_revenue', 0)
+        account_employees = data.get('account_employees', 0)
+        account_city = data.get('account_city', '')
+        account_state = data.get('account_state', '')
+        account_country = data.get('account_country', '')
+        account_id = data.get('account_id', '')
+        account_gmv = data.get('account_gmv', 0)
+        
+        # Sender information
+        sender_name = "Jake Morgan"
+        sender_title = "Business Development"
+        
+        if not contact_email:
+            return jsonify({
+                "status": "error",
+                "message": "Missing required 'contact_email' parameter",
+                "timestamp": datetime.now().isoformat()
+            }), 400
+        
+        logger.info(f"📧 Sending personalized email to {contact_name} ({contact_email})")
+        logger.info(f"   Account: {account_name} ({account_industry})")
+        logger.info(f"   Website: {account_website}")
+        
+        # Generate personalized subject and content using AI
+        subject_line, email_content = generate_message(
+            merchant_name=contact_name,
+            last_activity="Recent",
+            merchant_industry=account_industry,
+            merchant_website=account_website,
+            sender_name=sender_name,
+            account_description=account_description,
+            account_revenue=account_revenue,
+            account_employees=account_employees,
+            account_location=f"{account_city}, {account_state}".strip(", ") if account_city else "",
+            contact_title=contact_title,
+            account_gmv=account_gmv
+        )
+        
+        # Format email with HTML template
+        formatted_email = format_pardot_email(
+            first_name=contact_name,
+            email_content=email_content,
+            recipient_email=contact_email,
+            sender_name=sender_name
+        )
+        
+        # Send email with tracking
+        email_result = send_email(
+            to_email=contact_email,
+            merchant_name=contact_name,
+            subject_line=subject_line,
+            email_content=formatted_email,
+            campaign_name="Workato Personalized Outreach"
+        )
+        
+        email_status = email_result['status'] if isinstance(email_result, dict) else email_result
+        tracking_info = f" | Tracking ID: {email_result.get('tracking_id', 'N/A')}" if isinstance(email_result, dict) else ""
+        
+        # Log in Salesforce if account_id provided
+        if account_id:
+            log_salesforce_activity(account_id, email_content)
+        
+        logger.info(f"✅ Personalized email sent successfully to {contact_name}")
+        
+        return jsonify({
+            "status": "success",
+            "message": "Personalized email sent successfully",
+            "timestamp": datetime.now().isoformat(),
+            "contact": contact_name,
+            "account": account_name,
+            "email_status": email_status + tracking_info,
+            "subject": subject_line,
+            "email_body": email_content,
+            "tracking_id": email_result.get('tracking_id') if isinstance(email_result, dict) else None,
+            "tracking_url": email_result.get('tracking_url') if isinstance(email_result, dict) else None,
+            "emails_sent": 1
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Workato send_new_email error: {e}")
+        return jsonify({
+            "status": "error",
+            "message": f"Error sending personalized email: {str(e)}",
+            "timestamp": datetime.now().isoformat()
         }), 500
 
 if __name__ == '__main__':
