@@ -39,6 +39,25 @@ EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_USERNAME = os.getenv("EMAIL_USERNAME", "jake.morgan@affirm.com")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 
+# Affirm Voice Guidelines (same as 2025_hackathon.py)
+AFFIRM_VOICE_GUIDELINES = """
+As an AI-powered business development assistant at Affirm, your tone must strictly follow Affirm's brand voice:
+
+✅ **Sharp, not snarky:** Be witty, clear, and engaging, but never cynical.  
+✅ **Sincere, not schmaltzy:** Supportive but not overly sentimental.  
+✅ **To-the-point, not harsh:** Concise, clear, and direct without being blunt.  
+✅ **Encouraging, not irresponsible:** Promote responsible financial behavior.  
+✅ **No Asterisks Policy:** Avoid misleading fine print, hidden terms, or deceptive wording.  
+
+### **Example Do's & Don'ts:**
+✔️ "Smarter than the average card." (Concise, informative)  
+❌ "Your credit card sucks." (Harsh, negative)  
+✔️ "See how much you can spend." (Encouraging)  
+❌ "You deserve to splurge." (Irresponsible tone)  
+
+Use these principles in every response.
+"""
+
 # HTML Email Template (same as 2025_hackathon.py)
 pardot_email_template = """<!DOCTYPE html>
     <html>
@@ -326,68 +345,86 @@ def has_been_replied_to(email_id, service):
         return False
 
 def generate_ai_response(email_body, sender_name, recipient_name, conversation_history=None):
-    """Generate an AI response using OpenAI."""
+    """
+    Generates an AI response using the same detailed prompt as generate_message.
+    Creates a professional, Affirm-branded email response with full conversation context.
+    """
+    
+    # Build conversation context if provided
+    conversation_context = ""
+    if conversation_history:
+        conversation_context = f"""
+    **Full Conversation History:**
+    {conversation_history}
+    
+    **Latest Message to Respond To:**
+    {email_body}
+    """
+    else:
+        conversation_context = f"""
+    **Latest Message to Respond To:**
+    {email_body}
+    """
+
+    prompt = f"""
+    {AFFIRM_VOICE_GUIDELINES}
+
+    **TASK:** Generate a professional Affirm-branded email response to {recipient_name} from {sender_name}.
+
+    **CONVERSATION CONTEXT:**
+    {conversation_context}
+
+    **CRITICAL RULES:**
+    1. **Answer direct questions in the FIRST line** (e.g., "Are you a bot?" → "I'm an AI assistant helping with business development, but I'm here to provide real value and connect you with our human team.")
+    2. **Be truthful** - don't make up information
+    3. **Reference conversation history** to show you've read it
+    4. **Be conversational and helpful** - acknowledge concerns before solutions
+    5. **Keep under 150 words** and feel natural, not automated
+    
+
+    **OUTPUT FORMAT:**
+    - **Subject Line:** [Concise subject]
+    - **Email Body:** [Your response]
+
+    For technical support, refer to customercare@affirm.com.
+    """
+
     try:
         api_key = os.environ.get('OPENAI_API_KEY')
-        logger.info(f"OpenAI API key exists: {bool(api_key)}, length: {len(api_key) if api_key else 0}")
-        
         if not api_key:
             raise ValueError("OPENAI_API_KEY environment variable not set")
         
         client = OpenAI(api_key=api_key)
         
-        # Build conversation context if provided
-        conversation_context = ""
-        if conversation_history:
-            conversation_context = f"\n\nConversation Context:\n{conversation_history}"
-        
-        prompt = f"""
-You are Jake Morgan, Business Development at Affirm. Write a professional, helpful email response.
-
-Email to respond to:
-From: {recipient_name}
-Body: {email_body}
-
-{conversation_context}
-
-Write a professional response that:
-1. Addresses their specific questions or concerns
-2. Provides helpful information about Affirm's services
-3. Maintains a friendly, professional tone
-4. Includes a clear call-to-action if appropriate
-
-Format your response as:
-**Subject Line:** [subject]
-**Email Body:** [body]
-"""
-        
         response = client.chat.completions.create(
             model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1000,
-            temperature=0.7
+            messages=[{"role": "user", "content": prompt}]
         )
-        
-        response_text = response.choices[0].message.content
-        
-        # Extract Subject Line and Email Body using regex
-        subject_line_match = re.search(r"\*\*Subject Line:\*\*\s*(.*)", response_text)
-        email_body_match = re.search(r"\*\*Email Body:\*\*\s*(.*)", response_text, re.DOTALL)
 
-        subject_line = subject_line_match.group(1).strip() if subject_line_match else f"Re: Your Message"
-        email_body = email_body_match.group(1).strip() if email_body_match else f"Hi {recipient_name},\n\nThank you for your message. I'll be happy to help you with any questions about Affirm.\n\nBest regards,\n{sender_name}"
+        if response and response.choices:
+            response_text = response.choices[0].message.content.strip()
 
-        # Format with HTML template (same as 2025_hackathon.py)
-        return format_pardot_email(first_name=recipient_name, 
-                                   email_content=email_body, 
-                                   recipient_email="recipient@email.com", 
-                                   sender_name=sender_name)
+            # Extract Subject Line and Email Body using regex (same as generate_message)
+            subject_line_match = re.search(r"\*\*Subject Line:\*\*\s*(.*)", response_text)
+            email_body_match = re.search(r"\*\*Email Body:\*\*\s*(.*)", response_text, re.DOTALL)
+
+            subject_line = subject_line_match.group(1).strip() if subject_line_match else f"Re: Your Message"
+            email_body = email_body_match.group(1).strip() if email_body_match else f"Hi {recipient_name},\n\nThank you for your message. I'll be happy to help you with any questions about Affirm.\n\nBest regards,\n{sender_name}"
+
+            return format_pardot_email(first_name=recipient_name, 
+                                       email_content=email_body, 
+                                       recipient_email="recipient@email.com", 
+                                       sender_name=sender_name)
+
+        else:
+            fallback_response = f"Hi {recipient_name},\n\nThank you for your message. I'll be happy to help you with any questions about Affirm.\n\nBest regards,\n{sender_name}"
+            return format_pardot_email(first_name=recipient_name, 
+                                       email_content=fallback_response, 
+                                       recipient_email="recipient@email.com", 
+                                       sender_name=sender_name)
         
     except Exception as e:
-        logger.error(f"Error generating AI response: {e}")
-        logger.error(f"Error type: {type(e).__name__}")
-        if hasattr(e, 'response'):
-            logger.error(f"OpenAI response: {e.response}")
+        logger.error(f"❌ Error generating AI response: {e}")
         fallback_response = f"Hi {recipient_name},\n\nThank you for your message. I'll be happy to help you with any questions about Affirm.\n\nBest regards,\n{sender_name}"
         return format_pardot_email(first_name=recipient_name, 
                                    email_content=fallback_response, 
@@ -484,9 +521,16 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
             raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
             message_body = {'raw': raw_message}
             
+            logger.info(f"📧 Sending email to: {to_email}")
+            logger.info(f"📧 Subject: {subject}")
+            logger.info(f"📧 Message size: {len(raw_message)} characters")
+            
             response = service.users().messages().send(userId='me', body=message_body).execute()
             logger.info("📧 Email sent successfully via Gmail API!")
             logger.info(f"📧 Gmail Message ID: {response.get('id')}")
+            logger.info(f"📧 Full Gmail API Response: {response}")
+            logger.info(f"📧 Thread ID: {response.get('threadId')}")
+            logger.info(f"📧 Label IDs: {response.get('labelIds')}")
             
         except Exception as gmail_error:
             logger.error(f"❌ Gmail API Error: {gmail_error}")
@@ -508,91 +552,87 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
         raise e
 
 def reply_to_emails_with_accounts(accounts):
-    """Process email replies using accounts provided by Workato instead of querying Salesforce."""
-    try:
-        # Get emails needing replies using the provided accounts
-        emails_needing_replies = get_emails_needing_replies_with_accounts(accounts)
-        responses = []
+    """Process emails for specific accounts provided by Workato - exact copy from 2025_hackathon.py."""
+    emails_needing_replies = get_emails_needing_replies_with_accounts(accounts)
+    responses = []
 
-        logger.info(f"🔍 DEBUG: Found {len(emails_needing_replies)} emails needing replies")
-        if emails_needing_replies:
-            logger.info(f"🔍 DEBUG: First email details: {emails_needing_replies[0]}")
-        else:
-            logger.info("🔍 DEBUG: No emails found - this might be why no emails are sent")
+    logger.info(f"🔍 Processing {len(emails_needing_replies)} threads individually...")
+    
+    # Process each thread individually (don't group by sender)
+    for i, email in enumerate(emails_needing_replies):
+        thread_id = email.get('threadId', 'No ID')
+        logger.info(f"📧 Processing thread {i+1}/{len(emails_needing_replies)}: {thread_id}")
+        
+        # Extract contact information
+        contact_name = email.get('contact_name', email['sender'].split("@")[0].capitalize())
+        contact_email = email['sender']
+        account_id = email.get('account_id')
+        salesforce_id = email.get('salesforce_id')
+        
+        # Sender information (matching send_new_email)
+        sender_name = "Jake Morgan"
+        sender_title = "Business Development"
+        
+        # For single email, use it as the conversation context
+        conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {email['body']}"
+        
+        try:
+            # Generate AI response using the email content
+            ai_response = generate_ai_response(email['body'], sender_name, contact_name, conversation_content)
+            
+            # Send threaded reply
+            email_result = send_threaded_email_reply(
+                to_email=contact_email,
+                subject=email['subject'],
+                reply_content=ai_response,
+                original_message_id=email['id'],
+                sender_name=sender_name
+            )
+            
+            email_status = email_result['status'] if isinstance(email_result, dict) else email_result
+            tracking_info = f" | Tracking ID: {email_result.get('tracking_id', 'N/A')}" if isinstance(email_result, dict) else ""
+            
+            # Log in Salesforce (using account_id like send_new_email)
+            if account_id:
+                log_salesforce_activity(account_id, ai_response)
+            
+            logger.info(f"✅ Sent reply to thread {thread_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error processing email from {contact_email}: {e}")
+            email_status = "❌ Failed to process email"
+            email_result = None
+            tracking_info = ""
+            ai_response = "<p>Sorry, I couldn't generate a response at this time.</p>"
 
-        logger.info(f"Processing {len(emails_needing_replies)} threads individually...")
-        
-        # Process each thread individually
-        for i, email in enumerate(emails_needing_replies):
-            thread_id = email.get('threadId', 'No ID')
-            logger.info(f"Processing thread {i+1}/{len(emails_needing_replies)}: {thread_id}")
-            
-            # Extract contact information
-            contact_name = email.get('contact_name', email['sender'].split("@")[0].capitalize())
-            contact_email = email['sender']
-            account_id = email.get('account_id')
-            contact_id = email.get('contact_id')
-            
-            # Sender information
-            sender_name = "Jake Morgan"
-            
-            # For single email, use it as the conversation context
-            conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {email['body']}"
-            
-            try:
-                # Generate AI response using the email content
-                ai_response = generate_ai_response(email['body'], sender_name, contact_name, conversation_content)
-                
-                # Send threaded reply
-                email_result = send_threaded_email_reply(
-                    to_email=contact_email,
-                    subject=f"Re: {email['subject']}",
-                    reply_content=ai_response,
-                    original_message_id=email['id'],  # Use Gmail message ID like 2025_hackathon.py
-                    sender_name=sender_name
-                )
-                
-                # Log success
-                response_info = {
-                    'thread_id': thread_id,
-                    'contact_name': contact_name,
-                    'contact_email': contact_email,
-                    'subject': email['subject'],
-                    'status': 'success',
-                    'account_id': account_id,
-                    'contact_id': contact_id
-                }
-                
-                responses.append(response_info)
-                logger.info(f"Reply sent successfully to {contact_name} ({contact_email})")
-                
-            except Exception as e:
-                logger.error(f"Error processing email for {contact_name}: {e}")
-                response_info = {
-                    'thread_id': thread_id,
-                    'contact_name': contact_name,
-                    'contact_email': contact_email,
-                    'subject': email['subject'],
-                    'status': 'error',
-                    'error': str(e),
-                    'account_id': account_id,
-                    'contact_id': contact_id
-                }
-                responses.append(response_info)
-        
-        # Return results
-        successful_replies = len([r for r in responses if r['status'] == 'success'])
-        
-        return {
-            'message': f'Processed {len(emails_needing_replies)} conversation threads',
-            'emails_processed': len(emails_needing_replies),
-            'replies_sent': successful_replies,
-            'responses': responses
-        }
-        
-    except Exception as e:
-        logger.error(f"Error in reply_to_emails_with_accounts: {e}")
-        raise e
+        # Mark email as read
+        try:
+            mark_emails_as_read([email['id']])
+        except Exception as e:
+            logger.error(f"❌ Error marking email as read: {e}")
+
+        responses.append({
+            "sender": contact_email,
+            "contact_name": contact_name,
+            "account_id": account_id,
+            "salesforce_id": salesforce_id,
+            "thread_id": thread_id,
+            "subject": email['subject'],
+            "original_message": conversation_content,
+            "ai_response": ai_response,
+            "email_status": email_status + tracking_info,
+            "tracking_id": email_result.get('tracking_id') if isinstance(email_result, dict) else None,
+            "tracking_url": email_result.get('tracking_url') if isinstance(email_result, dict) else None,
+            "emails_processed": 1
+        })
+
+    logger.info(f"📊 Processed {len(responses)} conversation threads")
+    return {
+        "status": "success",
+        "message": f"Processed {len(responses)} conversation threads",
+        "emails_processed": len(responses),
+        "responses": responses
+    }
 
 def get_emails_needing_replies_with_accounts(accounts):
     """Get emails needing replies using accounts provided by Workato instead of Salesforce query."""
