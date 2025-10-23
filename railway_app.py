@@ -494,32 +494,47 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
         logger.info(f"⏱️ Waiting {delay:.1f} seconds before sending...")
         time.sleep(delay)
         
-        # Send email via Gmail API (Railway network can't reach SMTP)
-        # But use the same email formatting as 2025_hackathon.py
+        # Send email via Gmail API with proper threading
         try:
             creds = authenticate_gmail()
             service = build('gmail', 'v1', credentials=creds)
             
-            # Create message for Gmail API with same formatting as SMTP
+            # Get the original message to extract thread ID for proper threading
+            try:
+                original_message = service.users().messages().get(userId='me', id=original_message_id).execute()
+                thread_id = original_message.get('threadId')
+                logger.info(f"📧 Found original thread ID: {thread_id}")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not get original thread ID: {e}")
+                thread_id = None
+            
+            # Create message for Gmail API with proper threading
             message = MIMEMultipart()
             message["to"] = to_email
             message["subject"] = subject
             message["from"] = "jake.morgan@affirm.com"
             
-            # Add threading headers (same as SMTP version)
+            # Add threading headers for proper conversation threading
             if original_message_id:
                 original_message_id_header = get_original_message_id(original_message_id)
                 if original_message_id_header:
                     message['In-Reply-To'] = original_message_id_header
                     message['References'] = original_message_id_header
+                    logger.info(f"📧 Using original Message-ID: {original_message_id_header}")
                 else:
                     message['In-Reply-To'] = f"<{original_message_id}@gmail.com>"
                     message['References'] = f"<{original_message_id}@gmail.com>"
+                    logger.info(f"📧 Using Gmail message ID: {original_message_id}")
             
             message.attach(MIMEText(tracked_email_content, "html"))
             
             raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+            
+            # Use threadId in the message body for proper threading
             message_body = {'raw': raw_message}
+            if thread_id:
+                message_body['threadId'] = thread_id
+                logger.info(f"📧 Sending to existing thread: {thread_id}")
             
             logger.info(f"📧 Sending email to: {to_email}")
             logger.info(f"📧 Subject: {subject}")
@@ -528,7 +543,6 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
             response = service.users().messages().send(userId='me', body=message_body).execute()
             logger.info("📧 Email sent successfully via Gmail API!")
             logger.info(f"📧 Gmail Message ID: {response.get('id')}")
-            logger.info(f"📧 Full Gmail API Response: {response}")
             logger.info(f"📧 Thread ID: {response.get('threadId')}")
             logger.info(f"📧 Label IDs: {response.get('labelIds')}")
             
