@@ -785,9 +785,7 @@ def reply_to_emails_with_accounts(accounts):
             email_status = email_result['status'] if isinstance(email_result, dict) else email_result
             tracking_info = f" | Tracking ID: {email_result.get('tracking_id', 'N/A')}" if isinstance(email_result, dict) else ""
             
-            # Log in Salesforce (using account_id like send_new_email)
-            if account_id:
-                log_salesforce_activity(account_id, ai_response)
+            # Salesforce logging removed
             
             logger.info(f"✅ Sent reply to thread {thread_id}")
             
@@ -1532,9 +1530,7 @@ def workato_send_new_email():
         email_status = email_result['status'] if isinstance(email_result, dict) else email_result
         tracking_info = f" | Tracking ID: {email_result.get('tracking_id', 'N/A')}" if isinstance(email_result, dict) else ""
         
-        # Log in Salesforce if account_id provided
-        if account_id:
-            log_salesforce_activity(account_id, email_content)
+        # Salesforce logging removed
         
         logger.info(f"✅ Personalized email sent successfully to {contact_name}")
         
