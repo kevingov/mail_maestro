@@ -909,18 +909,33 @@ def get_emails_needing_replies_with_accounts(accounts):
     
     emails_needing_replies = []
     
-    # Check each conversation thread - only the latest email per thread
+    # Check each conversation thread - only reply if last message is from merchant
     for thread_id, emails_in_thread in thread_emails.items():
         # Sort emails by date to get the latest one
         emails_in_thread.sort(key=lambda x: x.get('date', ''), reverse=True)
         latest_email = emails_in_thread[0]  # Most recent email in this thread
         
-        # Check if this thread needs a reply (is the latest message from the contact?)
-        if not has_been_replied_to(latest_email['id'], service):
+        # Check if the latest message is from the merchant (not from us)
+        latest_sender = latest_email.get('sender', '').lower()
+        is_from_merchant = False
+        
+        # Check if latest sender is one of our Workato accounts (merchant)
+        for account_email in account_emails.keys():
+            if account_email in latest_sender:
+                is_from_merchant = True
+                break
+        
+        # Only reply if:
+        # 1. Latest message is from merchant (not from us)
+        # 2. Thread hasn't been replied to yet
+        if is_from_merchant and not has_been_replied_to(latest_email['id'], service):
             emails_needing_replies.append(latest_email)
-            logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply")
+            logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from merchant)")
         else:
-            logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} already has a reply")
+            if not is_from_merchant:
+                logger.info(f"Conversation thread {thread_id} - latest message is from us, skipping reply")
+            else:
+                logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} already has a reply")
 
     logger.info(f"Found {len(emails_needing_replies)} conversation threads needing replies")
     return emails_needing_replies
