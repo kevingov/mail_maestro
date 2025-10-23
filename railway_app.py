@@ -1455,18 +1455,32 @@ def workato_send_new_email():
         contact_title = data.get('contact_title', '')
         contact_phone = data.get('contact_phone', '')
         
-        # Account information
+        # Account information with proper type conversion
         account_name = data.get('account_name', '')
         account_industry = data.get('account_industry', 'Business')
         account_website = data.get('account_website', '')
         account_description = data.get('account_description', '')
-        account_revenue = data.get('account_revenue', 0)
-        account_employees = data.get('account_employees', 0)
+        
+        # Convert numeric fields safely
+        try:
+            account_revenue = int(data.get('account_revenue', 0)) if data.get('account_revenue', '') else 0
+        except (ValueError, TypeError):
+            account_revenue = 0
+            
+        try:
+            account_employees = int(data.get('account_employees', 0)) if data.get('account_employees', '') else 0
+        except (ValueError, TypeError):
+            account_employees = 0
+            
+        try:
+            account_gmv = float(data.get('account_gmv', 0)) if data.get('account_gmv', '') else 0
+        except (ValueError, TypeError):
+            account_gmv = 0
+        
         account_city = data.get('account_city', '')
         account_state = data.get('account_state', '')
         account_country = data.get('account_country', '')
         account_id = data.get('account_id', '')
-        account_gmv = data.get('account_gmv', 0)
         
         # Sender information
         sender_name = "Jake Morgan"
