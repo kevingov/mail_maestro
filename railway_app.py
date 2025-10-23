@@ -1534,6 +1534,12 @@ def workato_send_new_email():
         
         logger.info(f"✅ Personalized email sent successfully to {contact_name}")
         
+        # Clean email content - remove line breaks and extra whitespace
+        clean_email_body = email_content.replace('\n', ' ').replace('\r', ' ').strip()
+        # Remove multiple spaces
+        import re
+        clean_email_body = re.sub(r'\s+', ' ', clean_email_body)
+        
         return jsonify({
             "status": "success",
             "message": "Personalized email sent successfully",
@@ -1542,7 +1548,7 @@ def workato_send_new_email():
             "account": account_name,
             "email_status": email_status + tracking_info,
             "subject": subject_line,
-            "email_body": email_content,
+            "email_body": clean_email_body,
             "tracking_id": email_result.get('tracking_id') if isinstance(email_result, dict) else None,
             "tracking_url": email_result.get('tracking_url') if isinstance(email_result, dict) else None,
             "emails_sent": 1
