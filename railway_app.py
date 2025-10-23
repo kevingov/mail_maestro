@@ -605,11 +605,11 @@ def reply_to_emails_with_accounts(accounts):
             tracking_info = ""
             ai_response = "<p>Sorry, I couldn't generate a response at this time.</p>"
 
-        # Mark email as read
-        try:
-            mark_emails_as_read([email['id']])
-        except Exception as e:
-            logger.error(f"❌ Error marking email as read: {e}")
+        # Mark email as read (skip for now - function not implemented)
+        # try:
+        #     mark_emails_as_read([email['id']])
+        # except Exception as e:
+        #     logger.error(f"❌ Error marking email as read: {e}")
 
         responses.append({
             "sender": contact_email,
