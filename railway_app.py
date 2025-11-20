@@ -1447,6 +1447,142 @@ def workato_reply_status():
             'emails_needing_replies': 0
         }), 500
 
+def parse_activities(activities):
+    """
+    Parse activities from various formats (string, dict, list) into a normalized list.
+    Handles Workato/Salesforce format where activities might come as a string with Ruby hash syntax.
+    
+    Args:
+        activities: Activities in various formats (string, dict, list)
+    
+    Returns:
+        list: Normalized list of activity dictionaries
+    """
+    if not activities:
+        return []
+    
+    # If it's already a list, return as-is
+    if isinstance(activities, list):
+        return activities
+    
+    # If it's a string, try to parse it
+    if isinstance(activities, str):
+        try:
+            # First, try to parse as JSON
+            import json
+            parsed = json.loads(activities)
+            # If it's a dict with a "Task" key, extract the array
+            if isinstance(parsed, dict) and 'Task' in parsed:
+                return parsed['Task']
+            elif isinstance(parsed, list):
+                return parsed
+            elif isinstance(parsed, dict):
+                # If it's a dict, try to find any array values
+                for key, value in parsed.items():
+                    if isinstance(value, list):
+                        return value
+                return []
+        except (json.JSONDecodeError, ValueError):
+            # If JSON parsing fails, try to parse Ruby hash-like syntax
+            try:
+                import re
+                import ast
+                
+                # Replace Ruby hash syntax => with Python dict syntax :
+                # This is tricky because we need to handle nested structures
+                # Strategy: Convert Ruby hash to Python dict syntax, then use ast.literal_eval
+                
+                normalized = activities.strip()
+                
+                # Replace => with : (Ruby hash syntax to Python dict syntax)
+                # Be careful with spacing
+                normalized = re.sub(r'\s*=>\s*', ': ', normalized)
+                
+                # Replace single quotes with double quotes for string keys/values
+                # But preserve quotes inside strings - this is simplified
+                # Convert 'key': to "key": 
+                normalized = re.sub(r"'([^']+)':", r'"\1":', normalized)
+                
+                # Try to use ast.literal_eval to safely parse Python dict syntax
+                try:
+                    parsed = ast.literal_eval(normalized)
+                    if isinstance(parsed, dict) and 'Task' in parsed:
+                        return parsed['Task']
+                    elif isinstance(parsed, list):
+                        return parsed
+                    elif isinstance(parsed, dict):
+                        # Look for any array values
+                        for key, value in parsed.items():
+                            if isinstance(value, list):
+                                return value
+                        return []
+                except (ValueError, SyntaxError):
+                    # If ast.literal_eval fails, try JSON again after more normalization
+                    # Replace remaining single quotes
+                    normalized = normalized.replace("'", '"')
+                    parsed = json.loads(normalized)
+                    if isinstance(parsed, dict) and 'Task' in parsed:
+                        return parsed['Task']
+                    elif isinstance(parsed, list):
+                        return parsed
+                    elif isinstance(parsed, dict):
+                        for key, value in parsed.items():
+                            if isinstance(value, list):
+                                return value
+                        return []
+            except (json.JSONDecodeError, ValueError, SyntaxError, Exception) as e:
+                logger.warning(f"⚠️ Could not parse activities string: {e}")
+                logger.debug(f"⚠️ Activities string preview: {activities[:500]}")
+                # Last resort: simple string check for email indicators
+                # If we can't parse, at least check if there are obvious email activity indicators
+                activities_lower = activities.lower()
+                email_indicators = ['sent ai-generated outreach', 'sent', 'email', 'outreach']
+                if any(indicator in activities_lower for indicator in email_indicators):
+                    logger.info("⚠️ Found email activity indicators in activities string (couldn't fully parse, but detected email activity)")
+                    # Return a dummy activity to trigger the check
+                    return [{'Type': 'Task', 'Subject': 'Sent AI-Generated Outreach', 'Status': 'Completed'}]
+                return []
+    
+    # If it's a dict, try to extract arrays
+    if isinstance(activities, dict):
+        # Look for common keys like "Task", "tasks", etc.
+        for key in ['Task', 'tasks', 'Activities', 'activities', 'EmailMessage', 'emailmessages']:
+            if key in activities and isinstance(activities[key], list):
+                return activities[key]
+        # If no array found, return empty list
+        return []
+    
+    return []
+
+def normalize_activity(activity):
+    """
+    Normalize a Salesforce activity object to the expected format.
+    Maps Salesforce field names to the format expected by check_if_email_already_sent.
+    
+    Args:
+        activity: Activity dictionary from Salesforce
+    
+    Returns:
+        dict: Normalized activity dictionary
+    """
+    if not isinstance(activity, dict):
+        return {}
+    
+    # Map Salesforce fields to expected fields
+    normalized = {
+        'Type': activity.get('Type') or activity.get('TaskSubtype') or activity.get('attributes', {}).get('type', ''),
+        'Subject': activity.get('Subject', ''),
+        'Description': activity.get('Description') or activity.get('Description__c', ''),
+        'Status': activity.get('Status', ''),
+        'WhoId': activity.get('WhoId', ''),
+        'WhatId': activity.get('WhatId', ''),
+        'ToEmail': activity.get('ToEmail') or activity.get('ToAddress', ''),
+        'ContactEmail': activity.get('ContactEmail', '')
+    }
+    
+    # Clean up empty strings
+    return {k: v for k, v in normalized.items() if v}
+
 def check_if_email_already_sent(contact_email, activities=None):
     """
     Check if a first email has already been sent to this contact.
@@ -1454,28 +1590,33 @@ def check_if_email_already_sent(contact_email, activities=None):
     
     Args:
         contact_email: The email address to check
-        activities: Optional list of activities from Workato/Salesforce
+        activities: Optional list of activities from Workato/Salesforce (can be string, dict, or list)
     
     Returns:
         tuple: (has_been_sent: bool, reason: str)
     """
     contact_email_lower = contact_email.lower().strip()
     
+    # Parse and normalize activities
+    activities_list = parse_activities(activities)
+    normalized_activities = [normalize_activity(activity) for activity in activities_list]
+    
     # Check 1: Look through activities list for email-related activities
-    if activities and isinstance(activities, list):
-        for activity in activities:
-            if not isinstance(activity, dict):
+    if normalized_activities:
+        logger.info(f"📋 Checking {len(normalized_activities)} normalized activities for {contact_email}")
+        for activity in normalized_activities:
+            if not isinstance(activity, dict) or not activity:
                 continue
                 
             # Check for various activity types that indicate an email was sent
-            activity_type = activity.get('Type', '').lower()
-            activity_subject = activity.get('Subject', '').lower()
-            activity_description = activity.get('Description', '').lower()
-            activity_status = activity.get('Status', '').lower()
+            activity_type = str(activity.get('Type', '')).lower()
+            activity_subject = str(activity.get('Subject', '')).lower()
+            activity_description = str(activity.get('Description', '')).lower()
+            activity_status = str(activity.get('Status', '')).lower()
             
             # Check if this is an email-related activity (Task, EmailMessage, etc.)
             # Look for email indicators in type, subject, or description
-            email_indicators = ['email', 'sent', 'outreach', 'personalized']
+            email_indicators = ['email', 'sent', 'outreach', 'personalized', 'ai-generated']
             is_email_activity = any(
                 indicator in activity_type or 
                 indicator in activity_subject or 
@@ -1492,17 +1633,21 @@ def check_if_email_already_sent(contact_email, activities=None):
                 # Check if it's related to this contact
                 activity_who_id = activity.get('WhoId', '')
                 activity_what_id = activity.get('WhatId', '')
-                activity_to_email = activity.get('ToEmail', '').lower()
-                activity_contact_email = activity.get('ContactEmail', '').lower()
+                activity_to_email = str(activity.get('ToEmail', '')).lower()
+                activity_contact_email = str(activity.get('ContactEmail', '')).lower()
                 
                 # Check if activity is completed/sent (not just created)
-                is_completed = activity_status in ['completed', 'sent', 'closed'] if activity_status else True
+                # For Tasks with "Sent" in subject, consider them as completed
+                is_completed = (activity_status in ['completed', 'sent', 'closed'] or 
+                               'sent' in activity_subject) if activity_status or activity_subject else True
                 
                 # If the activity has the contact's email or is related to them
+                # Since WhoId might be nil in the data, we'll check the subject for email indicators
                 if (contact_email_lower in activity_to_email or 
                     contact_email_lower in activity_contact_email or
                     (activity_who_id and is_completed) or 
-                    (activity_what_id and is_completed)):
+                    (activity_what_id and is_completed) or
+                    ('sent' in activity_subject and 'outreach' in activity_subject)):
                     logger.info(f"📧 Found email activity in activities list for {contact_email}: {activity_subject or activity_type}")
                     return True, f"Email activity found in activities: {activity_subject or activity_type}"
     
@@ -1610,10 +1755,12 @@ def workato_send_new_email():
         account_country = data.get('account_country', '')
         account_id = data.get('account_id', '')
         
-        # Extract activities list from Workato request
+        # Extract activities from Workato request (can be string, dict, or list)
         activities = data.get('activities', [])
         if activities:
-            logger.info(f"📋 Received {len(activities)} activities from Workato")
+            logger.info(f"📋 Received activities from Workato (raw type: {type(activities).__name__})")
+            if isinstance(activities, str):
+                logger.info(f"📋 Activities string preview: {activities[:200]}...")
         
         # Sender information
         sender_name = "Jake Morgan"
@@ -1626,7 +1773,7 @@ def workato_send_new_email():
                 "timestamp": datetime.datetime.now().isoformat()
             }), 400
         
-        # Check if email has already been sent
+        # Check if email has already been sent (activities will be parsed inside the function)
         has_been_sent, reason = check_if_email_already_sent(contact_email, activities)
         
         if has_been_sent:
