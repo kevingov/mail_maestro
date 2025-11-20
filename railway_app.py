@@ -1447,6 +1447,105 @@ def workato_reply_status():
             'emails_needing_replies': 0
         }), 500
 
+def check_if_email_already_sent(contact_email, activities=None):
+    """
+    Check if a first email has already been sent to this contact.
+    Checks both the activities list (from Workato/Salesforce) and the database.
+    
+    Args:
+        contact_email: The email address to check
+        activities: Optional list of activities from Workato/Salesforce
+    
+    Returns:
+        tuple: (has_been_sent: bool, reason: str)
+    """
+    contact_email_lower = contact_email.lower().strip()
+    
+    # Check 1: Look through activities list for email-related activities
+    if activities and isinstance(activities, list):
+        for activity in activities:
+            if not isinstance(activity, dict):
+                continue
+                
+            # Check for various activity types that indicate an email was sent
+            activity_type = activity.get('Type', '').lower()
+            activity_subject = activity.get('Subject', '').lower()
+            activity_description = activity.get('Description', '').lower()
+            activity_status = activity.get('Status', '').lower()
+            
+            # Check if this is an email-related activity (Task, EmailMessage, etc.)
+            # Look for email indicators in type, subject, or description
+            email_indicators = ['email', 'sent', 'outreach', 'personalized']
+            is_email_activity = any(
+                indicator in activity_type or 
+                indicator in activity_subject or 
+                indicator in activity_description
+                for indicator in email_indicators
+            )
+            
+            # Also check if Type is explicitly an email type
+            email_types = ['email', 'emailmessage', 'task']
+            if activity_type in email_types:
+                is_email_activity = True
+            
+            if is_email_activity:
+                # Check if it's related to this contact
+                activity_who_id = activity.get('WhoId', '')
+                activity_what_id = activity.get('WhatId', '')
+                activity_to_email = activity.get('ToEmail', '').lower()
+                activity_contact_email = activity.get('ContactEmail', '').lower()
+                
+                # Check if activity is completed/sent (not just created)
+                is_completed = activity_status in ['completed', 'sent', 'closed'] if activity_status else True
+                
+                # If the activity has the contact's email or is related to them
+                if (contact_email_lower in activity_to_email or 
+                    contact_email_lower in activity_contact_email or
+                    (activity_who_id and is_completed) or 
+                    (activity_what_id and is_completed)):
+                    logger.info(f"📧 Found email activity in activities list for {contact_email}: {activity_subject or activity_type}")
+                    return True, f"Email activity found in activities: {activity_subject or activity_type}"
+    
+    # Check 2: Query database for previously sent emails to this recipient
+    if DB_AVAILABLE:
+        try:
+            conn = get_db_connection()
+            if conn:
+                cursor = conn.cursor()
+                # Check if we've sent any emails to this recipient
+                cursor.execute('''
+                    SELECT COUNT(*), MAX(sent_at)
+                    FROM email_tracking
+                    WHERE LOWER(recipient_email) = %s
+                ''', (contact_email_lower,))
+                
+                result = cursor.fetchone()
+                
+                if result and result[0] > 0:
+                    count = result[0]
+                    last_sent = result[1]
+                    
+                    # Get the campaign name from the most recent email
+                    cursor.execute('''
+                        SELECT campaign_name
+                        FROM email_tracking
+                        WHERE LOWER(recipient_email) = %s
+                        ORDER BY sent_at DESC
+                        LIMIT 1
+                    ''', (contact_email_lower,))
+                    campaign_result = cursor.fetchone()
+                    campaign = campaign_result[0] if campaign_result else "Unknown"
+                    
+                    conn.close()
+                    logger.info(f"📧 Found {count} previously sent email(s) to {contact_email} in database (last sent: {last_sent})")
+                    return True, f"Email already sent to this recipient ({count} time(s), last: {last_sent}, campaign: {campaign})"
+                
+                conn.close()
+        except Exception as e:
+            logger.warning(f"⚠️ Error checking database for existing emails: {e}")
+    
+    return False, "No previous email found"
+
 @app.route('/api/workato/send-new-email', methods=['POST'])
 def workato_send_new_email():
     """Workato endpoint for sending new personalized emails - replicates send_new_email from 2025_hackathon.py."""
@@ -1511,6 +1610,11 @@ def workato_send_new_email():
         account_country = data.get('account_country', '')
         account_id = data.get('account_id', '')
         
+        # Extract activities list from Workato request
+        activities = data.get('activities', [])
+        if activities:
+            logger.info(f"📋 Received {len(activities)} activities from Workato")
+        
         # Sender information
         sender_name = "Jake Morgan"
         sender_title = "Business Development"
@@ -1521,6 +1625,21 @@ def workato_send_new_email():
                 "message": "Missing required 'contact_email' parameter",
                 "timestamp": datetime.datetime.now().isoformat()
             }), 400
+        
+        # Check if email has already been sent
+        has_been_sent, reason = check_if_email_already_sent(contact_email, activities)
+        
+        if has_been_sent:
+            logger.info(f"⏭️ Skipping email send to {contact_email} - {reason}")
+            return jsonify({
+                "status": "skipped",
+                "message": f"Email already sent to this contact - {reason}",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "contact": contact_name,
+                "account": account_name,
+                "reason": reason,
+                "emails_sent": 0
+            }), 200
         
         logger.info(f"📧 Sending personalized email to {contact_name} ({contact_email})")
         logger.info(f"   Account: {account_name} ({account_industry})")
