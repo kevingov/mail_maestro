@@ -955,7 +955,10 @@ def home():
             'health_check': 'GET /api/health',
             'tracking_stats': 'GET /api/stats',
             'workato_reply_emails': 'POST /api/workato/reply-to-emails',
-            'workato_reply_status': 'POST /api/workato/reply-to-emails/status'
+            'workato_reply_status': 'POST /api/workato/reply-to-emails/status',
+            'workato_send_new_email': 'POST /api/workato/send-new-email',
+            'workato_check_email_sent': 'POST /api/workato/check-email-sent',
+            'workato_get_all_emails': 'GET/POST /api/workato/get-all-emails'
         }
     })
 
@@ -1174,6 +1177,268 @@ def health_check():
         'version': '1.0.0',
         'database': 'Memory mode (no persistence)'
     })
+
+@app.route('/api/workato/get-all-emails', methods=['POST', 'GET'])
+def workato_get_all_emails():
+    """
+    Workato endpoint to get all email tracking records.
+    Supports both GET and POST requests.
+    
+    Optional query parameters (GET) or body (POST):
+    {
+        "limit": 100,           # Max number of records (default: 1000)
+        "offset": 0,            # Pagination offset (default: 0)
+        "order_by": "sent_at",  # Field to order by (default: "sent_at")
+        "order_direction": "DESC",  # ASC or DESC (default: "DESC")
+        "campaign_name": "Workato Personalized Outreach",  # Filter by campaign
+        "recipient_email": "contact@example.com"  # Filter by recipient
+    }
+    
+    Returns:
+    {
+        "status": "success",
+        "total_count": 150,
+        "returned_count": 100,
+        "offset": 0,
+        "limit": 100,
+        "emails": [...]
+    }
+    """
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({
+                'error': 'Database not available',
+                'message': 'PostgreSQL database is not connected'
+            }), 503
+        
+        # Support both GET and POST
+        if request.method == 'GET':
+            data = request.args.to_dict()
+            # Convert string numbers to int
+            if 'limit' in data:
+                try:
+                    data['limit'] = int(data['limit'])
+                except (ValueError, TypeError):
+                    data['limit'] = 1000
+            if 'offset' in data:
+                try:
+                    data['offset'] = int(data['offset'])
+                except (ValueError, TypeError):
+                    data['offset'] = 0
+        else:
+            data = request.get_json() if request.is_json else {}
+        
+        # Set defaults
+        limit = min(int(data.get('limit', 1000)), 10000)  # Max 10,000 records
+        offset = int(data.get('offset', 0))
+        order_by = data.get('order_by', 'sent_at')
+        order_direction = data.get('order_direction', 'DESC').upper()
+        campaign_filter = data.get('campaign_name', '')
+        recipient_filter = data.get('recipient_email', '').lower()
+        
+        # Validate order_by field (prevent SQL injection)
+        allowed_order_fields = ['sent_at', 'created_at', 'recipient_email', 'subject', 'campaign_name', 'open_count']
+        if order_by not in allowed_order_fields:
+            order_by = 'sent_at'
+        
+        # Validate order direction
+        if order_direction not in ['ASC', 'DESC']:
+            order_direction = 'DESC'
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database connection failed',
+                'timestamp': datetime.datetime.now().isoformat()
+            }), 503
+        
+        cursor = conn.cursor()
+        
+        # Build WHERE clause
+        where_conditions = []
+        params = []
+        
+        if campaign_filter:
+            where_conditions.append("campaign_name = %s")
+            params.append(campaign_filter)
+        
+        if recipient_filter:
+            where_conditions.append("LOWER(recipient_email) = %s")
+            params.append(recipient_filter)
+        
+        where_clause = " WHERE " + " AND ".join(where_conditions) if where_conditions else ""
+        
+        # Get total count
+        count_query = f"SELECT COUNT(*) FROM email_tracking{where_clause}"
+        cursor.execute(count_query, params)
+        total_count = cursor.fetchone()[0]
+        
+        # Get records
+        query = f"""
+            SELECT 
+                id,
+                tracking_id,
+                recipient_email,
+                sender_email,
+                subject,
+                campaign_name,
+                sent_at,
+                open_count,
+                last_opened_at,
+                created_at
+            FROM email_tracking
+            {where_clause}
+            ORDER BY {order_by} {order_direction}
+            LIMIT %s OFFSET %s
+        """
+        params.extend([limit, offset])
+        cursor.execute(query, params)
+        
+        # Fetch all records
+        columns = [desc[0] for desc in cursor.description]
+        records = []
+        for row in cursor.fetchall():
+            record = dict(zip(columns, row))
+            # Convert datetime objects to ISO format strings
+            for key, value in record.items():
+                if isinstance(value, datetime.datetime):
+                    record[key] = value.isoformat()
+            records.append(record)
+        
+        conn.close()
+        
+        return jsonify({
+            'status': 'success',
+            'total_count': total_count,
+            'returned_count': len(records),
+            'offset': offset,
+            'limit': limit,
+            'order_by': order_by,
+            'order_direction': order_direction,
+            'emails': records,
+            'timestamp': datetime.datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting all emails: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'Error getting emails: {str(e)}',
+            'timestamp': datetime.datetime.now().isoformat()
+        }), 500
+
+@app.route('/api/workato/check-email-sent', methods=['POST'])
+def workato_check_email_sent():
+    """
+    Workato endpoint to check if an email has already been sent to a contact.
+    
+    Expected input format:
+    {
+        "contact_email": "contact@example.com"
+    }
+    
+    Returns:
+    {
+        "email_sent": true/false,
+        "count": number of emails sent,
+        "last_sent_at": timestamp,
+        "campaign_name": "campaign name"
+    }
+    """
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({
+                'error': 'Database not available',
+                'message': 'PostgreSQL database is not connected'
+            }), 503
+        
+        data = request.get_json() if request.is_json else {}
+        
+        if not data or 'contact_email' not in data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing required "contact_email" parameter',
+                'timestamp': datetime.datetime.now().isoformat()
+            }), 400
+        
+        contact_email = data.get('contact_email', '').lower().strip()
+        
+        if not contact_email:
+            return jsonify({
+                'status': 'error',
+                'message': 'contact_email cannot be empty',
+                'timestamp': datetime.datetime.now().isoformat()
+            }), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database connection failed',
+                'timestamp': datetime.datetime.now().isoformat()
+            }), 503
+        
+        cursor = conn.cursor()
+        
+        # Check if we've sent any emails to this recipient
+        cursor.execute('''
+            SELECT COUNT(*), MAX(sent_at)
+            FROM email_tracking
+            WHERE LOWER(recipient_email) = %s
+        ''', (contact_email,))
+        
+        result = cursor.fetchone()
+        
+        if result and result[0] > 0:
+            count = result[0]
+            last_sent = result[1]
+            
+            # Get the campaign name from the most recent email
+            cursor.execute('''
+                SELECT campaign_name, subject, tracking_id
+                FROM email_tracking
+                WHERE LOWER(recipient_email) = %s
+                ORDER BY sent_at DESC
+                LIMIT 1
+            ''', (contact_email,))
+            campaign_result = cursor.fetchone()
+            campaign = campaign_result[0] if campaign_result else "Unknown"
+            subject = campaign_result[1] if campaign_result else None
+            tracking_id = campaign_result[2] if campaign_result else None
+            
+            conn.close()
+            
+            return jsonify({
+                'status': 'success',
+                'email_sent': True,
+                'count': count,
+                'last_sent_at': last_sent.isoformat() if last_sent else None,
+                'campaign_name': campaign,
+                'last_subject': subject,
+                'last_tracking_id': tracking_id,
+                'timestamp': datetime.datetime.now().isoformat()
+            })
+        else:
+            conn.close()
+            return jsonify({
+                'status': 'success',
+                'email_sent': False,
+                'count': 0,
+                'last_sent_at': None,
+                'campaign_name': None,
+                'timestamp': datetime.datetime.now().isoformat()
+            })
+        
+    except Exception as e:
+        logger.error(f"❌ Error checking email sent status: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Error checking email status: {str(e)}',
+            'timestamp': datetime.datetime.now().isoformat()
+        }), 500
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
