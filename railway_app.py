@@ -2142,16 +2142,42 @@ def get_google_sheets_credentials():
         credentials_json = os.getenv('GOOGLE_SHEETS_CREDENTIALS_JSON')
         if not credentials_json:
             logger.warning("GOOGLE_SHEETS_CREDENTIALS_JSON environment variable not set")
+            logger.warning("Please set GOOGLE_SHEETS_CREDENTIALS_JSON in Railway Variables")
+            return None
+        
+        # Strip whitespace in case it was pasted with extra spaces
+        credentials_json = credentials_json.strip()
+        
+        # Check if it's empty after stripping
+        if not credentials_json:
+            logger.error("GOOGLE_SHEETS_CREDENTIALS_JSON is empty")
             return None
         
         import json
-        creds_info = json.loads(credentials_json)
+        try:
+            creds_info = json.loads(credentials_json)
+        except json.JSONDecodeError as json_error:
+            logger.error(f"❌ Invalid JSON in GOOGLE_SHEETS_CREDENTIALS_JSON: {json_error}")
+            logger.error(f"   First 100 chars: {credentials_json[:100]}")
+            logger.error("   Make sure you pasted the entire JSON file contents")
+            return None
+        
+        # Validate required fields
+        required_fields = ['type', 'project_id', 'private_key_id', 'private_key', 'client_email']
+        missing_fields = [field for field in required_fields if field not in creds_info]
+        if missing_fields:
+            logger.error(f"❌ Missing required fields in credentials: {missing_fields}")
+            return None
+        
         scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
         creds = Credentials.from_service_account_info(creds_info, scopes=scope)
         logger.info("✅ Google Sheets credentials loaded successfully")
+        logger.info(f"   Service account: {creds_info.get('client_email', 'unknown')}")
         return creds
     except Exception as e:
         logger.error(f"❌ Error getting Google Sheets credentials: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def write_to_google_sheets(records):
