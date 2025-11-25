@@ -26,9 +26,21 @@ from google.auth.transport.requests import Request
 # OpenAI import
 from openai import OpenAI
 
+# Google Sheets import
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials
+    GSPREAD_AVAILABLE = True
+except ImportError:
+    GSPREAD_AVAILABLE = False
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Log Google Sheets availability
+if not GSPREAD_AVAILABLE:
+    logger.warning("gspread not available - Google Sheets integration disabled")
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
@@ -2122,6 +2134,285 @@ def workato_send_new_email():
             "status": "error",
             "message": f"Error sending personalized email: {str(e)}",
             "timestamp": datetime.datetime.now().isoformat()
+        }), 500
+
+def get_google_sheets_credentials():
+    """Get Google Sheets API credentials from environment variables."""
+    try:
+        credentials_json = os.getenv('GOOGLE_SHEETS_CREDENTIALS_JSON')
+        if not credentials_json:
+            logger.warning("GOOGLE_SHEETS_CREDENTIALS_JSON environment variable not set")
+            return None
+        
+        import json
+        creds_info = json.loads(credentials_json)
+        scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+        creds = Credentials.from_service_account_info(creds_info, scopes=scope)
+        logger.info("✅ Google Sheets credentials loaded successfully")
+        return creds
+    except Exception as e:
+        logger.error(f"❌ Error getting Google Sheets credentials: {e}")
+        return None
+
+def write_to_google_sheets(records):
+    """
+    Write email tracking records to Google Sheets.
+    
+    Args:
+        records: List of dictionaries with email tracking data
+    
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    try:
+        if not GSPREAD_AVAILABLE:
+            return False, "gspread library not available"
+        
+        # Get credentials
+        creds = get_google_sheets_credentials()
+        if not creds:
+            return False, "Google Sheets credentials not available"
+        
+        # Connect to Google Sheets
+        gc = gspread.authorize(creds)
+        
+        # Get spreadsheet ID from environment variable
+        spreadsheet_id = os.getenv('GOOGLE_SHEETS_ID', '14fg3zEBhzyEILrT85imjNtOkasybpOM2FspbE-Wx9Rc')
+        sheet_name = os.getenv('GOOGLE_SHEETS_NAME', 'Send_Logs')
+        
+        try:
+            spreadsheet = gc.open_by_key(spreadsheet_id)
+        except Exception as e:
+            return False, f"Could not access Google Sheet: {str(e)}"
+        
+        # Get or create worksheet
+        try:
+            worksheet = spreadsheet.worksheet(sheet_name)
+            # Clear existing data (optional - comment out if you want to append)
+            # worksheet.clear()
+        except gspread.exceptions.WorksheetNotFound:
+            # Create worksheet if it doesn't exist
+            worksheet = spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=20)
+        
+        # Prepare headers
+        if records:
+            headers = list(records[0].keys())
+            # Format headers nicely
+            header_map = {
+                'id': 'ID',
+                'tracking_id': 'Tracking ID',
+                'recipient_email': 'Recipient Email',
+                'sender_email': 'Sender Email',
+                'subject': 'Subject',
+                'campaign_name': 'Campaign Name',
+                'sent_at': 'Sent At',
+                'open_count': 'Open Count',
+                'last_opened_at': 'Last Opened At',
+                'created_at': 'Created At'
+            }
+            formatted_headers = [header_map.get(h, h.replace('_', ' ').title()) for h in headers]
+        else:
+            formatted_headers = []
+            headers = []
+        
+        # Prepare data rows
+        data_rows = [formatted_headers]
+        for record in records:
+            row = []
+            for header in headers:
+                value = record.get(header, '')
+                # Format datetime objects
+                if isinstance(value, datetime.datetime):
+                    value = value.strftime('%Y-%m-%d %H:%M:%S')
+                elif value is None:
+                    value = ''
+                row.append(str(value))
+            data_rows.append(row)
+        
+        # Update worksheet
+        if data_rows:
+            # Clear and write new data (or append - see comment above)
+            worksheet.clear()
+            worksheet.update('A1', data_rows)
+            
+            # Format header row
+            worksheet.format('A1:Z1', {
+                'textFormat': {'bold': True},
+                'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
+            })
+        
+        return True, f"Successfully wrote {len(records)} records to {sheet_name}"
+        
+    except Exception as e:
+        logger.error(f"❌ Error writing to Google Sheets: {e}")
+        import traceback
+        traceback.print_exc()
+        return False, f"Error: {str(e)}"
+
+@app.route('/api/workato/dump-email-tracking', methods=['POST', 'GET'])
+def workato_dump_email_tracking():
+    """
+    Railway endpoint to trigger email tracking data dump.
+    Can be called manually or by an external cron service.
+    
+    Optional query parameters (GET) or body (POST):
+    {
+        "format": "csv|json|both",  # Default: both
+        "limit": 1000,              # Max records (default: all)
+        "since_days": 7,            # Last N days
+        "date": "2025-11-01"        # From specific date
+    }
+    
+    Returns JSON response with dump status.
+    Note: Files are saved to ephemeral filesystem on Railway.
+    For persistent storage, modify to upload to cloud storage.
+    """
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available',
+                'timestamp': datetime.datetime.now().isoformat()
+            }), 503
+        
+        # Support both GET and POST
+        if request.method == 'GET':
+            data = request.args.to_dict()
+        else:
+            data = request.get_json() if request.is_json else {}
+        
+        # Parse parameters
+        export_format = data.get('format', 'both')
+        try:
+            limit = int(data.get('limit')) if data.get('limit') else None
+        except (ValueError, TypeError):
+            limit = None
+        
+        try:
+            since_days = int(data.get('since_days')) if data.get('since_days') else None
+        except (ValueError, TypeError):
+            since_days = None
+        
+        date_filter = data.get('date', None)
+        
+        # Calculate date filter if since_days is provided
+        if since_days:
+            date_filter = (datetime.datetime.now() - datetime.timedelta(days=since_days)).date().isoformat()
+        
+        logger.info(f"📊 Starting email tracking dump via API...")
+        logger.info(f"   Format: {export_format}")
+        if limit:
+            logger.info(f"   Limit: {limit}")
+        if date_filter:
+            logger.info(f"   Date filter: {date_filter}")
+        
+        # Execute dump query
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database connection failed',
+                'timestamp': datetime.datetime.now().isoformat()
+            }), 503
+        
+        cursor = conn.cursor()
+        
+        # Build query
+        query = """
+            SELECT 
+                id,
+                tracking_id,
+                recipient_email,
+                sender_email,
+                subject,
+                campaign_name,
+                sent_at,
+                open_count,
+                last_opened_at,
+                created_at
+            FROM email_tracking
+        """
+        
+        params = []
+        conditions = []
+        
+        if date_filter:
+            conditions.append("sent_at >= %s")
+            params.append(date_filter)
+        
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        
+        query += " ORDER BY sent_at DESC"
+        
+        if limit:
+            query += f" LIMIT {limit}"
+        
+        cursor.execute(query, params)
+        columns = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+        
+        # Convert to list of dictionaries
+        records = []
+        for row in rows:
+            record = dict(zip(columns, row))
+            # Convert datetime to ISO format
+            for key, value in record.items():
+                if isinstance(value, datetime.datetime):
+                    record[key] = value.isoformat()
+            records.append(record)
+        
+        conn.close()
+        
+        logger.info(f"📊 Retrieved {len(records)} records")
+        
+        # Write to Google Sheets if credentials are available
+        sheets_success = False
+        sheets_message = ""
+        if GSPREAD_AVAILABLE and records:
+            sheets_success, sheets_message = write_to_google_sheets(records)
+            if sheets_success:
+                logger.info(f"✅ Successfully wrote {len(records)} records to Google Sheets")
+            else:
+                logger.warning(f"⚠️ Google Sheets write failed: {sheets_message}")
+        
+        # Return JSON response
+        response_data = {
+            'status': 'success',
+            'message': f'Retrieved {len(records)} email tracking records',
+            'count': len(records),
+            'format': export_format,
+            'timestamp': datetime.datetime.now().isoformat(),
+            'google_sheets': {
+                'written': sheets_success,
+                'message': sheets_message
+            },
+            'emails': records
+        }
+        
+        # If format includes CSV, add CSV data as string
+        if export_format in ['csv', 'both']:
+            import csv
+            import io
+            output = io.StringIO()
+            if records:
+                writer = csv.DictWriter(output, fieldnames=records[0].keys())
+                writer.writeheader()
+                for record in records:
+                    cleaned = {k: (v if v is not None else '') for k, v in record.items()}
+                    writer.writerow(cleaned)
+            response_data['csv_data'] = output.getvalue()
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        logger.error(f"❌ Error dumping email tracking: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'Error dumping data: {str(e)}',
+            'timestamp': datetime.datetime.now().isoformat()
         }), 500
 
 if __name__ == '__main__':

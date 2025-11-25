@@ -16,6 +16,8 @@
 !.gitignore
 !README.md
 !DUMP_SCRIPT_README.md
+!RAILWAY_SCHEDULE_SETUP.md
+!GOOGLE_SHEETS_SETUP.md
 
 # Ignore virtual environments
 flask_env/
