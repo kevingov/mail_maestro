@@ -1765,53 +1765,61 @@ def parse_activities(activities):
                 import re
                 import ast
                 
-                # Replace Ruby hash syntax => with Python dict syntax :
-                # This is tricky because we need to handle nested structures
-                # Strategy: Convert Ruby hash to Python dict syntax, then use ast.literal_eval
-                
+                # Handle the case where activities is a string containing Ruby array syntax
+                # Example: "[{"id"=>"...", "subject"=>"..."}, ...]"
                 normalized = activities.strip()
                 
-                # Replace => with : (Ruby hash syntax to Python dict syntax)
-                # Be careful with spacing
-                normalized = re.sub(r'\s*=>\s*', ': ', normalized)
+                # Remove outer quotes if present
+                if normalized.startswith('"') and normalized.endswith('"'):
+                    normalized = normalized[1:-1]
                 
-                # Replace single quotes with double quotes for string keys/values
-                # But preserve quotes inside strings - this is simplified
-                # Convert 'key': to "key": 
+                # Replace Ruby hash syntax => with : (but be careful with spacing)
+                # Pattern: "key"=>"value" becomes "key":"value"
+                normalized = re.sub(r'"([^"]+)"\s*=>\s*', r'"\1":', normalized)
+                normalized = re.sub(r"'([^']+)'\s*=>\s*", r'"\1":', normalized)
+                
+                # Replace single quotes with double quotes for keys
                 normalized = re.sub(r"'([^']+)':", r'"\1":', normalized)
                 
-                # Try to use ast.literal_eval to safely parse Python dict syntax
+                # Try to parse as JSON first
                 try:
-                    parsed = ast.literal_eval(normalized)
-                    if isinstance(parsed, dict) and 'Task' in parsed:
-                        return parsed['Task']
-                    elif isinstance(parsed, list):
+                    parsed = json.loads(normalized)
+                    if isinstance(parsed, list):
                         return parsed
                     elif isinstance(parsed, dict):
+                        if 'Task' in parsed:
+                            return parsed['Task']
                         # Look for any array values
                         for key, value in parsed.items():
                             if isinstance(value, list):
                                 return value
                         return []
-                except (ValueError, SyntaxError):
-                    # If ast.literal_eval fails, try JSON again after more normalization
-                    # Replace remaining single quotes
-                    normalized = normalized.replace("'", '"')
-                    parsed = json.loads(normalized)
-                    if isinstance(parsed, dict) and 'Task' in parsed:
-                        return parsed['Task']
-                    elif isinstance(parsed, list):
-                        return parsed
-                    elif isinstance(parsed, dict):
-                        for key, value in parsed.items():
-                            if isinstance(value, list):
-                                return value
-                        return []
+                except (json.JSONDecodeError, ValueError):
+                    # Try ast.literal_eval as fallback
+                    try:
+                        parsed = ast.literal_eval(normalized)
+                        if isinstance(parsed, list):
+                            return parsed
+                        elif isinstance(parsed, dict):
+                            if 'Task' in parsed:
+                                return parsed['Task']
+                            for key, value in parsed.items():
+                                if isinstance(value, list):
+                                    return value
+                            return []
+                    except (ValueError, SyntaxError):
+                        # Last resort: try to extract array using regex
+                        # Look for array-like structure
+                        array_match = re.search(r'\[(.*)\]', normalized, re.DOTALL)
+                        if array_match:
+                            logger.warning("⚠️ Could not fully parse activities, but found array structure")
+                            # Return a simple indicator that activities exist
+                            return [{'Type': 'Task', 'Subject': 'Sent AI-Generated Outreach', 'Status': 'Completed'}]
+                        raise
             except (json.JSONDecodeError, ValueError, SyntaxError, Exception) as e:
                 logger.warning(f"⚠️ Could not parse activities string: {e}")
                 logger.debug(f"⚠️ Activities string preview: {activities[:500]}")
                 # Last resort: simple string check for email indicators
-                # If we can't parse, at least check if there are obvious email activity indicators
                 activities_lower = activities.lower()
                 email_indicators = ['sent ai-generated outreach', 'sent', 'email', 'outreach']
                 if any(indicator in activities_lower for indicator in email_indicators):
@@ -1982,12 +1990,69 @@ def workato_send_new_email():
             data = request.get_json()
             logger.info(f"🔍 DEBUG: Parsed JSON data: {data}")
         except Exception as json_error:
-            logger.error(f"❌ JSON parsing error: {json_error}")
-            return jsonify({
-                "status": "error",
-                "message": f"Invalid JSON format: {str(json_error)}",
-                "timestamp": datetime.datetime.now().isoformat()
-            }), 400
+            # Try to parse manually if standard JSON parsing fails
+            logger.warning(f"⚠️ Standard JSON parsing failed: {json_error}, attempting manual parse")
+            try:
+                import json
+                import re
+                raw_data = request.get_data(as_text=True)
+                
+                # Try to fix common issues with activities field containing Ruby hash syntax
+                # Pattern: "activities": "[{"id"=>"...", ...}]"
+                if '"activities":' in raw_data:
+                    # Find the activities field - it might be a string containing Ruby syntax
+                    # Match: "activities": "..." where ... contains Ruby hash syntax
+                    activities_pattern = r'"activities"\s*:\s*"([^"]*(?:\\.[^"]*)*)"'
+                    activities_match = re.search(activities_pattern, raw_data, re.DOTALL)
+                    
+                    if activities_match:
+                        activities_str = activities_match.group(1)
+                        # Unescape the string
+                        activities_str = activities_str.replace('\\"', '"').replace('\\n', '\n')
+                        
+                        # Convert Ruby hash syntax to JSON
+                        # Replace "key"=>"value" with "key":"value"
+                        activities_fixed = re.sub(r'"([^"]+)"\s*=>\s*', r'"\1":', activities_str)
+                        activities_fixed = re.sub(r"'([^']+)'\s*=>\s*", r'"\1":', activities_fixed)
+                        # Replace single quotes with double quotes for keys
+                        activities_fixed = re.sub(r"'([^']+)':", r'"\1":', activities_fixed)
+                        
+                        # Replace the malformed activities in raw_data
+                        # Remove the quotes around the activities value and use the fixed version
+                        old_activities = activities_match.group(0)
+                        new_activities = f'"activities": {activities_fixed}'
+                        raw_data = raw_data.replace(old_activities, new_activities)
+                        logger.info(f"🔍 Fixed activities field: {old_activities[:100]}... -> {new_activities[:100]}...")
+                
+                data = json.loads(raw_data)
+                logger.info(f"🔍 DEBUG: Manually parsed JSON data successfully")
+            except Exception as manual_parse_error:
+                logger.error(f"❌ JSON parsing error (both standard and manual failed): {json_error}")
+                logger.error(f"   Manual parse error: {manual_parse_error}")
+                logger.error(f"   Raw data preview: {request.get_data(as_text=True)[:500]}")
+                # Try to continue anyway - extract what we can and set activities to empty
+                try:
+                    # Try to extract at least the contact_email which is critical
+                    raw_text = request.get_data(as_text=True)
+                    email_match = re.search(r'"contact_email"\s*:\s*"([^"]+)"', raw_text)
+                    if email_match:
+                        logger.warning("⚠️ Using fallback parsing - activities will be empty")
+                        # Create minimal data structure
+                        data = {'contact_email': email_match.group(1), 'activities': []}
+                        # Try to extract other fields
+                        for field in ['contact_name', 'account_name', 'account_id']:
+                            field_match = re.search(f'"{field}"\\s*:\\s*"([^"]+)"', raw_text)
+                            if field_match:
+                                data[field] = field_match.group(1)
+                    else:
+                        raise ValueError("Could not extract contact_email")
+                except Exception as fallback_error:
+                    logger.error(f"❌ Fallback parsing also failed: {fallback_error}")
+                    return jsonify({
+                        "status": "error",
+                        "message": f"Invalid JSON format: {str(json_error)}. Please check your Workato request format.",
+                        "timestamp": datetime.datetime.now().isoformat()
+                    }), 400
         
         if not data:
             return jsonify({
