@@ -2390,6 +2390,24 @@ def workato_dump_email_tracking():
         
         conn.close()
         
+        # Ensure records are sorted by sent_at in descending order (most recent first)
+        # This ensures proper ordering even if database query order is not preserved
+        if records:
+            def get_sent_at(record):
+                sent_at = record.get('sent_at', '')
+                # Handle both ISO format strings and datetime objects
+                if isinstance(sent_at, str):
+                    try:
+                        return datetime.datetime.fromisoformat(sent_at.replace('Z', '+00:00'))
+                    except (ValueError, AttributeError):
+                        return datetime.datetime.min
+                elif isinstance(sent_at, datetime.datetime):
+                    return sent_at
+                return datetime.datetime.min
+            
+            records.sort(key=get_sent_at, reverse=True)
+            logger.info(f"📊 Sorted {len(records)} records by sent_at (descending)")
+        
         logger.info(f"📊 Retrieved {len(records)} records")
         
         # Write to Google Sheets if credentials are available
