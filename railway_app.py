@@ -2180,6 +2180,70 @@ def get_google_sheets_credentials():
         traceback.print_exc()
         return None
 
+def log_dump_to_automation_logs(gc, spreadsheet_id, record_count):
+    """
+    Log dump execution to Automation Logs tab.
+    
+    Args:
+        gc: gspread client
+        spreadsheet_id: Google Sheet ID
+        record_count: Number of records dumped
+    
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    try:
+        spreadsheet = gc.open_by_key(spreadsheet_id)
+        log_sheet_name = 'Automation Logs'
+        
+        # Get or create Automation Logs worksheet
+        try:
+            log_worksheet = spreadsheet.worksheet(log_sheet_name)
+        except gspread.exceptions.WorksheetNotFound:
+            # Create worksheet if it doesn't exist
+            log_worksheet = spreadsheet.add_worksheet(title=log_sheet_name, rows=1000, cols=10)
+            # Add headers if it's a new sheet
+            log_worksheet.update('A1:D1', [['Timestamp', 'Status', 'Records Dumped', 'Notes']])
+            # Format header row
+            log_worksheet.format('A1:D1', {
+                'textFormat': {'bold': True},
+                'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
+            })
+        
+        # Get current timestamp
+        timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Prepare log entry
+        log_entry = [
+            timestamp,
+            'Success',
+            record_count,
+            f'Daily dump completed - {record_count} email records'
+        ]
+        
+        # Append to the sheet (get next available row)
+        try:
+            # Get all values to find next row
+            all_values = log_worksheet.get_all_values()
+            next_row = len(all_values) + 1
+            
+            # If sheet is empty except headers, start at row 2
+            if len(all_values) <= 1:
+                next_row = 2
+            
+            # Append the log entry
+            log_worksheet.append_row(log_entry)
+            
+            logger.info(f"✅ Logged dump execution to Automation Logs: {timestamp}")
+            return True, f"Logged to Automation Logs"
+        except Exception as e:
+            logger.error(f"❌ Error appending to Automation Logs: {e}")
+            return False, str(e)
+        
+    except Exception as e:
+        logger.error(f"❌ Error logging to Automation Logs: {e}")
+        return False, str(e)
+
 def write_to_google_sheets(records):
     """
     Write email tracking records to Google Sheets.
@@ -2266,6 +2330,13 @@ def write_to_google_sheets(records):
                 'textFormat': {'bold': True},
                 'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
             })
+        
+        # Log to Automation Logs tab
+        log_success, log_message = log_dump_to_automation_logs(gc, spreadsheet_id, len(records))
+        if not log_success:
+            logger.warning(f"⚠️ Failed to log to Automation Logs: {log_message}")
+        else:
+            logger.info(f"✅ {log_message}")
         
         return True, f"Successfully wrote {len(records)} records to {sheet_name}"
         
