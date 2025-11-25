@@ -9,11 +9,13 @@
 !railway_app.py
 !2025_hackathon.py
 !email_tracker.py
+!dump_email_tracking.py
 !requirements.txt
 !Procfile
 !runtime.txt
 !.gitignore
 !README.md
+!DUMP_SCRIPT_README.md
 
 # Ignore virtual environments
 flask_env/
