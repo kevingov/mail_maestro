@@ -1202,7 +1202,7 @@ def workato_get_all_emails():
         "offset": 0,            # Pagination offset (default: 0)
         "order_by": "sent_at",  # Field to order by (default: "sent_at")
         "order_direction": "DESC",  # ASC or DESC (default: "DESC")
-        "campaign_name": "Workato Personalized Outreach",  # Filter by campaign
+        "campaign_name": "MSS Signed But Not Activated Campaign",  # Filter by campaign
         "recipient_email": "contact@example.com"  # Filter by recipient
     }
     
@@ -2163,7 +2163,7 @@ def workato_send_new_email():
             merchant_name=contact_name,
             subject_line=subject_line,
             email_content=formatted_email,
-            campaign_name="Workato Personalized Outreach"
+            campaign_name="MSS Signed But Not Activated Campaign"
         )
         
         email_status = email_result['status'] if isinstance(email_result, dict) else email_result
