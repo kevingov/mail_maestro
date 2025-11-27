@@ -1634,6 +1634,10 @@ def workato_reply_to_emails():
                     clean_response = ''
                 
                 # Build email detail object
+                # Extract tracking_id - this is the tracking ID of the reply email that was sent
+                tracking_id = response.get('tracking_id') or None
+                tracking_url = response.get('tracking_url') or None
+                
                 email_detail = {
                     "thread_id": response.get('thread_id', 'No ID'),
                     "sender": response.get('sender', ''),
@@ -1642,8 +1646,10 @@ def workato_reply_to_emails():
                     "original_message": response.get('original_message', ''),
                     "ai_response": clean_response,
                     "email_status": response.get('email_status', ''),
-                    "tracking_id": response.get('tracking_id'),
-                    "tracking_url": response.get('tracking_url'),
+                    "reply_tracking_id": tracking_id,  # Tracking ID of the reply email that was sent
+                    "reply_tracking_url": tracking_url,  # Tracking URL for the reply email
+                    "tracking_id": tracking_id,  # Also include as tracking_id for backward compatibility
+                    "tracking_url": tracking_url,  # Also include as tracking_url for backward compatibility
                     "account_id": response.get('account_id'),
                     "salesforce_id": response.get('salesforce_id')
                 }
