@@ -163,9 +163,17 @@ def init_database():
                 sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 open_count INTEGER DEFAULT 0,
                 last_opened_at TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                sfdc_task_id VARCHAR(255)
             )
         ''')
+        
+        # Add sfdc_task_id column if it doesn't exist (for existing databases)
+        try:
+            cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS sfdc_task_id VARCHAR(255)')
+        except Exception as e:
+            # Column might already exist, ignore error
+            logger.debug(f"sfdc_task_id column check: {e}")
         
         # Email opens table
         cursor.execute('''
@@ -970,7 +978,8 @@ def home():
             'workato_reply_status': 'POST /api/workato/reply-to-emails/status',
             'workato_send_new_email': 'POST /api/workato/send-new-email',
             'workato_check_email_sent': 'POST /api/workato/check-email-sent',
-            'workato_get_all_emails': 'GET/POST /api/workato/get-all-emails'
+            'workato_get_all_emails': 'GET/POST /api/workato/get-all-emails',
+            'workato_update_sfdc_task_id': 'POST /api/workato/update-sfdc-task-id'
         }
     })
 
@@ -2385,7 +2394,8 @@ def write_to_google_sheets(records):
                 'sent_at': 'Sent At',
                 'open_count': 'Open Count',
                 'last_opened_at': 'Last Opened At',
-                'created_at': 'Created At'
+                'created_at': 'Created At',
+                'sfdc_task_id': 'SFDC Task ID'
             }
             formatted_headers = [header_map.get(h, h.replace('_', ' ').title()) for h in headers]
         else:
@@ -2432,6 +2442,110 @@ def write_to_google_sheets(records):
         import traceback
         traceback.print_exc()
         return False, f"Error: {str(e)}"
+
+@app.route('/api/workato/update-sfdc-task-id', methods=['POST'])
+def workato_update_sfdc_task_id():
+    """
+    Workato endpoint to update SFDC Task ID for a tracking ID.
+    
+    Expected input format:
+    {
+        "tracking_id": "abc-123-def-456",
+        "sfdc_task_id": "00TVB00000EbjuB2AR"
+    }
+    
+    Returns:
+    {
+        "status": "success",
+        "message": "SFDC Task ID updated successfully",
+        "tracking_id": "abc-123-def-456",
+        "sfdc_task_id": "00TVB00000EbjuB2AR"
+    }
+    """
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available',
+                'timestamp': datetime.datetime.now().isoformat()
+            }), 503
+        
+        data = request.get_json() if request.is_json else {}
+        
+        # Validate input
+        tracking_id = data.get('tracking_id', '').strip()
+        sfdc_task_id = data.get('sfdc_task_id', '').strip()
+        
+        if not tracking_id:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing required "tracking_id" parameter',
+                'timestamp': datetime.datetime.now().isoformat()
+            }), 400
+        
+        if not sfdc_task_id:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing required "sfdc_task_id" parameter',
+                'timestamp': datetime.datetime.now().isoformat()
+            }), 400
+        
+        logger.info(f"📝 Updating SFDC Task ID for tracking_id: {tracking_id} -> {sfdc_task_id}")
+        
+        # Connect to database
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database connection failed',
+                'timestamp': datetime.datetime.now().isoformat()
+            }), 503
+        
+        cursor = conn.cursor()
+        
+        # Check if tracking_id exists
+        cursor.execute('SELECT id, recipient_email, subject FROM email_tracking WHERE tracking_id = %s', (tracking_id,))
+        email_record = cursor.fetchone()
+        
+        if not email_record:
+            conn.close()
+            return jsonify({
+                'status': 'error',
+                'message': f'Tracking ID not found: {tracking_id}',
+                'timestamp': datetime.datetime.now().isoformat()
+            }), 404
+        
+        # Update the SFDC Task ID
+        cursor.execute('''
+            UPDATE email_tracking
+            SET sfdc_task_id = %s
+            WHERE tracking_id = %s
+        ''', (sfdc_task_id, tracking_id))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Successfully updated SFDC Task ID for tracking_id: {tracking_id}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'SFDC Task ID updated successfully',
+            'tracking_id': tracking_id,
+            'sfdc_task_id': sfdc_task_id,
+            'recipient_email': email_record[1],
+            'subject': email_record[2],
+            'timestamp': datetime.datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error updating SFDC Task ID: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'Error updating SFDC Task ID: {str(e)}',
+            'timestamp': datetime.datetime.now().isoformat()
+        }), 500
 
 @app.route('/api/workato/dump-email-tracking', methods=['POST', 'GET'])
 def workato_dump_email_tracking():
@@ -2513,7 +2627,8 @@ def workato_dump_email_tracking():
                 sent_at,
                 open_count,
                 last_opened_at,
-                created_at
+                created_at,
+                sfdc_task_id
             FROM email_tracking
         """
         
