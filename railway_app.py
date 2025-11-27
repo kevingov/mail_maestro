@@ -1617,30 +1617,46 @@ def workato_reply_to_emails():
         result = reply_to_emails_with_accounts(accounts)
         logger.info("✅ Email processing completed")
         
-        # Extract AI response content from results for clean text response
-        ai_responses = []
-        if 'responses' in result:
+        # Format response with actual email and thread details
+        email_details = []
+        if 'responses' in result and result['responses']:
             for response in result['responses']:
-                if 'ai_response' in response:
-                    # Clean the AI response - remove HTML tags and line breaks
-                    import re
-                    clean_response = response['ai_response']
+                # Clean AI response for display
+                import re
+                ai_response_text = response.get('ai_response', '')
+                if ai_response_text:
                     # Remove HTML tags
-                    clean_response = re.sub(r'<[^>]+>', '', clean_response)
+                    clean_response = re.sub(r'<[^>]+>', '', ai_response_text)
                     # Remove line breaks and extra whitespace
                     clean_response = clean_response.replace('\n', ' ').replace('\r', ' ').strip()
                     clean_response = re.sub(r'\s+', ' ', clean_response)
-                    ai_responses.append(clean_response)
+                else:
+                    clean_response = ''
+                
+                # Build email detail object
+                email_detail = {
+                    "thread_id": response.get('thread_id', 'No ID'),
+                    "sender": response.get('sender', ''),
+                    "contact_name": response.get('contact_name', ''),
+                    "subject": response.get('subject', ''),
+                    "original_message": response.get('original_message', ''),
+                    "ai_response": clean_response,
+                    "email_status": response.get('email_status', ''),
+                    "tracking_id": response.get('tracking_id'),
+                    "tracking_url": response.get('tracking_url'),
+                    "account_id": response.get('account_id'),
+                    "salesforce_id": response.get('salesforce_id')
+                }
+                email_details.append(email_detail)
         
         return jsonify({
             'status': 'success',
-            'message': 'Reply to emails completed successfully',
+            'message': f'Processed {result.get("emails_processed", 0)} conversation thread(s)',
             'timestamp': datetime.datetime.now().isoformat(),
             'accounts_processed': len(accounts),
             'emails_processed': result.get('emails_processed', 0),
-            'replies_sent': result.get('replies_sent', 0),
-            'ai_responses': ai_responses,
-            'results': result
+            'replies_sent': result.get('replies_sent', result.get('emails_processed', 0)),
+            'emails': email_details
         })
         
     except Exception as e:
