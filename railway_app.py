@@ -2669,23 +2669,61 @@ def workato_update_sfdc_task_id():
                 'timestamp': datetime.datetime.now().isoformat()
             }), 503
         
-        data = request.get_json() if request.is_json else {}
+        # Try to get JSON data, with better error handling
+        data = {}
+        try:
+            if request.is_json:
+                data = request.get_json(force=True) or {}
+            elif request.content_type and 'application/json' in request.content_type:
+                data = request.get_json(force=True) or {}
+            else:
+                # Try to get from form data or args as fallback
+                data = {
+                    'tracking_id': request.form.get('tracking_id') or request.args.get('tracking_id', ''),
+                    'sfdc_task_id': request.form.get('sfdc_task_id') or request.args.get('sfdc_task_id', '')
+                }
+        except Exception as json_error:
+            logger.error(f"❌ JSON parsing error: {json_error}")
+            # Try to get raw data and parse manually
+            try:
+                import json
+                raw_data = request.get_data(as_text=True)
+                if raw_data:
+                    data = json.loads(raw_data)
+                else:
+                    data = {}
+            except Exception as parse_error:
+                logger.error(f"❌ Failed to parse request data: {parse_error}")
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Invalid request format. Expected JSON with tracking_id and sfdc_task_id. Error: {str(parse_error)}',
+                    'timestamp': datetime.datetime.now().isoformat()
+                }), 400
+        
+        # Log received data for debugging
+        logger.info(f"📥 Received request data: {data}")
+        logger.info(f"📥 Request content type: {request.content_type}")
+        logger.info(f"📥 Request method: {request.method}")
         
         # Validate input
-        tracking_id = data.get('tracking_id', '').strip()
-        sfdc_task_id = data.get('sfdc_task_id', '').strip()
+        tracking_id = str(data.get('tracking_id', '')).strip() if data.get('tracking_id') else ''
+        sfdc_task_id = str(data.get('sfdc_task_id', '')).strip() if data.get('sfdc_task_id') else ''
         
         if not tracking_id:
+            logger.warning(f"⚠️ Missing tracking_id. Received data: {data}")
             return jsonify({
                 'status': 'error',
                 'message': 'Missing required "tracking_id" parameter',
+                'received_data': str(data),
                 'timestamp': datetime.datetime.now().isoformat()
             }), 400
         
         if not sfdc_task_id:
+            logger.warning(f"⚠️ Missing sfdc_task_id. Received data: {data}")
             return jsonify({
                 'status': 'error',
                 'message': 'Missing required "sfdc_task_id" parameter',
+                'received_data': str(data),
                 'timestamp': datetime.datetime.now().isoformat()
             }), 400
         
