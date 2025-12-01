@@ -164,7 +164,8 @@ def init_database():
                 open_count INTEGER DEFAULT 0,
                 last_opened_at TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                sfdc_task_id VARCHAR(255)
+                sfdc_task_id VARCHAR(255),
+                status VARCHAR(50) DEFAULT 'AI Outbound Email'
             )
         ''')
         
@@ -174,6 +175,21 @@ def init_database():
         except Exception as e:
             # Column might already exist, ignore error
             logger.debug(f"sfdc_task_id column check: {e}")
+        
+        # Add status column if it doesn't exist (for existing databases)
+        try:
+            cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT \'AI Outbound Email\'')
+            # Update existing records without status to have default status
+            cursor.execute('UPDATE email_tracking SET status = \'AI Outbound Email\' WHERE status IS NULL')
+            # Update records with opens to 'Email Open'
+            cursor.execute('''
+                UPDATE email_tracking 
+                SET status = 'Email Open' 
+                WHERE open_count > 0 AND status = 'AI Outbound Email'
+            ''')
+        except Exception as e:
+            # Column might already exist, ignore error
+            logger.debug(f"status column check: {e}")
         
         # Email opens table
         cursor.execute('''
@@ -625,6 +641,23 @@ def send_email(to_email, merchant_name, subject_line, email_content, campaign_na
         
     except Exception as e:
         logger.error(f"Error sending email: {e}")
+        # Update status to 'Email Bounced' if tracking_id exists
+        if tracking_id and DB_AVAILABLE:
+            try:
+                conn = get_db_connection()
+                if conn:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        UPDATE email_tracking 
+                        SET status = 'Email Bounced'
+                        WHERE tracking_id = %s
+                    ''', (tracking_id,))
+                    conn.commit()
+                    conn.close()
+                    logger.info(f"📧 Marked email as bounced: {tracking_id}")
+            except Exception as db_error:
+                logger.error(f"Error updating bounce status: {db_error}")
+        
         return {
             'status': 'error',
             'error': str(e)
@@ -747,6 +780,22 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
             
         except Exception as gmail_error:
             logger.error(f"❌ Gmail API Error: {gmail_error}")
+            # Update status to 'Email Bounced' if tracking_id exists
+            if tracking_id and DB_AVAILABLE:
+                try:
+                    conn = get_db_connection()
+                    if conn:
+                        cursor = conn.cursor()
+                        cursor.execute('''
+                            UPDATE email_tracking 
+                            SET status = 'Email Bounced'
+                            WHERE tracking_id = %s
+                        ''', (tracking_id,))
+                        conn.commit()
+                        conn.close()
+                        logger.info(f"📧 Marked threaded email as bounced due to Gmail API error: {tracking_id}")
+                except Exception as db_error:
+                    logger.error(f"Error updating bounce status: {db_error}")
             raise gmail_error
         
         logger.info("📧 EMAIL SENT SUCCESSFULLY!")
@@ -1016,9 +1065,9 @@ def track_email_send():
         
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO email_tracking (tracking_id, recipient_email, sender_email, subject, campaign_name)
-            VALUES (%s, %s, %s, %s, %s)
-        ''', (tracking_id, recipient_email, sender_email, subject, campaign_name))
+            INSERT INTO email_tracking (tracking_id, recipient_email, sender_email, subject, campaign_name, status)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        ''', (tracking_id, recipient_email, sender_email, subject, campaign_name, 'AI Outbound Email'))
         
         conn.commit()
         conn.close()
@@ -1064,10 +1113,10 @@ def track_pixel(tracking_id):
                         logger.warning(f"Tracking ID {tracking_id} not found in email_tracking table")
                         # Create a placeholder record
                         cursor.execute('''
-                            INSERT INTO email_tracking (tracking_id, recipient_email, sender_email, subject, campaign_name)
-                            VALUES (%s, %s, %s, %s, %s)
+                            INSERT INTO email_tracking (tracking_id, recipient_email, sender_email, subject, campaign_name, status)
+                            VALUES (%s, %s, %s, %s, %s, %s)
                             ON CONFLICT (tracking_id) DO NOTHING
-                        ''', (tracking_id, 'unknown@example.com', 'unknown@example.com', 'Unknown', 'Unknown'))
+                        ''', (tracking_id, 'unknown@example.com', 'unknown@example.com', 'Unknown', 'Unknown', 'AI Outbound Email'))
                         conn.commit()
                     
                         # Get the sent_at time for the new record
@@ -1102,10 +1151,12 @@ def track_pixel(tracking_id):
                     
                     # Only update open count if it's not a false open
                     if not is_false_open:
-                    # Update open count
+                    # Update open count and status
                         cursor.execute('''
                             UPDATE email_tracking 
-                            SET open_count = open_count + 1, last_opened_at = CURRENT_TIMESTAMP
+                            SET open_count = open_count + 1, 
+                                last_opened_at = CURRENT_TIMESTAMP,
+                                status = 'Email Open'
                             WHERE tracking_id = %s
                         ''', (tracking_id,))
                         
@@ -1307,7 +1358,9 @@ def workato_get_all_emails():
                 sent_at,
                 open_count,
                 last_opened_at,
-                created_at
+                created_at,
+                sfdc_task_id,
+                status
             FROM email_tracking
             {where_clause}
             ORDER BY {order_by} {order_direction}
@@ -2395,7 +2448,8 @@ def write_to_google_sheets(records):
                 'open_count': 'Open Count',
                 'last_opened_at': 'Last Opened At',
                 'created_at': 'Created At',
-                'sfdc_task_id': 'SFDC Task ID'
+                'sfdc_task_id': 'SFDC Task ID',
+                'status': 'Status'
             }
             formatted_headers = [header_map.get(h, h.replace('_', ' ').title()) for h in headers]
         else:
