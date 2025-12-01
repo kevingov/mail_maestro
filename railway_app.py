@@ -191,6 +191,22 @@ def init_database():
             # Column might already exist, ignore error
             logger.debug(f"status column check: {e}")
         
+        # Update all NULL sfdc_task_id values to '0'
+        try:
+            cursor.execute('SELECT COUNT(*) FROM email_tracking WHERE sfdc_task_id IS NULL')
+            null_count = cursor.fetchone()[0]
+            if null_count > 0:
+                logger.info(f"📝 Found {null_count} records with NULL sfdc_task_id, updating to '0'...")
+                cursor.execute('''
+                    UPDATE email_tracking
+                    SET sfdc_task_id = '0'
+                    WHERE sfdc_task_id IS NULL
+                ''')
+                updated_count = cursor.rowcount
+                logger.info(f"✅ Updated {updated_count} NULL sfdc_task_id values to '0'")
+        except Exception as e:
+            logger.warning(f"⚠️ Error updating NULL sfdc_task_id values: {e}")
+        
         # Email opens table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS email_opens (
