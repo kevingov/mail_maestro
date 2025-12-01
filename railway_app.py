@@ -1028,6 +1028,7 @@ def home():
             'workato_send_new_email': 'POST /api/workato/send-new-email',
             'workato_check_email_sent': 'POST /api/workato/check-email-sent',
             'workato_get_all_emails': 'GET/POST /api/workato/get-all-emails',
+            'workato_get_all_email_opens': 'GET/POST /api/workato/get-all-email-opens',
             'workato_update_sfdc_task_id': 'POST /api/workato/update-sfdc-task-id'
         }
     })
@@ -1401,6 +1402,150 @@ def workato_get_all_emails():
         return jsonify({
             'status': 'error',
             'message': f'Error getting emails: {str(e)}',
+            'timestamp': datetime.datetime.now().isoformat()
+        }), 500
+
+@app.route('/api/workato/get-all-email-opens', methods=['POST', 'GET'])
+def workato_get_all_email_opens():
+    """
+    Workato endpoint to get all email open records from email_opens table.
+    Supports both GET and POST requests.
+    
+    Optional query parameters (GET) or body (POST):
+    {
+        "limit": 100,           # Max number of records (default: 1000)
+        "offset": 0,           # Pagination offset (default: 0)
+        "order_by": "opened_at",  # Field to order by (default: "opened_at")
+        "order_direction": "DESC",  # ASC or DESC (default: "DESC")
+        "tracking_id": "abc-123-def-456"  # Filter by tracking_id
+    }
+    
+    Returns:
+    {
+        "status": "success",
+        "total_count": 150,
+        "returned_count": 100,
+        "offset": 0,
+        "limit": 100,
+        "opens": [
+            {
+                "id": 1,
+                "tracking_id": "abc-123-def-456",
+                "opened_at": "2025-11-27T18:00:00",
+                "user_agent": "Mozilla/5.0...",
+                "ip_address": "192.168.1.1",
+                "referer": "https://..."
+            },
+            ...
+        ]
+    }
+    """
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available',
+                'timestamp': datetime.datetime.now().isoformat()
+            }), 503
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database connection failed',
+                'timestamp': datetime.datetime.now().isoformat()
+            }), 503
+        
+        cursor = conn.cursor()
+        
+        # Get parameters from request
+        if request.method == 'GET':
+            limit = int(request.args.get('limit', 1000))
+            offset = int(request.args.get('offset', 0))
+            order_by = request.args.get('order_by', 'opened_at')
+            order_direction = request.args.get('order_direction', 'DESC').upper()
+            tracking_id_filter = request.args.get('tracking_id', '').strip()
+        else:  # POST
+            data = request.get_json() if request.is_json else {}
+            limit = int(data.get('limit', 1000))
+            offset = int(data.get('offset', 0))
+            order_by = data.get('order_by', 'opened_at')
+            order_direction = data.get('order_direction', 'DESC').upper()
+            tracking_id_filter = data.get('tracking_id', '').strip()
+        
+        # Validate order_by field (prevent SQL injection)
+        allowed_order_fields = ['id', 'tracking_id', 'opened_at', 'user_agent', 'ip_address', 'referer']
+        if order_by not in allowed_order_fields:
+            order_by = 'opened_at'
+        
+        # Validate order_direction
+        if order_direction not in ['ASC', 'DESC']:
+            order_direction = 'DESC'
+        
+        # Build WHERE clause
+        where_conditions = []
+        params = []
+        
+        if tracking_id_filter:
+            where_conditions.append("tracking_id = %s")
+            params.append(tracking_id_filter)
+        
+        where_clause = " WHERE " + " AND ".join(where_conditions) if where_conditions else ""
+        
+        # Get total count
+        count_query = f"SELECT COUNT(*) FROM email_opens{where_clause}"
+        cursor.execute(count_query, params)
+        total_count = cursor.fetchone()[0]
+        
+        # Get records
+        query = f"""
+            SELECT 
+                id,
+                tracking_id,
+                opened_at,
+                user_agent,
+                ip_address,
+                referer
+            FROM email_opens
+            {where_clause}
+            ORDER BY {order_by} {order_direction}
+            LIMIT %s OFFSET %s
+        """
+        params.extend([limit, offset])
+        cursor.execute(query, params)
+        
+        # Fetch all records
+        columns = [desc[0] for desc in cursor.description]
+        records = []
+        for row in cursor.fetchall():
+            record = dict(zip(columns, row))
+            # Convert datetime objects to ISO format strings
+            for key, value in record.items():
+                if isinstance(value, datetime.datetime):
+                    record[key] = value.isoformat()
+            records.append(record)
+        
+        conn.close()
+        
+        return jsonify({
+            'status': 'success',
+            'total_count': total_count,
+            'returned_count': len(records),
+            'offset': offset,
+            'limit': limit,
+            'order_by': order_by,
+            'order_direction': order_direction,
+            'opens': records,
+            'timestamp': datetime.datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting email opens: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'Error getting email opens: {str(e)}',
             'timestamp': datetime.datetime.now().isoformat()
         }), 500
 
