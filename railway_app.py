@@ -818,10 +818,33 @@ def reply_to_emails_with_accounts(accounts):
     emails_needing_replies = get_emails_needing_replies_with_accounts(accounts)
     responses = []
 
-    logger.info(f"🔍 Processing {len(emails_needing_replies)} threads individually...")
+    logger.info(f"🔍 Found {len(emails_needing_replies)} threads needing replies")
     
-    # Process each thread individually (don't group by sender)
-    for i, email in enumerate(emails_needing_replies):
+    # Group threads by sender email to find the latest thread per sender
+    threads_by_sender = {}
+    for email in emails_needing_replies:
+        sender_email = email.get('sender', '').lower()
+        # Extract email address from sender string
+        if '<' in sender_email and '>' in sender_email:
+            sender_email = sender_email.split('<')[1].split('>')[0]
+        
+        if sender_email not in threads_by_sender:
+            threads_by_sender[sender_email] = []
+        threads_by_sender[sender_email].append(email)
+    
+    # For each sender, keep only the latest thread (by date)
+    latest_threads = []
+    for sender_email, threads in threads_by_sender.items():
+        if len(threads) > 1:
+            logger.info(f"📧 Found {len(threads)} threads from {sender_email}, selecting latest thread only")
+            # Sort by date (most recent first) and take the first one
+            threads.sort(key=lambda x: x.get('date', ''), reverse=True)
+        latest_threads.append(threads[0])  # Add the latest (or only) thread
+    
+    logger.info(f"📧 Processing {len(latest_threads)} latest thread(s) individually...")
+    
+    # Process only the latest thread for each sender
+    for i, email in enumerate(latest_threads):
         thread_id = email.get('threadId', 'No ID')
         logger.info(f"📧 Processing thread {i+1}/{len(emails_needing_replies)}: {thread_id}")
         
