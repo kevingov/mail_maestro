@@ -739,11 +739,16 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
         tracker = EmailTracker()
         
         # Track the email and get tracking ID
+        # Use the reply-to-emails endpoint for version tracking
+        version_endpoint = '/api/workato/reply-to-emails'
+        logger.info(f"📧 Sending reply email to {to_email} with version_endpoint: {version_endpoint}")
+        
         tracking_id = tracker.track_email_sent(
             recipient_email=to_email,
             sender_email=os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com'),
             subject=subject,
-            campaign_name="AI Email Reply"
+            campaign_name="AI Email Reply",
+            version_endpoint=version_endpoint
         )
         
         # Add tracking pixel to email content
