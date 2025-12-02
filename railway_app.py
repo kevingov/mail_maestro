@@ -2493,13 +2493,10 @@ def get_prompt_version_stats():
         
         # Get stats for each version endpoint
         # Calculate: total sent, total opened, open rate
-        # Group by actual version_endpoint value (including NULL which we'll default)
+        # Only count emails that have a version_endpoint set (don't include NULL as default)
         cursor.execute('''
             SELECT 
-                CASE 
-                    WHEN et.version_endpoint IS NULL THEN '/api/workato/send-new-email'
-                    ELSE et.version_endpoint
-                END as endpoint,
+                et.version_endpoint as endpoint,
                 COUNT(DISTINCT et.id) as total_sent,
                 COUNT(DISTINCT CASE WHEN et.open_count > 0 THEN et.id END) as total_opened,
                 ROUND(
@@ -2511,11 +2508,8 @@ def get_prompt_version_stats():
                     2
                 ) as open_rate
             FROM email_tracking et
-            GROUP BY 
-                CASE 
-                    WHEN et.version_endpoint IS NULL THEN '/api/workato/send-new-email'
-                    ELSE et.version_endpoint
-                END
+            WHERE et.version_endpoint IS NOT NULL
+            GROUP BY et.version_endpoint
             ORDER BY endpoint
         ''')
         
