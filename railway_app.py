@@ -1919,8 +1919,13 @@ def prompts_ui():
     <script>
         let currentPromptType = 'new-email';
         let currentTab = 'all';
-        let promptsData = {};
+        let promptsData = {
+            'new-email': [],
+            'reply-email': [],
+            'voice-guidelines': []
+        };
         let currentEditingPrompt = null;
+        let variantStats = {};
         
         const promptTypes = {
             'new-email': {
@@ -1940,8 +1945,24 @@ def prompts_ui():
             }
         };
         
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/prompts/get-stats');
+                const data = await response.json();
+                if (data.status === 'success') {
+                    variantStats = data.stats || {};
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+                variantStats = {};
+            }
+        }
+        
         window.addEventListener('DOMContentLoaded', async () => {
+            console.log('Loading prompts and stats...');
             await Promise.all([loadAllPrompts(), loadStats()]);
+            console.log('Prompts loaded:', promptsData);
+            console.log('Stats loaded:', variantStats);
             renderTable();
         });
         
