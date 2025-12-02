@@ -1061,14 +1061,271 @@ def home():
 @app.route('/prompts')
 def prompts_ui():
     """Serve the prompts management UI."""
-    try:
-        with open('templates/prompts.html', 'r') as f:
-            return f.read()
-    except FileNotFoundError:
-        return jsonify({
-            'error': 'Prompts UI not found',
-            'message': 'Please ensure templates/prompts.html exists'
-        }), 404
+    import os
+    from flask import send_from_directory
+    
+    # Try multiple possible paths
+    possible_paths = [
+        'templates/prompts.html',
+        os.path.join(os.path.dirname(__file__), 'templates', 'prompts.html'),
+        os.path.join(os.getcwd(), 'templates', 'prompts.html'),
+        'prompts.html'
+    ]
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    return f.read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
+            except Exception as e:
+                logger.error(f"Error reading prompts.html from {path}: {e}")
+                continue
+    
+    # If file not found, return embedded HTML
+    return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mail Maestro - Prompt Management</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 { font-size: 2.5em; margin-bottom: 10px; }
+        .header p { opacity: 0.9; font-size: 1.1em; }
+        .content { padding: 30px; }
+        .prompt-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border-left: 4px solid #667eea;
+        }
+        .prompt-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .prompt-title { font-size: 1.5em; font-weight: 600; color: #333; }
+        .endpoint-badge {
+            background: #667eea;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+        .prompt-description { color: #666; margin-bottom: 15px; font-size: 0.95em; }
+        textarea {
+            width: 100%;
+            min-height: 300px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+            font-size: 0.9em;
+            line-height: 1.6;
+            resize: vertical;
+        }
+        textarea:focus { outline: none; border-color: #667eea; }
+        .button-group { display: flex; gap: 10px; margin-top: 15px; }
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 1em;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-save { background: #28a745; color: white; }
+        .btn-save:hover { background: #218838; transform: translateY(-2px); }
+        .btn-reset { background: #6c757d; color: white; }
+        .btn-reset:hover { background: #5a6268; }
+        .status-message {
+            padding: 12px 20px;
+            border-radius: 6px;
+            margin-top: 15px;
+            display: none;
+            font-weight: 500;
+        }
+        .status-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 25px;
+        }
+        .info-box p { color: #1976D2; line-height: 1.6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📧 Mail Maestro</h1>
+            <p>AI Prompt Management Dashboard</p>
+        </div>
+        <div class="content">
+            <div class="info-box">
+                <p><strong>💡 Tip:</strong> Edit the prompts below to customize how AI generates emails. Changes are saved to environment variables and take effect immediately.</p>
+            </div>
+            <div class="prompt-card">
+                <div class="prompt-header">
+                    <div>
+                        <div class="prompt-title">Affirm Voice Guidelines</div>
+                        <div class="prompt-description">Brand voice guidelines used in all email prompts</div>
+                    </div>
+                    <span class="endpoint-badge">Global</span>
+                </div>
+                <textarea id="voice-guidelines" placeholder="Enter Affirm voice guidelines..."></textarea>
+                <div class="button-group">
+                    <button class="btn-save" onclick="savePrompt('voice-guidelines', 'AFFIRM_VOICE_GUIDELINES')">💾 Save</button>
+                    <button class="btn-reset" onclick="resetPrompt('voice-guidelines', 'AFFIRM_VOICE_GUIDELINES')">🔄 Reset</button>
+                </div>
+                <div id="voice-guidelines-status" class="status-message"></div>
+            </div>
+            <div class="prompt-card">
+                <div class="prompt-header">
+                    <div>
+                        <div class="prompt-title">New Email Outreach Prompt</div>
+                        <div class="prompt-description">Used for generating initial outreach emails to merchants</div>
+                    </div>
+                    <span class="endpoint-badge">/api/workato/send-new-email</span>
+                </div>
+                <textarea id="new-email-prompt" placeholder="Enter new email prompt template..."></textarea>
+                <div class="button-group">
+                    <button class="btn-save" onclick="savePrompt('new-email-prompt', 'NEW_EMAIL_PROMPT_TEMPLATE')">💾 Save</button>
+                    <button class="btn-reset" onclick="resetPrompt('new-email-prompt', 'NEW_EMAIL_PROMPT_TEMPLATE')">🔄 Reset</button>
+                </div>
+                <div id="new-email-prompt-status" class="status-message"></div>
+            </div>
+            <div class="prompt-card">
+                <div class="prompt-header">
+                    <div>
+                        <div class="prompt-title">Email Reply Prompt</div>
+                        <div class="prompt-description">Used for generating AI responses to incoming emails</div>
+                    </div>
+                    <span class="endpoint-badge">/api/workato/reply-to-emails</span>
+                </div>
+                <textarea id="reply-email-prompt" placeholder="Enter reply email prompt template..."></textarea>
+                <div class="button-group">
+                    <button class="btn-save" onclick="savePrompt('reply-email-prompt', 'REPLY_EMAIL_PROMPT_TEMPLATE')">💾 Save</button>
+                    <button class="btn-reset" onclick="resetPrompt('reply-email-prompt', 'REPLY_EMAIL_PROMPT_TEMPLATE')">🔄 Reset</button>
+                </div>
+                <div id="reply-email-prompt-status" class="status-message"></div>
+            </div>
+        </div>
+    </div>
+    <script>
+        window.addEventListener('DOMContentLoaded', async () => {
+            await loadAllPrompts();
+        });
+        async function loadAllPrompts() {
+            try {
+                const response = await fetch('/api/prompts/get');
+                const data = await response.json();
+                if (data.status === 'success') {
+                    if (data.prompts.voice_guidelines) {
+                        document.getElementById('voice-guidelines').value = data.prompts.voice_guidelines;
+                    }
+                    if (data.prompts.new_email_prompt) {
+                        document.getElementById('new-email-prompt').value = data.prompts.new_email_prompt;
+                    }
+                    if (data.prompts.reply_email_prompt) {
+                        document.getElementById('reply-email-prompt').value = data.prompts.reply_email_prompt;
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading prompts:', error);
+            }
+        }
+        async function savePrompt(textareaId, promptKey) {
+            const textarea = document.getElementById(textareaId);
+            const statusDiv = document.getElementById(textareaId + '-status');
+            const value = textarea.value.trim();
+            if (!value) {
+                showStatus(statusDiv, 'error', 'Prompt cannot be empty');
+                return;
+            }
+            const button = event.target;
+            const originalText = button.innerHTML;
+            button.innerHTML = 'Saving...';
+            button.disabled = true;
+            try {
+                const response = await fetch('/api/prompts/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: promptKey, value: value })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    showStatus(statusDiv, 'success', '✅ Prompt saved successfully!');
+                } else {
+                    showStatus(statusDiv, 'error', '❌ Error: ' + data.message);
+                }
+            } catch (error) {
+                showStatus(statusDiv, 'error', '❌ Error saving prompt: ' + error.message);
+            } finally {
+                button.innerHTML = originalText;
+                button.disabled = false;
+            }
+        }
+        async function resetPrompt(textareaId, promptKey) {
+            if (!confirm('Are you sure you want to reset this prompt to the default value?')) {
+                return;
+            }
+            try {
+                const response = await fetch('/api/prompts/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: promptKey })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    const textarea = document.getElementById(textareaId);
+                    textarea.value = data.default_value || '';
+                    const statusDiv = document.getElementById(textareaId + '-status');
+                    showStatus(statusDiv, 'success', '✅ Prompt reset to default');
+                } else {
+                    alert('Error resetting prompt: ' + data.message);
+                }
+            } catch (error) {
+                alert('Error resetting prompt: ' + error.message);
+            }
+        }
+        function showStatus(element, type, message) {
+            element.className = `status-message status-${type}`;
+            element.textContent = message;
+            element.style.display = 'block';
+            setTimeout(() => { element.style.display = 'none'; }, 5000);
+        }
+    </script>
+</body>
+</html>
+""", 200, {'Content-Type': 'text/html; charset=utf-8'}
 
 @app.route('/api/prompts/get', methods=['GET'])
 def get_prompts():
