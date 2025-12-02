@@ -191,6 +191,12 @@ def init_database():
             # Column might already exist, ignore error
             logger.debug(f"status column check: {e}")
         
+        # Add variant_endpoint column to track which prompt variant was used
+        try:
+            cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS variant_endpoint VARCHAR(255)')
+        except Exception as e:
+            logger.debug(f"variant_endpoint column check: {e}")
+        
         # Email opens table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS email_opens (
@@ -600,7 +606,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
         logger.error(f"❌ Error generating AI response: {e}")
         return f"Hi {merchant_name}, Let's Connect!", "Let's connect to discuss how Affirm can benefit your business."
 
-def send_email(to_email, merchant_name, subject_line, email_content, campaign_name=None, base_url="https://web-production-6dfbd.up.railway.app"):
+def send_email(to_email, merchant_name, subject_line, email_content, campaign_name=None, base_url="https://web-production-6dfbd.up.railway.app", variant_endpoint=None):
     """Send email with tracking - exact copy from 2025_hackathon.py."""
     try:
         from email_tracker import EmailTracker
@@ -1880,6 +1886,7 @@ def prompts_ui():
                                 <th>Variant Name / Preview</th>
                                 <th style="width: 120px;">Status</th>
                                 <th style="width: 150px;">Endpoint</th>
+                                <th style="width: 120px;">Open Rate</th>
                                 <th style="width: 100px;">Actions</th>
                             </tr>
                         </thead>
@@ -1934,7 +1941,7 @@ def prompts_ui():
         };
         
         window.addEventListener('DOMContentLoaded', async () => {
-            await loadAllPrompts();
+            await Promise.all([loadAllPrompts(), loadStats()]);
             renderTable();
         });
         
@@ -1944,7 +1951,7 @@ def prompts_ui():
                 item.classList.remove('active');
             });
             event.currentTarget.classList.add('active');
-            renderTable();
+            loadStats().then(() => renderTable());
         }
         
         function selectTab(tab) {
@@ -2036,13 +2043,20 @@ def prompts_ui():
             if (filtered.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="6" style="text-align: center; padding: 40px; color: #6b7280;">
+                        <td colspan="7" style="text-align: center; padding: 40px; color: #6b7280;">
                             No prompts found. ${prompts.length === 0 ? 'Click "+ Create Variant" to create your first prompt variant.' : 'Try selecting a different tab.'}
                         </td>
                     </tr>
                 `;
             } else {
-                tbody.innerHTML = filtered.map((prompt, index) => `
+                tbody.innerHTML = filtered.map((prompt, index) => {
+                    const endpoint = prompt.endpoint || '/api/workato/send-new-email';
+                    const stats = variantStats[endpoint] || { total_sent: 0, total_opened: 0, open_rate: 0 };
+                    const openRate = stats.open_rate || 0;
+                    const totalSent = stats.total_sent || 0;
+                    const totalOpened = stats.total_opened || 0;
+                    
+                    return `
                     <tr>
                         <td><input type="checkbox"></td>
                         <td>${String(index + 1).padStart(2, '0')}</td>
@@ -2054,11 +2068,16 @@ def prompts_ui():
                             <span class="status-badge status-${prompt.status || 'draft'}">${(prompt.status || 'draft').charAt(0).toUpperCase() + (prompt.status || 'draft').slice(1)}</span>
                         </td>
                         <td>${prompt.endpoint || 'N/A'}</td>
+                        <td style="text-align: right;">
+                            <div style="font-weight: 600; color: #111827;">${openRate.toFixed(1)}%</div>
+                            <div style="font-size: 12px; color: #6b7280;">${totalOpened}/${totalSent} opened</div>
+                        </td>
                         <td>
                             <button class="edit-btn" onclick="openEditModal(${prompt.id})">Edit</button>
                         </td>
                     </tr>
-                `).join('');
+                `;
+                }).join('');
             }
             
             // Update counts
@@ -2369,10 +2388,11 @@ def track_email_send():
             return jsonify({'error': 'Database connection failed'}), 503
         
         cursor = conn.cursor()
+        variant_endpoint = data.get('variant_endpoint')  # Get variant endpoint if provided
         cursor.execute('''
-            INSERT INTO email_tracking (tracking_id, recipient_email, sender_email, subject, campaign_name, status)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        ''', (tracking_id, recipient_email, sender_email, subject, campaign_name, 'AI Outbound Email'))
+            INSERT INTO email_tracking (tracking_id, recipient_email, sender_email, subject, campaign_name, status, variant_endpoint)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ''', (tracking_id, recipient_email, sender_email, subject, campaign_name, 'AI Outbound Email', variant_endpoint))
         
         conn.commit()
         conn.close()
