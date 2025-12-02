@@ -2098,11 +2098,14 @@ def prompts_ui():
                 `;
             } else {
                 tbody.innerHTML = filtered.map((prompt, index) => {
-                    const endpoint = prompt.endpoint || '/api/workato/send-new-email';
+                    const endpoint = (prompt.endpoint || '/api/workato/send-new-email').trim();
+                    console.log(`Looking up stats for endpoint: "${endpoint}"`);
+                    console.log(`Available stats keys:`, Object.keys(variantStats));
                     const stats = variantStats[endpoint] || { total_sent: 0, total_opened: 0, open_rate: 0 };
                     const openRate = stats.open_rate || 0;
                     const totalSent = stats.total_sent || 0;
                     const totalOpened = stats.total_opened || 0;
+                    console.log(`Stats for "${endpoint}":`, stats);
                     
                     return `
                     <tr>
@@ -2490,10 +2493,13 @@ def get_prompt_version_stats():
         
         # Get stats for each version endpoint
         # Calculate: total sent, total opened, open rate
-        # Join with email_opens to count actual opens per endpoint
+        # Group by actual version_endpoint value (including NULL which we'll default)
         cursor.execute('''
             SELECT 
-                COALESCE(et.version_endpoint, '/api/workato/send-new-email') as endpoint,
+                CASE 
+                    WHEN et.version_endpoint IS NULL THEN '/api/workato/send-new-email'
+                    ELSE et.version_endpoint
+                END as endpoint,
                 COUNT(DISTINCT et.id) as total_sent,
                 COUNT(DISTINCT CASE WHEN et.open_count > 0 THEN et.id END) as total_opened,
                 ROUND(
@@ -2505,19 +2511,34 @@ def get_prompt_version_stats():
                     2
                 ) as open_rate
             FROM email_tracking et
-            WHERE et.version_endpoint IS NOT NULL OR et.version_endpoint IS NULL
-            GROUP BY COALESCE(et.version_endpoint, '/api/workato/send-new-email')
+            GROUP BY 
+                CASE 
+                    WHEN et.version_endpoint IS NULL THEN '/api/workato/send-new-email'
+                    ELSE et.version_endpoint
+                END
             ORDER BY endpoint
         ''')
         
         stats = {}
         for row in cursor.fetchall():
             endpoint, total_sent, total_opened, open_rate = row
+            # Normalize endpoint to ensure exact match
+            endpoint = endpoint.strip() if endpoint else '/api/workato/send-new-email'
             stats[endpoint] = {
                 'total_sent': int(total_sent) if total_sent else 0,
                 'total_opened': int(total_opened) if total_opened else 0,
                 'open_rate': float(open_rate) if open_rate else 0.0
             }
+        
+        # Also check what endpoints actually exist in the database for debugging
+        cursor.execute('''
+            SELECT DISTINCT version_endpoint, COUNT(*) 
+            FROM email_tracking 
+            GROUP BY version_endpoint
+            ORDER BY version_endpoint
+        ''')
+        endpoint_counts = {row[0]: row[1] for row in cursor.fetchall()}
+        logger.info(f"📊 Endpoints in database: {endpoint_counts}")
         
         conn.close()
         
