@@ -1822,6 +1822,8 @@ def prompts_ui():
     <div class="app-container">
         <div class="header-bar">
             <div class="header-left">
+                <div class="header-title" style="font-weight: 700; font-size: 18px; color: #111827; margin-right: 8px;">Mail Maestro</div>
+                <div style="color: #6b7280; font-size: 20px; margin: 0 8px;">/</div>
                 <div class="header-title">Prompts</div>
             </div>
             <div class="header-actions">
@@ -1960,34 +1962,40 @@ def prompts_ui():
                 ]);
                 
                 const promptsData_result = await promptsResponse.json();
-                const variantsData = await variantsResponse.json();
+                let variantsData = { status: 'success', variants: [] };
+                
+                try {
+                    variantsData = await variantsResponse.json();
+                } catch (e) {
+                    console.warn('Could not load variants:', e);
+                }
                 
                 if (promptsData_result.status === 'success') {
                     // Start with default variants
                     promptsData = {
                         'new-email': [
-                            { id: 1, name: 'Default Variant', preview: promptsData_result.prompts.new_email_prompt?.substring(0, 100) || '', status: 'active', endpoint: '/api/workato/send-new-email', key: 'NEW_EMAIL_PROMPT_TEMPLATE', content: promptsData_result.prompts.new_email_prompt || '', version_letter: null }
+                            { id: 1, name: 'Default Variant', preview: (promptsData_result.prompts.new_email_prompt || '').substring(0, 100) || 'Default new email prompt template...', status: 'active', endpoint: '/api/workato/send-new-email', key: 'NEW_EMAIL_PROMPT_TEMPLATE', content: promptsData_result.prompts.new_email_prompt || '', version_letter: null }
                         ],
                         'reply-email': [
-                            { id: 1, name: 'Default Variant', preview: promptsData_result.prompts.reply_email_prompt?.substring(0, 100) || '', status: 'active', endpoint: '/api/workato/reply-to-emails', key: 'REPLY_EMAIL_PROMPT_TEMPLATE', content: promptsData_result.prompts.reply_email_prompt || '', version_letter: null }
+                            { id: 1, name: 'Default Variant', preview: (promptsData_result.prompts.reply_email_prompt || '').substring(0, 100) || 'Default reply email prompt template...', status: 'active', endpoint: '/api/workato/reply-to-emails', key: 'REPLY_EMAIL_PROMPT_TEMPLATE', content: promptsData_result.prompts.reply_email_prompt || '', version_letter: null }
                         ],
                         'voice-guidelines': [
-                            { id: 1, name: 'Default Guidelines', preview: promptsData_result.prompts.voice_guidelines?.substring(0, 100) || '', status: 'active', endpoint: 'Global', key: 'AFFIRM_VOICE_GUIDELINES', content: promptsData_result.prompts.voice_guidelines || '', version_letter: null }
+                            { id: 1, name: 'Default Guidelines', preview: (promptsData_result.prompts.voice_guidelines || '').substring(0, 100) || 'Default voice guidelines...', status: 'active', endpoint: 'Global', key: 'AFFIRM_VOICE_GUIDELINES', content: promptsData_result.prompts.voice_guidelines || '', version_letter: null }
                         ]
                     };
                     
                     // Add variants from database
-                    if (variantsData.status === 'success' && variantsData.variants) {
+                    if (variantsData.status === 'success' && variantsData.variants && Array.isArray(variantsData.variants)) {
                         variantsData.variants.forEach((variant, idx) => {
                             const variantId = 1000 + variant.id; // Use high IDs for variants
                             const variantData = {
                                 id: variantId,
                                 name: variant.variant_name,
-                                preview: variant.prompt_content?.substring(0, 100) || '',
-                                status: variant.status,
+                                preview: (variant.prompt_content || '').substring(0, 100) || 'No preview...',
+                                status: variant.status || 'draft',
                                 endpoint: variant.endpoint_path,
                                 key: `${variant.prompt_type.toUpperCase()}_PROMPT_TEMPLATE_${variant.version_letter}`,
-                                content: variant.prompt_content,
+                                content: variant.prompt_content || '',
                                 version_letter: variant.version_letter
                             };
                             
@@ -1998,9 +2006,25 @@ def prompts_ui():
                             }
                         });
                     }
+                    
+                    console.log('Loaded prompts data:', promptsData);
+                } else {
+                    console.error('Failed to load prompts:', promptsData_result);
+                    // Initialize with empty data structure
+                    promptsData = {
+                        'new-email': [],
+                        'reply-email': [],
+                        'voice-guidelines': []
+                    };
                 }
             } catch (error) {
                 console.error('Error loading prompts:', error);
+                // Initialize with empty data structure on error
+                promptsData = {
+                    'new-email': [],
+                    'reply-email': [],
+                    'voice-guidelines': []
+                };
             }
         }
         
@@ -2009,28 +2033,42 @@ def prompts_ui():
             const prompts = promptsData[currentPromptType] || [];
             const filtered = currentTab === 'all' ? prompts : prompts.filter(p => p.status === currentTab);
             
-            tbody.innerHTML = filtered.map((prompt, index) => `
-                <tr>
-                    <td><input type="checkbox"></td>
-                    <td>${String(index + 1).padStart(2, '0')}</td>
-                    <td>
-                        <div class="prompt-variant-name">${prompt.name}</div>
-                        <div class="prompt-preview">${prompt.preview || 'No preview available'}...</div>
-                    </td>
-                    <td>
-                        <span class="status-badge status-${prompt.status}">${prompt.status.charAt(0).toUpperCase() + prompt.status.slice(1)}</span>
-                    </td>
-                    <td>${prompt.endpoint}</td>
-                    <td>
-                        <button class="edit-btn" onclick="openEditModal(${prompt.id})">Edit</button>
-                    </td>
-                </tr>
-            `).join('');
+            if (filtered.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" style="text-align: center; padding: 40px; color: #6b7280;">
+                            No prompts found. ${prompts.length === 0 ? 'Click "+ Create Variant" to create your first prompt variant.' : 'Try selecting a different tab.'}
+                        </td>
+                    </tr>
+                `;
+            } else {
+                tbody.innerHTML = filtered.map((prompt, index) => `
+                    <tr>
+                        <td><input type="checkbox"></td>
+                        <td>${String(index + 1).padStart(2, '0')}</td>
+                        <td>
+                            <div class="prompt-variant-name">${prompt.name || 'Unnamed'}</div>
+                            <div class="prompt-preview">${prompt.preview || 'No preview available'}...</div>
+                        </td>
+                        <td>
+                            <span class="status-badge status-${prompt.status || 'draft'}">${(prompt.status || 'draft').charAt(0).toUpperCase() + (prompt.status || 'draft').slice(1)}</span>
+                        </td>
+                        <td>${prompt.endpoint || 'N/A'}</td>
+                        <td>
+                            <button class="edit-btn" onclick="openEditModal(${prompt.id})">Edit</button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
             
             // Update counts
-            document.getElementById('all-count').textContent = prompts.length;
-            document.getElementById('active-count').textContent = prompts.filter(p => p.status === 'active').length;
-            document.getElementById('draft-count').textContent = prompts.filter(p => p.status === 'draft').length;
+            const allCount = prompts.length;
+            const activeCount = prompts.filter(p => p.status === 'active').length;
+            const draftCount = prompts.filter(p => p.status === 'draft').length;
+            
+            document.getElementById('all-count').textContent = allCount;
+            document.getElementById('active-count').textContent = activeCount;
+            document.getElementById('draft-count').textContent = draftCount;
         }
         
         function openEditModal(promptId) {
@@ -2128,89 +2166,6 @@ def prompts_ui():
                 closeModal();
             }
         });
-    </script>
-        window.addEventListener('DOMContentLoaded', async () => {
-            await loadAllPrompts();
-        });
-        async function loadAllPrompts() {
-            try {
-                const response = await fetch('/api/prompts/get');
-                const data = await response.json();
-                if (data.status === 'success') {
-                    if (data.prompts.voice_guidelines) {
-                        document.getElementById('voice-guidelines').value = data.prompts.voice_guidelines;
-                    }
-                    if (data.prompts.new_email_prompt) {
-                        document.getElementById('new-email-prompt').value = data.prompts.new_email_prompt;
-                    }
-                    if (data.prompts.reply_email_prompt) {
-                        document.getElementById('reply-email-prompt').value = data.prompts.reply_email_prompt;
-                    }
-                }
-            } catch (error) {
-                console.error('Error loading prompts:', error);
-            }
-        }
-        async function savePrompt(textareaId, promptKey) {
-            const textarea = document.getElementById(textareaId);
-            const statusDiv = document.getElementById(textareaId + '-status');
-            const value = textarea.value.trim();
-            if (!value) {
-                showStatus(statusDiv, 'error', 'Prompt cannot be empty');
-                return;
-            }
-            const button = event.target;
-            const originalText = button.innerHTML;
-            button.innerHTML = 'Saving...';
-            button.disabled = true;
-            try {
-                const response = await fetch('/api/prompts/update', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ key: promptKey, value: value })
-                });
-                const data = await response.json();
-                if (data.status === 'success') {
-                    showStatus(statusDiv, 'success', '✅ Prompt saved successfully!');
-                } else {
-                    showStatus(statusDiv, 'error', '❌ Error: ' + data.message);
-                }
-            } catch (error) {
-                showStatus(statusDiv, 'error', '❌ Error saving prompt: ' + error.message);
-            } finally {
-                button.innerHTML = originalText;
-                button.disabled = false;
-            }
-        }
-        async function resetPrompt(textareaId, promptKey) {
-            if (!confirm('Are you sure you want to reset this prompt to the default value?')) {
-                return;
-            }
-            try {
-                const response = await fetch('/api/prompts/reset', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ key: promptKey })
-                });
-                const data = await response.json();
-                if (data.status === 'success') {
-                    const textarea = document.getElementById(textareaId);
-                    textarea.value = data.default_value || '';
-                    const statusDiv = document.getElementById(textareaId + '-status');
-                    showStatus(statusDiv, 'success', '✅ Prompt reset to default');
-                } else {
-                    alert('Error resetting prompt: ' + data.message);
-                }
-            } catch (error) {
-                alert('Error resetting prompt: ' + error.message);
-            }
-        }
-        function showStatus(element, type, message) {
-            element.className = `status-message status-${type}`;
-            element.textContent = message;
-            element.style.display = 'block';
-            setTimeout(() => { element.style.display = 'none'; }, 5000);
-        }
     </script>
 </body>
 </html>
