@@ -197,6 +197,13 @@ def init_database():
         except Exception as e:
             logger.debug(f"version_endpoint column check: {e}")
         
+        # Remove old variant_endpoint column if it exists
+        try:
+            cursor.execute('ALTER TABLE email_tracking DROP COLUMN IF EXISTS variant_endpoint')
+            logger.info("✅ Removed old variant_endpoint column")
+        except Exception as e:
+            logger.debug(f"variant_endpoint column removal check: {e}")
+        
         # Email opens table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS email_opens (
@@ -621,7 +628,8 @@ def send_email(to_email, merchant_name, subject_line, email_content, campaign_na
             recipient_email=to_email,
             sender_email=os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com'),
             subject=subject_line,
-            campaign_name=campaign_name or "Personalized Outreach"
+            campaign_name=campaign_name or "Personalized Outreach",
+            version_endpoint=version_endpoint
         )
         
         # Add tracking pixel to email content
