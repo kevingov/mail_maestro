@@ -1963,8 +1963,13 @@ def prompts_ui():
             try {
                 const response = await fetch('/api/prompts/get-stats');
                 const data = await response.json();
+                console.log('Stats API response:', data);
                 if (data.status === 'success') {
                     variantStats = data.stats || {};
+                    console.log('Stats loaded into variantStats:', variantStats);
+                } else {
+                    console.error('Stats API returned error:', data);
+                    variantStats = {};
                 }
             } catch (error) {
                 console.error('Error loading stats:', error);
@@ -1986,7 +1991,10 @@ def prompts_ui():
                 item.classList.remove('active');
             });
             event.currentTarget.classList.add('active');
-            loadStats().then(() => renderTable());
+            Promise.all([loadAllPrompts(), loadStats()]).then(() => {
+                console.log('Reloaded prompts and stats for type:', type);
+                renderTable();
+            });
         }
         
         function selectTab(tab) {
@@ -2451,6 +2459,74 @@ def get_prompt_versions():
         
     except Exception as e:
         logger.error(f"Error getting prompt versions: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/prompts/get-stats', methods=['GET'])
+def get_prompt_version_stats():
+    """Get open rate statistics for each prompt version endpoint."""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available'
+            }), 503
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database connection failed'
+            }), 503
+        
+        cursor = conn.cursor()
+        
+        # Get stats for each version endpoint
+        # Calculate: total sent, total opened, open rate
+        # Join with email_opens to count actual opens per endpoint
+        cursor.execute('''
+            SELECT 
+                COALESCE(et.version_endpoint, '/api/workato/send-new-email') as endpoint,
+                COUNT(DISTINCT et.id) as total_sent,
+                COUNT(DISTINCT CASE WHEN et.open_count > 0 THEN et.id END) as total_opened,
+                ROUND(
+                    CASE 
+                        WHEN COUNT(DISTINCT et.id) > 0 
+                        THEN (COUNT(DISTINCT CASE WHEN et.open_count > 0 THEN et.id END)::FLOAT / COUNT(DISTINCT et.id)::FLOAT) * 100
+                        ELSE 0 
+                    END, 
+                    2
+                ) as open_rate
+            FROM email_tracking et
+            WHERE et.version_endpoint IS NOT NULL OR et.version_endpoint IS NULL
+            GROUP BY COALESCE(et.version_endpoint, '/api/workato/send-new-email')
+            ORDER BY endpoint
+        ''')
+        
+        stats = {}
+        for row in cursor.fetchall():
+            endpoint, total_sent, total_opened, open_rate = row
+            stats[endpoint] = {
+                'total_sent': int(total_sent) if total_sent else 0,
+                'total_opened': int(total_opened) if total_opened else 0,
+                'open_rate': float(open_rate) if open_rate else 0.0
+            }
+        
+        conn.close()
+        
+        logger.info(f"📊 Stats calculated: {stats}")
+        
+        return jsonify({
+            'status': 'success',
+            'stats': stats
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting prompt version stats: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'status': 'error',
             'message': str(e)
