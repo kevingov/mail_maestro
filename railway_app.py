@@ -1089,6 +1089,7 @@ def prompts_ui():
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mail Maestro - Prompt Management</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
     <style>
         * { 
             margin: 0; 
@@ -1116,22 +1117,388 @@ def prompts_ui():
         
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
-            background-attachment: fixed;
+            background: #f5f5f5;
+            margin: 0;
+            padding: 0;
             min-height: 100vh;
-            padding: 20px;
             line-height: 1.6;
         }
         
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            background: rgba(255, 255, 255, 0.98);
-            backdrop-filter: blur(20px);
-            border-radius: 24px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1);
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
             overflow: hidden;
-            animation: slideUp 0.5s ease-out;
+        }
+        
+        .header-bar {
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .header-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #111827;
+        }
+        
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .icon-btn {
+            width: 36px;
+            height: 36px;
+            border: none;
+            background: transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #6b7280;
+            transition: all 0.2s;
+        }
+        
+        .icon-btn:hover {
+            background: #f3f4f6;
+            color: #111827;
+        }
+        
+        .main-layout {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        .sidebar {
+            width: 280px;
+            background: white;
+            border-right: 1px solid #e5e7eb;
+            overflow-y: auto;
+            padding: 24px;
+        }
+        
+        .sidebar-search {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 24px;
+        }
+        
+        .sidebar-section {
+            margin-bottom: 32px;
+        }
+        
+        .sidebar-section-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .prompt-type-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 4px;
+            transition: all 0.2s;
+            color: #374151;
+            font-size: 14px;
+        }
+        
+        .prompt-type-item:hover {
+            background: #f3f4f6;
+        }
+        
+        .prompt-type-item.active {
+            background: #eff6ff;
+            color: #2563eb;
+            font-weight: 500;
+        }
+        
+        .prompt-type-item .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            margin-right: 12px;
+        }
+        
+        .content-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #f9fafb;
+        }
+        
+        .content-header {
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            padding: 20px 24px;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        
+        .tab {
+            padding: 8px 16px;
+            border: none;
+            background: transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #6b7280;
+            transition: all 0.2s;
+        }
+        
+        .tab:hover {
+            background: #f3f4f6;
+        }
+        
+        .tab.active {
+            background: #eff6ff;
+            color: #2563eb;
+        }
+        
+        .tab-count {
+            margin-left: 6px;
+            color: #9ca3af;
+        }
+        
+        .table-container {
+            flex: 1;
+            overflow-y: auto;
+            background: white;
+            margin: 0 24px 24px 24px;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .table thead {
+            background: #f9fafb;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .table th {
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .table td {
+            padding: 16px;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 14px;
+            color: #374151;
+        }
+        
+        .table tbody tr:hover {
+            background: #f9fafb;
+        }
+        
+        .table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        
+        .prompt-variant-name {
+            font-weight: 500;
+            color: #111827;
+            margin-bottom: 4px;
+        }
+        
+        .prompt-preview {
+            color: #6b7280;
+            font-size: 13px;
+            max-width: 500px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .status-active {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        
+        .status-draft {
+            background: #fef3c7;
+            color: #92400e;
+        }
+        
+        .status-archived {
+            background: #f3f4f6;
+            color: #6b7280;
+        }
+        
+        .edit-btn {
+            padding: 6px 12px;
+            background: #eff6ff;
+            color: #2563eb;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .edit-btn:hover {
+            background: #dbeafe;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #111827;
+        }
+        
+        .modal-close {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #6b7280;
+        }
+        
+        .modal-close:hover {
+            background: #f3f4f6;
+        }
+        
+        .modal-body {
+            padding: 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        
+        .modal-textarea {
+            width: 100%;
+            min-height: 400px;
+            padding: 16px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-family: 'SF Mono', 'Monaco', 'Menlo', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            resize: vertical;
+        }
+        
+        .modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+        
+        .btn-primary {
+            padding: 10px 20px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        
+        .btn-secondary {
+            padding: 10px 20px;
+            background: #f3f4f6;
+            color: #374151;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
         }
         
         @keyframes slideUp {
@@ -1413,63 +1780,244 @@ def prompts_ui():
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>📧 Mail Maestro</h1>
-            <p>AI Prompt Management Dashboard</p>
+    <div class="app-container">
+        <div class="header-bar">
+            <div class="header-left">
+                <div class="header-title">Prompts</div>
+            </div>
+            <div class="header-actions">
+                <button class="icon-btn" title="Download">⬇</button>
+                <button class="icon-btn" title="Settings">⚙</button>
+            </div>
         </div>
-        <div class="content">
-            <div class="info-box">
-                <p><strong>💡 Tip:</strong> Edit the prompts below to customize how AI generates emails. Changes are saved to environment variables and take effect immediately.</p>
-            </div>
-            <div class="prompt-card">
-                <div class="prompt-header">
-                    <div>
-                        <div class="prompt-title">Affirm Voice Guidelines</div>
-                        <div class="prompt-description">Brand voice guidelines used in all email prompts</div>
+        
+        <div class="main-layout">
+            <div class="sidebar">
+                <input type="text" class="sidebar-search" placeholder="Search...">
+                
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">Prompt Types</div>
+                    <div class="prompt-type-item active" onclick="selectPromptType('new-email')">
+                        <span class="dot"></span>
+                        New Email Prompts
                     </div>
-                    <span class="endpoint-badge">Global</span>
-                </div>
-                <textarea id="voice-guidelines" placeholder="Enter Affirm voice guidelines..."></textarea>
-                <div class="button-group">
-                    <button class="btn-save" onclick="savePrompt('voice-guidelines', 'AFFIRM_VOICE_GUIDELINES')">💾 Save</button>
-                    <button class="btn-reset" onclick="resetPrompt('voice-guidelines', 'AFFIRM_VOICE_GUIDELINES')">🔄 Reset</button>
-                </div>
-                <div id="voice-guidelines-status" class="status-message"></div>
-            </div>
-            <div class="prompt-card">
-                <div class="prompt-header">
-                    <div>
-                        <div class="prompt-title">New Email Outreach Prompt</div>
-                        <div class="prompt-description">Used for generating initial outreach emails to merchants</div>
+                    <div class="prompt-type-item" onclick="selectPromptType('reply-email')">
+                        <span class="dot"></span>
+                        Reply Email Prompts
                     </div>
-                    <span class="endpoint-badge">/api/workato/send-new-email</span>
-                </div>
-                <textarea id="new-email-prompt" placeholder="Enter new email prompt template..."></textarea>
-                <div class="button-group">
-                    <button class="btn-save" onclick="savePrompt('new-email-prompt', 'NEW_EMAIL_PROMPT_TEMPLATE')">💾 Save</button>
-                    <button class="btn-reset" onclick="resetPrompt('new-email-prompt', 'NEW_EMAIL_PROMPT_TEMPLATE')">🔄 Reset</button>
-                </div>
-                <div id="new-email-prompt-status" class="status-message"></div>
-            </div>
-            <div class="prompt-card">
-                <div class="prompt-header">
-                    <div>
-                        <div class="prompt-title">Email Reply Prompt</div>
-                        <div class="prompt-description">Used for generating AI responses to incoming emails</div>
+                    <div class="prompt-type-item" onclick="selectPromptType('voice-guidelines')">
+                        <span class="dot"></span>
+                        Voice Guidelines
                     </div>
-                    <span class="endpoint-badge">/api/workato/reply-to-emails</span>
                 </div>
-                <textarea id="reply-email-prompt" placeholder="Enter reply email prompt template..."></textarea>
-                <div class="button-group">
-                    <button class="btn-save" onclick="savePrompt('reply-email-prompt', 'REPLY_EMAIL_PROMPT_TEMPLATE')">💾 Save</button>
-                    <button class="btn-reset" onclick="resetPrompt('reply-email-prompt', 'REPLY_EMAIL_PROMPT_TEMPLATE')">🔄 Reset</button>
+            </div>
+            
+            <div class="content-area">
+                <div class="content-header">
+                    <div class="tabs">
+                        <button class="tab active" onclick="selectTab('all')">
+                            All prompts <span class="tab-count" id="all-count">3</span>
+                        </button>
+                        <button class="tab" onclick="selectTab('active')">
+                            Active <span class="tab-count" id="active-count">2</span>
+                        </button>
+                        <button class="tab" onclick="selectTab('draft')">
+                            Draft <span class="tab-count" id="draft-count">1</span>
+                        </button>
+                    </div>
                 </div>
-                <div id="reply-email-prompt-status" class="status-message"></div>
+                
+                <div class="table-container">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th style="width: 40px;"><input type="checkbox"></th>
+                                <th style="width: 60px;">#</th>
+                                <th>Variant Name / Preview</th>
+                                <th style="width: 120px;">Status</th>
+                                <th style="width: 150px;">Endpoint</th>
+                                <th style="width: 100px;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="prompts-table-body">
+                            <!-- Table rows will be populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
+    
+    <!-- Edit Modal -->
+    <div class="modal" id="edit-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title" id="modal-title">Edit Prompt</div>
+                <button class="modal-close" onclick="closeModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <textarea class="modal-textarea" id="modal-textarea" placeholder="Enter prompt content..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn-primary" onclick="savePromptFromModal()">Save</button>
+            </div>
+        </div>
+    </div>
+    
     <script>
+        let currentPromptType = 'new-email';
+        let currentTab = 'all';
+        let promptsData = {};
+        let currentEditingPrompt = null;
+        
+        const promptTypes = {
+            'new-email': {
+                name: 'New Email Prompts',
+                endpoint: '/api/workato/send-new-email',
+                key: 'NEW_EMAIL_PROMPT_TEMPLATE'
+            },
+            'reply-email': {
+                name: 'Reply Email Prompts',
+                endpoint: '/api/workato/reply-to-emails',
+                key: 'REPLY_EMAIL_PROMPT_TEMPLATE'
+            },
+            'voice-guidelines': {
+                name: 'Voice Guidelines',
+                endpoint: 'Global',
+                key: 'AFFIRM_VOICE_GUIDELINES'
+            }
+        };
+        
+        window.addEventListener('DOMContentLoaded', async () => {
+            await loadAllPrompts();
+            renderTable();
+        });
+        
+        function selectPromptType(type) {
+            currentPromptType = type;
+            document.querySelectorAll('.prompt-type-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            event.currentTarget.classList.add('active');
+            renderTable();
+        }
+        
+        function selectTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+            renderTable();
+        }
+        
+        async function loadAllPrompts() {
+            try {
+                const response = await fetch('/api/prompts/get');
+                const data = await response.json();
+                if (data.status === 'success') {
+                    promptsData = {
+                        'new-email': [
+                            { id: 1, name: 'Default Variant', preview: data.prompts.new_email_prompt?.substring(0, 100) || '', status: 'active', endpoint: '/api/workato/send-new-email', key: 'NEW_EMAIL_PROMPT_TEMPLATE', content: data.prompts.new_email_prompt || '' },
+                            { id: 2, name: 'Variant A - Casual', preview: 'A more casual, friendly approach...', status: 'draft', endpoint: '/api/workato/send-new-email', key: 'NEW_EMAIL_PROMPT_TEMPLATE_A', content: '' },
+                            { id: 3, name: 'Variant B - Professional', preview: 'A more formal, professional tone...', status: 'draft', endpoint: '/api/workato/send-new-email', key: 'NEW_EMAIL_PROMPT_TEMPLATE_B', content: '' }
+                        ],
+                        'reply-email': [
+                            { id: 1, name: 'Default Variant', preview: data.prompts.reply_email_prompt?.substring(0, 100) || '', status: 'active', endpoint: '/api/workato/reply-to-emails', key: 'REPLY_EMAIL_PROMPT_TEMPLATE', content: data.prompts.reply_email_prompt || '' },
+                            { id: 2, name: 'Variant A - Concise', preview: 'Shorter, more direct responses...', status: 'draft', endpoint: '/api/workato/reply-to-emails', key: 'REPLY_EMAIL_PROMPT_TEMPLATE_A', content: '' }
+                        ],
+                        'voice-guidelines': [
+                            { id: 1, name: 'Default Guidelines', preview: data.prompts.voice_guidelines?.substring(0, 100) || '', status: 'active', endpoint: 'Global', key: 'AFFIRM_VOICE_GUIDELINES', content: data.prompts.voice_guidelines || '' }
+                        ]
+                    };
+                }
+            } catch (error) {
+                console.error('Error loading prompts:', error);
+            }
+        }
+        
+        function renderTable() {
+            const tbody = document.getElementById('prompts-table-body');
+            const prompts = promptsData[currentPromptType] || [];
+            const filtered = currentTab === 'all' ? prompts : prompts.filter(p => p.status === currentTab);
+            
+            tbody.innerHTML = filtered.map((prompt, index) => `
+                <tr>
+                    <td><input type="checkbox"></td>
+                    <td>${String(index + 1).padStart(2, '0')}</td>
+                    <td>
+                        <div class="prompt-variant-name">${prompt.name}</div>
+                        <div class="prompt-preview">${prompt.preview || 'No preview available'}...</div>
+                    </td>
+                    <td>
+                        <span class="status-badge status-${prompt.status}">${prompt.status.charAt(0).toUpperCase() + prompt.status.slice(1)}</span>
+                    </td>
+                    <td>${prompt.endpoint}</td>
+                    <td>
+                        <button class="edit-btn" onclick="openEditModal(${prompt.id})">Edit</button>
+                    </td>
+                </tr>
+            `).join('');
+            
+            // Update counts
+            document.getElementById('all-count').textContent = prompts.length;
+            document.getElementById('active-count').textContent = prompts.filter(p => p.status === 'active').length;
+            document.getElementById('draft-count').textContent = prompts.filter(p => p.status === 'draft').length;
+        }
+        
+        function openEditModal(promptId) {
+            const prompts = promptsData[currentPromptType] || [];
+            const prompt = prompts.find(p => p.id === promptId);
+            if (!prompt) return;
+            
+            currentEditingPrompt = prompt;
+            document.getElementById('modal-title').textContent = `Edit: ${prompt.name}`;
+            document.getElementById('modal-textarea').value = prompt.content || '';
+            document.getElementById('edit-modal').classList.add('active');
+        }
+        
+        function closeModal() {
+            document.getElementById('edit-modal').classList.remove('active');
+            currentEditingPrompt = null;
+        }
+        
+        async function savePromptFromModal() {
+            if (!currentEditingPrompt) return;
+            
+            const content = document.getElementById('modal-textarea').value.trim();
+            if (!content) {
+                alert('Prompt cannot be empty');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/prompts/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: currentEditingPrompt.key, value: content })
+                });
+                
+                const data = await response.json();
+                if (data.status === 'success') {
+                    currentEditingPrompt.content = content;
+                    currentEditingPrompt.preview = content.substring(0, 100);
+                    renderTable();
+                    closeModal();
+                    alert('✅ Prompt saved successfully!');
+                } else {
+                    alert('❌ Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('❌ Error saving prompt: ' + error.message);
+            }
+        }
+        
+        // Close modal on outside click
+        document.getElementById('edit-modal')?.addEventListener('click', (e) => {
+            if (e.target.id === 'edit-modal') {
+                closeModal();
+            }
+        });
+    </script>
         window.addEventListener('DOMContentLoaded', async () => {
             await loadAllPrompts();
         });
