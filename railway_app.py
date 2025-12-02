@@ -191,11 +191,11 @@ def init_database():
             # Column might already exist, ignore error
             logger.debug(f"status column check: {e}")
         
-        # Add variant_endpoint column to track which prompt variant was used
+        # Add version_endpoint column to track which prompt version was used
         try:
-            cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS variant_endpoint VARCHAR(255)')
+            cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS version_endpoint VARCHAR(255)')
         except Exception as e:
-            logger.debug(f"variant_endpoint column check: {e}")
+            logger.debug(f"version_endpoint column check: {e}")
         
         # Email opens table
         cursor.execute('''
@@ -210,11 +210,11 @@ def init_database():
             )
         ''')
         
-        # Prompt variants table for A/B testing
+        # Prompt versions table for A/B testing
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS prompt_variants (
+            CREATE TABLE IF NOT EXISTS prompt_versions (
                 id SERIAL PRIMARY KEY,
-                variant_name VARCHAR(255) NOT NULL,
+                version_name VARCHAR(255) NOT NULL,
                 prompt_type VARCHAR(50) NOT NULL,
                 prompt_content TEXT NOT NULL,
                 version_letter VARCHAR(10) NOT NULL,
@@ -606,7 +606,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
         logger.error(f"❌ Error generating AI response: {e}")
         return f"Hi {merchant_name}, Let's Connect!", "Let's connect to discuss how Affirm can benefit your business."
 
-def send_email(to_email, merchant_name, subject_line, email_content, campaign_name=None, base_url="https://web-production-6dfbd.up.railway.app", variant_endpoint=None):
+def send_email(to_email, merchant_name, subject_line, email_content, campaign_name=None, base_url="https://web-production-6dfbd.up.railway.app", version_endpoint=None):
     """Send email with tracking - exact copy from 2025_hackathon.py."""
     try:
         from email_tracker import EmailTracker
@@ -1873,7 +1873,7 @@ def prompts_ui():
                                 Draft <span class="tab-count" id="draft-count">1</span>
                             </button>
                         </div>
-                        <button class="btn-primary" onclick="createNewVariant()" style="margin-left: auto;">+ Create Variant</button>
+                        <button class="btn-primary" onclick="createNewVersion()" style="margin-left: auto;">+ Create Version</button>
                     </div>
                 </div>
                 
@@ -1883,7 +1883,7 @@ def prompts_ui():
                             <tr>
                                 <th style="width: 40px;"><input type="checkbox"></th>
                                 <th style="width: 60px;">#</th>
-                                <th>Variant Name / Preview</th>
+                                <th>Version Name / Preview</th>
                                 <th style="width: 120px;">Status</th>
                                 <th style="width: 150px;">Endpoint</th>
                                 <th style="width: 120px;">Open Rate</th>
@@ -1984,53 +1984,53 @@ def prompts_ui():
         
         async function loadAllPrompts() {
             try {
-                const [promptsResponse, variantsResponse] = await Promise.all([
+                const [promptsResponse, versionsResponse] = await Promise.all([
                     fetch('/api/prompts/get'),
-                    fetch('/api/prompts/get-variants')
+                    fetch('/api/prompts/get-versions')
                 ]);
                 
                 const promptsData_result = await promptsResponse.json();
-                let variantsData = { status: 'success', variants: [] };
+                let versionsData = { status: 'success', versions: [] };
                 
                 try {
-                    variantsData = await variantsResponse.json();
+                    versionsData = await versionsResponse.json();
                 } catch (e) {
-                    console.warn('Could not load variants:', e);
+                    console.warn('Could not load versions:', e);
                 }
                 
                 if (promptsData_result.status === 'success') {
-                    // Start with default variants
+                    // Start with default versions
                     promptsData = {
                         'new-email': [
-                            { id: 1, name: 'Default Variant', preview: (promptsData_result.prompts.new_email_prompt || '').substring(0, 100) || 'Default new email prompt template...', status: 'active', endpoint: '/api/workato/send-new-email', key: 'NEW_EMAIL_PROMPT_TEMPLATE', content: promptsData_result.prompts.new_email_prompt || '', version_letter: null }
+                            { id: 1, name: 'Default Version', preview: (promptsData_result.prompts.new_email_prompt || '').substring(0, 100) || 'Default new email prompt template...', status: 'active', endpoint: '/api/workato/send-new-email', key: 'NEW_EMAIL_PROMPT_TEMPLATE', content: promptsData_result.prompts.new_email_prompt || '', version_letter: null }
                         ],
                         'reply-email': [
-                            { id: 1, name: 'Default Variant', preview: (promptsData_result.prompts.reply_email_prompt || '').substring(0, 100) || 'Default reply email prompt template...', status: 'active', endpoint: '/api/workato/reply-to-emails', key: 'REPLY_EMAIL_PROMPT_TEMPLATE', content: promptsData_result.prompts.reply_email_prompt || '', version_letter: null }
+                            { id: 1, name: 'Default Version', preview: (promptsData_result.prompts.reply_email_prompt || '').substring(0, 100) || 'Default reply email prompt template...', status: 'active', endpoint: '/api/workato/reply-to-emails', key: 'REPLY_EMAIL_PROMPT_TEMPLATE', content: promptsData_result.prompts.reply_email_prompt || '', version_letter: null }
                         ],
                         'voice-guidelines': [
                             { id: 1, name: 'Default Guidelines', preview: (promptsData_result.prompts.voice_guidelines || '').substring(0, 100) || 'Default voice guidelines...', status: 'active', endpoint: 'Global', key: 'AFFIRM_VOICE_GUIDELINES', content: promptsData_result.prompts.voice_guidelines || '', version_letter: null }
                         ]
                     };
                     
-                    // Add variants from database
-                    if (variantsData.status === 'success' && variantsData.variants && Array.isArray(variantsData.variants)) {
-                        variantsData.variants.forEach((variant, idx) => {
-                            const variantId = 1000 + variant.id; // Use high IDs for variants
-                            const variantData = {
-                                id: variantId,
-                                name: variant.variant_name,
-                                preview: (variant.prompt_content || '').substring(0, 100) || 'No preview...',
-                                status: variant.status || 'draft',
-                                endpoint: variant.endpoint_path,
-                                key: `${variant.prompt_type.toUpperCase()}_PROMPT_TEMPLATE_${variant.version_letter}`,
-                                content: variant.prompt_content || '',
-                                version_letter: variant.version_letter
+                    // Add versions from database
+                    if (versionsData.status === 'success' && versionsData.versions && Array.isArray(versionsData.versions)) {
+                        versionsData.versions.forEach((version, idx) => {
+                            const versionId = 1000 + version.id; // Use high IDs for versions
+                            const versionData = {
+                                id: versionId,
+                                name: version.version_name,
+                                preview: (version.prompt_content || '').substring(0, 100) || 'No preview...',
+                                status: version.status || 'draft',
+                                endpoint: version.endpoint_path,
+                                key: `${version.prompt_type.toUpperCase()}_PROMPT_TEMPLATE_${version.version_letter}`,
+                                content: version.prompt_content || '',
+                                version_letter: version.version_letter
                             };
                             
-                            if (variant.prompt_type === 'new-email') {
-                                promptsData['new-email'].push(variantData);
-                            } else if (variant.prompt_type === 'reply-email') {
-                                promptsData['reply-email'].push(variantData);
+                            if (version.prompt_type === 'new-email') {
+                                promptsData['new-email'].push(versionData);
+                            } else if (version.prompt_type === 'reply-email') {
+                                promptsData['reply-email'].push(versionData);
                             }
                         });
                     }
@@ -2065,7 +2065,7 @@ def prompts_ui():
                 tbody.innerHTML = `
                     <tr>
                         <td colspan="7" style="text-align: center; padding: 40px; color: #6b7280;">
-                            No prompts found. ${prompts.length === 0 ? 'Click "+ Create Variant" to create your first prompt variant.' : 'Try selecting a different tab.'}
+                            No prompts found. ${prompts.length === 0 ? 'Click "+ Create Version" to create your first prompt version.' : 'Try selecting a different tab.'}
                         </td>
                     </tr>
                 `;
@@ -2137,10 +2137,10 @@ def prompts_ui():
             }
             
             try {
-                // If it's a variant (has version_letter), update via variant endpoint
+                // If it's a version (has version_letter), update via version endpoint
                 if (currentEditingPrompt.version_letter) {
-                    // TODO: Add update variant endpoint
-                    alert('Variant updates coming soon!');
+                    // TODO: Add update version endpoint
+                    alert('Version updates coming soon!');
                     return;
                 }
                 
@@ -2165,23 +2165,23 @@ def prompts_ui():
             }
         }
         
-        async function createNewVariant() {
+        async function createNewVersion() {
             if (currentPromptType === 'voice-guidelines') {
-                alert('Cannot create variants for voice guidelines');
+                alert('Cannot create versions for voice guidelines');
                 return;
             }
             
-            const variantName = prompt('Enter variant name:');
-            if (!variantName) return;
+            const versionName = prompt('Enter version name:');
+            if (!versionName) return;
             
             const promptContent = prompt('Enter prompt content (or leave empty to edit later):');
             
             try {
-                const response = await fetch('/api/prompts/create-variant', {
+                const response = await fetch('/api/prompts/create-version', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        variant_name: variantName,
+                        version_name: versionName,
                         prompt_type: currentPromptType,
                         prompt_content: promptContent || 'Enter your prompt here...'
                     })
@@ -2189,14 +2189,14 @@ def prompts_ui():
                 
                 const data = await response.json();
                 if (data.status === 'success') {
-                    alert(`✅ Variant created! Endpoint: ${data.endpoint_path}`);
-                    await loadAllPrompts();
+                    alert(`✅ Version created! Endpoint: ${data.endpoint_path}`);
+                    await Promise.all([loadAllPrompts(), loadStats()]);
                     renderTable();
                 } else {
                     alert('❌ Error: ' + data.message);
                 }
             } catch (error) {
-                alert('❌ Error creating variant: ' + error.message);
+                alert('❌ Error creating version: ' + error.message);
             }
         }
         
@@ -2377,6 +2377,363 @@ def reset_prompt():
             'message': str(e)
         }), 500
 
+@app.route('/api/prompts/get-versions', methods=['GET'])
+def get_prompt_versions():
+    """Get all prompt versions from database."""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available'
+            }), 503
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database connection failed'
+            }), 503
+        
+        prompt_type = request.args.get('prompt_type', '')
+        
+        cursor = conn.cursor()
+        
+        if prompt_type:
+            cursor.execute('''
+                SELECT id, version_name, prompt_type, prompt_content, version_letter, 
+                       endpoint_path, status, created_at, updated_at
+                FROM prompt_versions
+                WHERE prompt_type = %s
+                ORDER BY version_letter
+            ''', (prompt_type,))
+        else:
+            cursor.execute('''
+                SELECT id, version_name, prompt_type, prompt_content, version_letter, 
+                       endpoint_path, status, created_at, updated_at
+                FROM prompt_versions
+                ORDER BY prompt_type, version_letter
+            ''')
+        
+        versions = []
+        for row in cursor.fetchall():
+            versions.append({
+                'id': row[0],
+                'version_name': row[1],
+                'prompt_type': row[2],
+                'prompt_content': row[3],
+                'version_letter': row[4],
+                'endpoint_path': row[5],
+                'status': row[6],
+                'created_at': row[7].isoformat() if row[7] else None,
+                'updated_at': row[8].isoformat() if row[8] else None
+            })
+        
+        conn.close()
+        
+        return jsonify({
+            'status': 'success',
+            'versions': versions
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting prompt versions: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/prompts/create-version', methods=['POST'])
+def create_prompt_version():
+    """Create a new prompt version and automatically create a versioned endpoint."""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available'
+            }), 503
+        
+        data = request.get_json()
+        version_name = data.get('version_name', '').strip()
+        prompt_type = data.get('prompt_type', '').strip()  # 'new-email' or 'reply-email'
+        prompt_content = data.get('prompt_content', '').strip()
+        
+        if not version_name or not prompt_type or not prompt_content:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing required fields: version_name, prompt_type, prompt_content'
+            }), 400
+        
+        if prompt_type not in ['new-email', 'reply-email']:
+            return jsonify({
+                'status': 'error',
+                'message': 'prompt_type must be "new-email" or "reply-email"'
+            }), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database connection failed'
+            }), 503
+        
+        cursor = conn.cursor()
+        
+        # Find the next available version letter (A, B, C, etc.)
+        cursor.execute('''
+            SELECT version_letter 
+            FROM prompt_versions 
+            WHERE prompt_type = %s 
+            ORDER BY version_letter
+        ''', (prompt_type,))
+        existing_versions = [row[0] for row in cursor.fetchall()]
+        
+        # Generate next version letter
+        version_letter = None
+        for letter in 'ABCDEFGHIJKLMNOPQRSTUVWXYZ':
+            if letter not in existing_versions:
+                version_letter = letter
+                break
+        
+        if not version_letter:
+            conn.close()
+            return jsonify({
+                'status': 'error',
+                'message': 'Maximum number of versions reached (26 versions max)'
+            }), 400
+        
+        # Determine endpoint path
+        if prompt_type == 'new-email':
+            endpoint_path = f'/api/workato/send-new-email-version-{version_letter.lower()}'
+        else:  # reply-email
+            endpoint_path = f'/api/workato/reply-to-emails-version-{version_letter.lower()}'
+        
+        # Insert version into database
+        cursor.execute('''
+            INSERT INTO prompt_versions 
+            (version_name, prompt_type, prompt_content, version_letter, endpoint_path, status)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+        ''', (version_name, prompt_type, prompt_content, version_letter, endpoint_path, 'draft'))
+        
+        version_id = cursor.fetchone()[0]
+        conn.commit()
+        conn.close()
+        
+        # Dynamically create the endpoint
+        create_versioned_endpoint(prompt_type, version_letter, endpoint_path, prompt_content)
+        
+        logger.info(f"✅ Created prompt version: {version_name} ({version_letter}) with endpoint: {endpoint_path}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Prompt version created successfully',
+            'version_id': version_id,
+            'version_name': version_name,
+            'version_letter': version_letter,
+            'endpoint_path': endpoint_path,
+            'prompt_type': prompt_type
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error creating prompt version: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'Error creating prompt version: {str(e)}'
+        }), 500
+
+# Store dynamically created endpoints
+_dynamic_endpoints = {}
+
+def create_versioned_endpoint(prompt_type, version_letter, endpoint_path, prompt_content):
+    """Dynamically create a Flask route for a versioned endpoint."""
+    global _dynamic_endpoints
+    
+    def create_endpoint_handler(prompt_content, prompt_type):
+        """Factory function to create endpoint handlers with closure over prompt_content."""
+        if prompt_type == 'new-email':
+            def versioned_send_new_email():
+                """Versioned endpoint for sending new emails with custom prompt."""
+                try:
+                    # Get the same logic as workato_send_new_email but with custom prompt
+                    data = request.get_json() if request.is_json else {}
+                    
+                    # Extract all the same fields as the original endpoint
+                    contact_name = data.get('contact_name', '')
+                    contact_email = data.get('contact_email', '')
+                    contact_title = data.get('contact_title', '')
+                    account_name = data.get('account_name', '')
+                    account_industry = data.get('account_industry', 'Business')
+                    account_website = data.get('account_website', '')
+                    account_description = data.get('account_description', '')
+                    
+                    try:
+                        account_revenue = int(data.get('account_revenue', 0)) if data.get('account_revenue', '') else 0
+                    except (ValueError, TypeError):
+                        account_revenue = 0
+                    
+                    try:
+                        account_employees = int(data.get('account_employees', 0)) if data.get('account_employees', '') else 0
+                    except (ValueError, TypeError):
+                        account_employees = 0
+                    
+                    try:
+                        account_gmv = float(data.get('account_gmv', 0)) if data.get('account_gmv', '') else 0
+                    except (ValueError, TypeError):
+                        account_gmv = 0
+                    
+                    account_city = data.get('account_city', '')
+                    account_state = data.get('account_state', '')
+                    account_id = data.get('account_id', '')
+                    
+                    activities = data.get('activities', [])
+                    sender_name = "Jake Morgan"
+                    
+                    if not contact_email:
+                        return jsonify({
+                            "status": "error",
+                            "message": "Missing required 'contact_email' parameter",
+                            "timestamp": datetime.datetime.now().isoformat()
+                        }), 400
+                    
+                    # Check if email has already been sent
+                    has_been_sent, reason = check_if_email_already_sent(contact_email, activities)
+                    if has_been_sent:
+                        return jsonify({
+                            "status": "skipped",
+                            "message": f"Email already sent to this contact - {reason}",
+                            "timestamp": datetime.datetime.now().isoformat(),
+                            "contact": contact_name,
+                            "account": account_name,
+                            "reason": reason,
+                            "emails_sent": 0
+                        }), 200
+                    
+                    # Generate email using custom prompt template
+                    subject_line, email_content = generate_message(
+                        merchant_name=contact_name,
+                        last_activity="Recent",
+                        merchant_industry=account_industry,
+                        merchant_website=account_website,
+                        sender_name=sender_name,
+                        account_description=account_description,
+                        account_revenue=account_revenue,
+                        account_employees=account_employees,
+                        account_location=f"{account_city}, {account_state}".strip(", ") if account_city else "",
+                        contact_title=contact_title,
+                        account_gmv=account_gmv,
+                        prompt_template=prompt_content
+                    )
+                    
+                    # Format and send email
+                    formatted_email = format_pardot_email(
+                        first_name=contact_name,
+                        email_content=email_content,
+                        recipient_email=contact_email,
+                        sender_name=sender_name
+                    )
+                    
+                    email_result = send_email(
+                        to_email=contact_email,
+                        merchant_name=contact_name,
+                        subject_line=subject_line,
+                        email_content=formatted_email,
+                        campaign_name="MSS Signed But Not Activated Campaign",
+                        version_endpoint=endpoint_path
+                    )
+                    
+                    email_status = email_result['status'] if isinstance(email_result, dict) else email_result
+                    tracking_info = f" | Tracking ID: {email_result.get('tracking_id', 'N/A')}" if isinstance(email_result, dict) else ""
+                    
+                    clean_email_body = email_content.replace('\n', ' ').replace('\r', ' ').strip()
+                    import re
+                    clean_email_body = re.sub(r'\s+', ' ', clean_email_body)
+                    
+                    return jsonify({
+                        "status": "success",
+                        "message": "Personalized email sent successfully",
+                        "timestamp": datetime.datetime.now().isoformat(),
+                        "contact": contact_name,
+                        "account": account_name,
+                        "email_status": email_status + tracking_info,
+                        "subject": subject_line,
+                        "email_body": clean_email_body,
+                        "tracking_id": email_result.get('tracking_id') if isinstance(email_result, dict) else None,
+                        "tracking_url": email_result.get('tracking_url') if isinstance(email_result, dict) else None,
+                        "emails_sent": 1,
+                        "version": version_letter
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error in versioned send-new-email endpoint: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return jsonify({
+                        "status": "error",
+                        "message": f"Error sending email: {str(e)}",
+                        "timestamp": datetime.datetime.now().isoformat()
+                    }), 500
+            
+            return versioned_send_new_email
+        else:  # reply-email
+            def versioned_reply_to_emails():
+                """Versioned endpoint for replying to emails with custom prompt."""
+                # Similar implementation for reply emails
+                # This would use generate_ai_response with custom prompt
+                return jsonify({
+                    "status": "error",
+                    "message": "Reply email versions not yet implemented",
+                    "timestamp": datetime.datetime.now().isoformat()
+                }), 501
+            
+            return versioned_reply_to_emails
+    
+    # Create the handler
+    handler = create_endpoint_handler(prompt_content, prompt_type)
+    
+    # Register the route dynamically
+    app.add_url_rule(endpoint_path, f'versioned_{prompt_type}_{version_letter}', handler, methods=['POST'])
+    
+    # Store for reference
+    _dynamic_endpoints[endpoint_path] = {
+        'prompt_type': prompt_type,
+        'version_letter': version_letter,
+        'prompt_content': prompt_content
+    }
+    
+    logger.info(f"✅ Created dynamic endpoint: {endpoint_path}")
+
+# Load existing versions and create endpoints on startup
+def load_prompt_versions():
+    """Load existing prompt versions from database and create their endpoints."""
+    try:
+        if not DB_AVAILABLE:
+            return
+        
+        conn = get_db_connection()
+        if not conn:
+            return
+        
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT prompt_type, version_letter, endpoint_path, prompt_content
+            FROM prompt_versions
+            WHERE status = 'active'
+        ''')
+        
+        for row in cursor.fetchall():
+            prompt_type, version_letter, endpoint_path, prompt_content = row
+            create_versioned_endpoint(prompt_type, version_letter, endpoint_path, prompt_content)
+            logger.info(f"✅ Loaded existing version endpoint: {endpoint_path}")
+        
+        conn.close()
+    except Exception as e:
+        logger.warning(f"⚠️ Could not load prompt versions: {e}")
+
+# Load versions on startup
+load_prompt_versions()
+
 @app.route('/api/track-send', methods=['POST'])
 def track_email_send():
     """API endpoint to track email sends."""
@@ -2409,11 +2766,11 @@ def track_email_send():
             return jsonify({'error': 'Database connection failed'}), 503
         
         cursor = conn.cursor()
-        variant_endpoint = data.get('variant_endpoint')  # Get variant endpoint if provided
+        version_endpoint = data.get('version_endpoint')  # Get version endpoint if provided
         cursor.execute('''
-            INSERT INTO email_tracking (tracking_id, recipient_email, sender_email, subject, campaign_name, status, variant_endpoint)
+            INSERT INTO email_tracking (tracking_id, recipient_email, sender_email, subject, campaign_name, status, version_endpoint)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ''', (tracking_id, recipient_email, sender_email, subject, campaign_name, 'AI Outbound Email', variant_endpoint))
+        ''', (tracking_id, recipient_email, sender_email, subject, campaign_name, 'AI Outbound Email', version_endpoint))
         
         conn.commit()
         conn.close()
@@ -3737,7 +4094,8 @@ def workato_send_new_email():
             merchant_name=contact_name,
             subject_line=subject_line,
             email_content=formatted_email,
-            campaign_name="MSS Signed But Not Activated Campaign"
+            campaign_name="MSS Signed But Not Activated Campaign",
+            version_endpoint='/api/workato/send-new-email'
         )
         
         email_status = email_result['status'] if isinstance(email_result, dict) else email_result

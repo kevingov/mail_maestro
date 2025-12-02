@@ -60,7 +60,7 @@ class EmailTracker:
         buffer.seek(0)
         return buffer.getvalue()
     
-    def track_email_sent(self, recipient_email, sender_email=None, subject=None, campaign_name=None, variant_endpoint=None):
+    def track_email_sent(self, recipient_email, sender_email=None, subject=None, campaign_name=None, version_endpoint=None):
         """
         Register a new email for tracking via Railway API.
         Returns tracking_id for embedding in email.
@@ -76,7 +76,7 @@ class EmailTracker:
                     'sender_email': sender_email,
                     'subject': subject,
                     'campaign_name': campaign_name,
-                    'variant_endpoint': variant_endpoint
+                    'version_endpoint': version_endpoint
                 },
                 timeout=10
             )
