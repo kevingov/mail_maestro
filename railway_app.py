@@ -1052,9 +1052,189 @@ def home():
             'workato_check_email_sent': 'POST /api/workato/check-email-sent',
             'workato_get_all_emails': 'GET/POST /api/workato/get-all-emails',
             'workato_get_all_email_opens': 'GET/POST /api/workato/get-all-email-opens',
-            'workato_update_sfdc_task_id': 'POST /api/workato/update-sfdc-task-id'
+            'workato_update_sfdc_task_id': 'POST /api/workato/update-sfdc-task-id',
+            'prompts_ui': 'GET /prompts',
+            'prompts_api': 'GET/POST /api/prompts'
         }
     })
+
+@app.route('/prompts')
+def prompts_ui():
+    """Serve the prompts management UI."""
+    try:
+        with open('templates/prompts.html', 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        return jsonify({
+            'error': 'Prompts UI not found',
+            'message': 'Please ensure templates/prompts.html exists'
+        }), 404
+
+@app.route('/api/prompts/get', methods=['GET'])
+def get_prompts():
+    """Get all current prompts."""
+    try:
+        # Get prompts from environment variables or use defaults
+        voice_guidelines = os.getenv('AFFIRM_VOICE_GUIDELINES', AFFIRM_VOICE_GUIDELINES)
+        
+        # Default prompt templates (extracted from code)
+        new_email_prompt_default = """Generate a **professional, Affirm-branded business email** to re-engage {merchant_name}, a merchant in the {merchant_industry_str} industry, who has completed technical integration with Affirm but has **not yet launched**. The goal is to encourage them to go live — without offering a meeting or call.
+
+**Context:**
+- Contact Name: {merchant_name}
+- Contact Title: {contact_title_str}
+- Industry: {merchant_industry_str}
+- Website: {merchant_website_str}
+- Sender: {sender_name}
+- Status: Integrated with Affirm, not yet live
+- Account Description: {account_description_str}
+- Annual Revenue: {account_revenue_str}
+- Trailing 12M GMV: {account_gmv_str}
+- Employees: {account_employees_str}
+- Location: {account_location_str}
+
+**Tone & Style Guidelines:**
+- Use Affirm's brand voice: smart, approachable, efficient
+- Do **not** offer a call or meeting
+- Make it feel like a 1:1 business development check-in
+- Be helpful, not pushy
+- Reference their specific industry and business context
+
+**Spam Avoidance Rules:**
+- No excessive punctuation or all-caps
+- Avoid trigger words like "FREE," "ACT NOW," or "LIMITED TIME"
+- Avoid heavy use of numbers or dollar signs
+
+**Include in the Email:**
+- **Subject Line**: Under 50 characters, straightforward and relevant
+- **Opening Line**: Greet the merchant by name and acknowledge that integration is complete
+- **Body**: 
+    - Reiterate the value of Affirm to their specific industry or customer base
+    - Reference their business context (size, industry, etc.) if relevant
+    - Encourage them to take the final step to go live
+    - Offer light-touch support or resources (but **not** a meeting)
+- **CTA**: Prompt action, but keep it casual and async — e.g., "Let us know when you're ready," or "We're here if you need anything."
+
+**Output Format:**
+- **Subject Line:** [Concise subject line]
+- **Email Body:** [Email message]
+
+Keep the email under 130 words. Make it feel natural and human, not like marketing automation."""
+
+        reply_email_prompt_default = """**TASK:** Generate a professional Affirm-branded email response to {recipient_name} from {sender_name}.
+
+**CONVERSATION CONTEXT:**
+{conversation_context}
+
+**CRITICAL RULES:**
+1. **Answer direct questions in the FIRST line** (e.g., "Are you a bot?" → "I'm an AI assistant helping with business development, but I'm here to provide real value and connect you with our human team.")
+2. **Be truthful** - don't make up information
+3. **Reference conversation history** to show you've read it
+4. **Be conversational and helpful** - acknowledge concerns before solutions
+5. **Keep under 150 words** and feel natural, not automated
+
+**OUTPUT FORMAT:**
+- **Subject Line:** [Concise subject]
+- **Email Body:** [Your response]
+
+For technical support, refer to customercare@affirm.com."""
+
+        # Get from environment or use defaults
+        new_email_prompt = os.getenv('NEW_EMAIL_PROMPT_TEMPLATE', new_email_prompt_default)
+        reply_email_prompt = os.getenv('REPLY_EMAIL_PROMPT_TEMPLATE', reply_email_prompt_default)
+        
+        return jsonify({
+            'status': 'success',
+            'prompts': {
+                'voice_guidelines': voice_guidelines,
+                'new_email_prompt': new_email_prompt,
+                'reply_email_prompt': reply_email_prompt
+            },
+            'endpoints': {
+                'voice_guidelines': 'Used in all email prompts',
+                'new_email_prompt': '/api/workato/send-new-email',
+                'reply_email_prompt': '/api/workato/reply-to-emails'
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error getting prompts: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/prompts/update', methods=['POST'])
+def update_prompt():
+    """Update a prompt (stores in environment variable - note: requires app restart to take effect)."""
+    try:
+        data = request.get_json()
+        prompt_key = data.get('key')
+        prompt_value = data.get('value')
+        
+        if not prompt_key or not prompt_value:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing key or value'
+            }), 400
+        
+        # Note: In Railway, you need to update environment variables through the dashboard
+        # This endpoint will log the new value but won't persist it automatically
+        logger.info(f"📝 Prompt update requested: {prompt_key}")
+        logger.info(f"New value: {prompt_value[:100]}...")
+        
+        # For now, we'll store it in a way that can be read back
+        # In production, you'd want to update Railway env vars via API or file
+        os.environ[prompt_key] = prompt_value
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Prompt {prompt_key} updated. Note: App restart may be required for changes to take effect.',
+            'key': prompt_key
+        })
+    except Exception as e:
+        logger.error(f"Error updating prompt: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/prompts/reset', methods=['POST'])
+def reset_prompt():
+    """Reset a prompt to its default value."""
+    try:
+        data = request.get_json()
+        prompt_key = data.get('key')
+        
+        if not prompt_key:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing key'
+            }), 400
+        
+        # Default values
+        defaults = {
+            'AFFIRM_VOICE_GUIDELINES': AFFIRM_VOICE_GUIDELINES,
+            'NEW_EMAIL_PROMPT_TEMPLATE': '',  # Will be extracted from code
+            'REPLY_EMAIL_PROMPT_TEMPLATE': ''  # Will be extracted from code
+        }
+        
+        default_value = defaults.get(prompt_key, '')
+        
+        # Reset to default
+        if prompt_key in defaults:
+            os.environ[prompt_key] = default_value
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Prompt {prompt_key} reset to default',
+            'default_value': default_value
+        })
+    except Exception as e:
+        logger.error(f"Error resetting prompt: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 @app.route('/api/track-send', methods=['POST'])
 def track_email_send():
