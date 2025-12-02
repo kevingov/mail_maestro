@@ -68,6 +68,10 @@ class EmailTracker:
         tracking_id = self.generate_tracking_id()
         
         # Send to Railway API
+        # Default to main endpoint if version_endpoint is not provided
+        if not version_endpoint:
+            version_endpoint = '/api/workato/send-new-email'
+        
         try:
             response = requests.post(f"{self.railway_url}/api/track-send", 
                 json={

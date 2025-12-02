@@ -624,6 +624,12 @@ def send_email(to_email, merchant_name, subject_line, email_content, campaign_na
         tracker = EmailTracker()
         
         # Track the email and get tracking ID
+        # Default to main endpoint if version_endpoint is not provided
+        if not version_endpoint:
+            version_endpoint = '/api/workato/send-new-email'
+        
+        logger.info(f"📧 Sending email to {to_email} with version_endpoint: {version_endpoint}")
+        
         tracking_id = tracker.track_email_sent(
             recipient_email=to_email,
             sender_email=os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com'),
@@ -2775,6 +2781,12 @@ def track_email_send():
         
         cursor = conn.cursor()
         version_endpoint = data.get('version_endpoint')  # Get version endpoint if provided
+        # Default to the main endpoint if not provided
+        if not version_endpoint:
+            version_endpoint = '/api/workato/send-new-email'
+        
+        logger.info(f"📝 Tracking email send: {tracking_id} -> {recipient_email} | version_endpoint: {version_endpoint}")
+        
         cursor.execute('''
             INSERT INTO email_tracking (tracking_id, recipient_email, sender_email, subject, campaign_name, status, version_endpoint)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
