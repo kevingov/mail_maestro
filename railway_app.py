@@ -2505,9 +2505,9 @@ def get_prompt_version_stats():
                 ROUND(
                     CASE 
                         WHEN COUNT(DISTINCT et.id) > 0 
-                        THEN (COUNT(DISTINCT CASE WHEN et.open_count > 0 THEN et.id END)::FLOAT / COUNT(DISTINCT et.id)::FLOAT) * 100
+                        THEN (COUNT(DISTINCT CASE WHEN et.open_count > 0 THEN et.id END)::NUMERIC / COUNT(DISTINCT et.id)::NUMERIC) * 100
                         ELSE 0 
-                    END, 
+                    END::NUMERIC, 
                     2
                 ) as open_rate
             FROM email_tracking et
