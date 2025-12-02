@@ -204,6 +204,22 @@ def init_database():
             )
         ''')
         
+        # Prompt variants table for A/B testing
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS prompt_variants (
+                id SERIAL PRIMARY KEY,
+                variant_name VARCHAR(255) NOT NULL,
+                prompt_type VARCHAR(50) NOT NULL,
+                prompt_content TEXT NOT NULL,
+                version_letter VARCHAR(10) NOT NULL,
+                endpoint_path VARCHAR(255) NOT NULL,
+                status VARCHAR(20) DEFAULT 'draft',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(prompt_type, version_letter)
+            )
+        ''')
+        
         conn.commit()
         conn.close()
         logger.info("✅ PostgreSQL database initialized")
@@ -467,10 +483,10 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
                                    recipient_email="recipient@email.com", 
                                    sender_name=sender_name)
 
-def generate_message(merchant_name, last_activity, merchant_industry, merchant_website, sender_name, account_description="", account_revenue=0, account_employees=0, account_location="", contact_title="", account_gmv=0):
+def generate_message(merchant_name, last_activity, merchant_industry, merchant_website, sender_name, account_description="", account_revenue=0, account_employees=0, account_location="", contact_title="", account_gmv=0, prompt_template=None):
     """
     Creates an Affirm-branded outreach email using AI with detailed Salesforce data.
-    Exact copy from 2025_hackathon.py.
+    Can use a custom prompt template if provided, otherwise uses default.
     """
     # Handle None values and format them properly
     account_revenue_str = f"${account_revenue:,}" if account_revenue and account_revenue > 0 else "Not specified"
@@ -482,52 +498,75 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
     merchant_industry_str = merchant_industry if merchant_industry else "Business"
     merchant_website_str = merchant_website if merchant_website else "Not provided"
     
-    prompt = f"""
-    {AFFIRM_VOICE_GUIDELINES}
+    # Use custom prompt template if provided, otherwise use default
+    if prompt_template:
+        # Format the custom template with variables
+        try:
+            prompt = prompt_template.format(
+                AFFIRM_VOICE_GUIDELINES=AFFIRM_VOICE_GUIDELINES,
+                merchant_name=merchant_name,
+                contact_title_str=contact_title_str,
+                merchant_industry_str=merchant_industry_str,
+                merchant_website_str=merchant_website_str,
+                sender_name=sender_name,
+                account_description_str=account_description_str,
+                account_revenue_str=account_revenue_str,
+                account_gmv_str=account_gmv_str,
+                account_employees_str=account_employees_str,
+                account_location_str=account_location_str
+            )
+        except KeyError as e:
+            logger.warning(f"⚠️ Custom prompt template missing variable {e}, using default")
+            prompt_template = None
     
-    Generate a **professional, Affirm-branded business email** to re-engage {merchant_name}, a merchant in the {merchant_industry_str} industry, who has completed technical integration with Affirm but has **not yet launched**. The goal is to encourage them to go live — without offering a meeting or call.
+    # Default prompt if no custom template or formatting failed
+    if not prompt_template:
+        prompt = f"""
+        {AFFIRM_VOICE_GUIDELINES}
+        
+        Generate a **professional, Affirm-branded business email** to re-engage {merchant_name}, a merchant in the {merchant_industry_str} industry, who has completed technical integration with Affirm but has **not yet launched**. The goal is to encourage them to go live — without offering a meeting or call.
 
-    **Context:**
-    - Contact Name: {merchant_name}
-    - Contact Title: {contact_title_str}
-    - Industry: {merchant_industry_str}
-    - Website: {merchant_website_str}
-    - Sender: {sender_name}
-    - Status: Integrated with Affirm, not yet live
-    - Account Description: {account_description_str}
-    - Annual Revenue: {account_revenue_str}
-    - Trailing 12M GMV: {account_gmv_str}
-    - Employees: {account_employees_str}
-    - Location: {account_location_str}
+        **Context:**
+        - Contact Name: {merchant_name}
+        - Contact Title: {contact_title_str}
+        - Industry: {merchant_industry_str}
+        - Website: {merchant_website_str}
+        - Sender: {sender_name}
+        - Status: Integrated with Affirm, not yet live
+        - Account Description: {account_description_str}
+        - Annual Revenue: {account_revenue_str}
+        - Trailing 12M GMV: {account_gmv_str}
+        - Employees: {account_employees_str}
+        - Location: {account_location_str}
 
-    **Tone & Style Guidelines:**
-    - Use Affirm's brand voice: smart, approachable, efficient
-    - Do **not** offer a call or meeting
-    - Make it feel like a 1:1 business development check-in
-    - Be helpful, not pushy
-    - Reference their specific industry and business context
+        **Tone & Style Guidelines:**
+        - Use Affirm's brand voice: smart, approachable, efficient
+        - Do **not** offer a call or meeting
+        - Make it feel like a 1:1 business development check-in
+        - Be helpful, not pushy
+        - Reference their specific industry and business context
 
-    **Spam Avoidance Rules:**
-    - No excessive punctuation or all-caps
-    - Avoid trigger words like "FREE," "ACT NOW," or "LIMITED TIME"
-    - Avoid heavy use of numbers or dollar signs
+        **Spam Avoidance Rules:**
+        - No excessive punctuation or all-caps
+        - Avoid trigger words like "FREE," "ACT NOW," or "LIMITED TIME"
+        - Avoid heavy use of numbers or dollar signs
 
-    **Include in the Email:**
-    - **Subject Line**: Under 50 characters, straightforward and relevant
-    - **Opening Line**: Greet the merchant by name and acknowledge that integration is complete
-    - **Body**: 
-        - Reiterate the value of Affirm to their specific industry or customer base
-        - Reference their business context (size, industry, etc.) if relevant
-        - Encourage them to take the final step to go live
-        - Offer light-touch support or resources (but **not** a meeting)
-    - **CTA**: Prompt action, but keep it casual and async — e.g., "Let us know when you're ready," or "We're here if you need anything."
+        **Include in the Email:**
+        - **Subject Line**: Under 50 characters, straightforward and relevant
+        - **Opening Line**: Greet the merchant by name and acknowledge that integration is complete
+        - **Body**: 
+            - Reiterate the value of Affirm to their specific industry or customer base
+            - Reference their business context (size, industry, etc.) if relevant
+            - Encourage them to take the final step to go live
+            - Offer light-touch support or resources (but **not** a meeting)
+        - **CTA**: Prompt action, but keep it casual and async — e.g., "Let us know when you're ready," or "We're here if you need anything."
 
-    **Output Format:**
-    - **Subject Line:** [Concise subject line]
-    - **Email Body:** [Email message]
+        **Output Format:**
+        - **Subject Line:** [Concise subject line]
+        - **Email Body:** [Email message]
 
-    Keep the email under 130 words. Make it feel natural and human, not like marketing automation.
-    """
+        Keep the email under 130 words. Make it feel natural and human, not like marketing automation.
+        """
 
     try:
         api_key = os.environ.get('OPENAI_API_KEY')
@@ -1814,16 +1853,19 @@ def prompts_ui():
             
             <div class="content-area">
                 <div class="content-header">
-                    <div class="tabs">
-                        <button class="tab active" onclick="selectTab('all')">
-                            All prompts <span class="tab-count" id="all-count">3</span>
-                        </button>
-                        <button class="tab" onclick="selectTab('active')">
-                            Active <span class="tab-count" id="active-count">2</span>
-                        </button>
-                        <button class="tab" onclick="selectTab('draft')">
-                            Draft <span class="tab-count" id="draft-count">1</span>
-                        </button>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <div class="tabs">
+                            <button class="tab active" onclick="selectTab('all')">
+                                All prompts <span class="tab-count" id="all-count">3</span>
+                            </button>
+                            <button class="tab" onclick="selectTab('active')">
+                                Active <span class="tab-count" id="active-count">2</span>
+                            </button>
+                            <button class="tab" onclick="selectTab('draft')">
+                                Draft <span class="tab-count" id="draft-count">1</span>
+                            </button>
+                        </div>
+                        <button class="btn-primary" onclick="createNewVariant()" style="margin-left: auto;">+ Create Variant</button>
                     </div>
                 </div>
                 
@@ -1912,23 +1954,50 @@ def prompts_ui():
         
         async function loadAllPrompts() {
             try {
-                const response = await fetch('/api/prompts/get');
-                const data = await response.json();
-                if (data.status === 'success') {
+                const [promptsResponse, variantsResponse] = await Promise.all([
+                    fetch('/api/prompts/get'),
+                    fetch('/api/prompts/get-variants')
+                ]);
+                
+                const promptsData_result = await promptsResponse.json();
+                const variantsData = await variantsResponse.json();
+                
+                if (promptsData_result.status === 'success') {
+                    // Start with default variants
                     promptsData = {
                         'new-email': [
-                            { id: 1, name: 'Default Variant', preview: data.prompts.new_email_prompt?.substring(0, 100) || '', status: 'active', endpoint: '/api/workato/send-new-email', key: 'NEW_EMAIL_PROMPT_TEMPLATE', content: data.prompts.new_email_prompt || '' },
-                            { id: 2, name: 'Variant A - Casual', preview: 'A more casual, friendly approach...', status: 'draft', endpoint: '/api/workato/send-new-email', key: 'NEW_EMAIL_PROMPT_TEMPLATE_A', content: '' },
-                            { id: 3, name: 'Variant B - Professional', preview: 'A more formal, professional tone...', status: 'draft', endpoint: '/api/workato/send-new-email', key: 'NEW_EMAIL_PROMPT_TEMPLATE_B', content: '' }
+                            { id: 1, name: 'Default Variant', preview: promptsData_result.prompts.new_email_prompt?.substring(0, 100) || '', status: 'active', endpoint: '/api/workato/send-new-email', key: 'NEW_EMAIL_PROMPT_TEMPLATE', content: promptsData_result.prompts.new_email_prompt || '', version_letter: null }
                         ],
                         'reply-email': [
-                            { id: 1, name: 'Default Variant', preview: data.prompts.reply_email_prompt?.substring(0, 100) || '', status: 'active', endpoint: '/api/workato/reply-to-emails', key: 'REPLY_EMAIL_PROMPT_TEMPLATE', content: data.prompts.reply_email_prompt || '' },
-                            { id: 2, name: 'Variant A - Concise', preview: 'Shorter, more direct responses...', status: 'draft', endpoint: '/api/workato/reply-to-emails', key: 'REPLY_EMAIL_PROMPT_TEMPLATE_A', content: '' }
+                            { id: 1, name: 'Default Variant', preview: promptsData_result.prompts.reply_email_prompt?.substring(0, 100) || '', status: 'active', endpoint: '/api/workato/reply-to-emails', key: 'REPLY_EMAIL_PROMPT_TEMPLATE', content: promptsData_result.prompts.reply_email_prompt || '', version_letter: null }
                         ],
                         'voice-guidelines': [
-                            { id: 1, name: 'Default Guidelines', preview: data.prompts.voice_guidelines?.substring(0, 100) || '', status: 'active', endpoint: 'Global', key: 'AFFIRM_VOICE_GUIDELINES', content: data.prompts.voice_guidelines || '' }
+                            { id: 1, name: 'Default Guidelines', preview: promptsData_result.prompts.voice_guidelines?.substring(0, 100) || '', status: 'active', endpoint: 'Global', key: 'AFFIRM_VOICE_GUIDELINES', content: promptsData_result.prompts.voice_guidelines || '', version_letter: null }
                         ]
                     };
+                    
+                    // Add variants from database
+                    if (variantsData.status === 'success' && variantsData.variants) {
+                        variantsData.variants.forEach((variant, idx) => {
+                            const variantId = 1000 + variant.id; // Use high IDs for variants
+                            const variantData = {
+                                id: variantId,
+                                name: variant.variant_name,
+                                preview: variant.prompt_content?.substring(0, 100) || '',
+                                status: variant.status,
+                                endpoint: variant.endpoint_path,
+                                key: `${variant.prompt_type.toUpperCase()}_PROMPT_TEMPLATE_${variant.version_letter}`,
+                                content: variant.prompt_content,
+                                version_letter: variant.version_letter
+                            };
+                            
+                            if (variant.prompt_type === 'new-email') {
+                                promptsData['new-email'].push(variantData);
+                            } else if (variant.prompt_type === 'reply-email') {
+                                promptsData['reply-email'].push(variantData);
+                            }
+                        });
+                    }
                 }
             } catch (error) {
                 console.error('Error loading prompts:', error);
@@ -1990,6 +2059,13 @@ def prompts_ui():
             }
             
             try {
+                // If it's a variant (has version_letter), update via variant endpoint
+                if (currentEditingPrompt.version_letter) {
+                    // TODO: Add update variant endpoint
+                    alert('Variant updates coming soon!');
+                    return;
+                }
+                
                 const response = await fetch('/api/prompts/update', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2008,6 +2084,41 @@ def prompts_ui():
                 }
             } catch (error) {
                 alert('❌ Error saving prompt: ' + error.message);
+            }
+        }
+        
+        async function createNewVariant() {
+            if (currentPromptType === 'voice-guidelines') {
+                alert('Cannot create variants for voice guidelines');
+                return;
+            }
+            
+            const variantName = prompt('Enter variant name:');
+            if (!variantName) return;
+            
+            const promptContent = prompt('Enter prompt content (or leave empty to edit later):');
+            
+            try {
+                const response = await fetch('/api/prompts/create-variant', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        variant_name: variantName,
+                        prompt_type: currentPromptType,
+                        prompt_content: promptContent || 'Enter your prompt here...'
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.status === 'success') {
+                    alert(`✅ Variant created! Endpoint: ${data.endpoint_path}`);
+                    await loadAllPrompts();
+                    renderTable();
+                } else {
+                    alert('❌ Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('❌ Error creating variant: ' + error.message);
             }
         }
         
