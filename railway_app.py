@@ -4528,23 +4528,26 @@ def workato_update_sfdc_task_id():
         tracking_id = str(data.get('tracking_id', '')).strip() if data.get('tracking_id') else ''
         sfdc_task_id = str(data.get('sfdc_task_id', '')).strip() if data.get('sfdc_task_id') else ''
         
+        # If tracking_id is missing, skip processing and return success
         if not tracking_id:
-            logger.warning(f"⚠️ Missing tracking_id. Received data: {data}")
+            logger.info(f"⏭️ Skipping update - no tracking_id provided. Received data: {data}")
             return jsonify({
-                'status': 'error',
-                'message': 'Missing required "tracking_id" parameter',
-                'received_data': str(data),
+                'status': 'success',
+                'message': 'Skipped - no tracking_id provided',
+                'skipped': True,
                 'timestamp': datetime.datetime.now().isoformat()
-            }), 400
+            }), 200
         
+        # If sfdc_task_id is missing, skip processing and return success
         if not sfdc_task_id:
-            logger.warning(f"⚠️ Missing sfdc_task_id. Received data: {data}")
+            logger.info(f"⏭️ Skipping update - no sfdc_task_id provided. Tracking ID: {tracking_id}")
             return jsonify({
-                'status': 'error',
-                'message': 'Missing required "sfdc_task_id" parameter',
-                'received_data': str(data),
+                'status': 'success',
+                'message': 'Skipped - no sfdc_task_id provided',
+                'skipped': True,
+                'tracking_id': tracking_id,
                 'timestamp': datetime.datetime.now().isoformat()
-            }), 400
+            }), 200
         
         logger.info(f"📝 Updating SFDC Task ID for tracking_id: {tracking_id} -> {sfdc_task_id}")
         
