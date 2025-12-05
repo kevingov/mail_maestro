@@ -323,6 +323,29 @@ def authenticate_gmail():
     
     return creds
 
+def normalize_email(email):
+    """
+    Normalize email address by removing Gmail aliases (+alias part).
+    Example: sanjaydhawan1997+testdecfour@gmail.com -> sanjaydhawan1997@gmail.com
+    """
+    if not email:
+        return email
+    
+    email = email.lower().strip()
+    
+    # Extract email from "Name <email@domain.com>" format
+    if '<' in email and '>' in email:
+        email = email.split('<')[1].split('>')[0]
+    
+    # Remove Gmail aliases (everything after + and before @)
+    if '+' in email and '@' in email:
+        local_part, domain = email.split('@', 1)
+        # Remove everything after the + sign
+        local_part = local_part.split('+')[0]
+        email = f"{local_part}@{domain}"
+    
+    return email
+
 def extract_email_body(payload):
     """Extract the body of an email, handling both plain text and HTML."""
     body = ""
@@ -989,17 +1012,24 @@ def get_emails_needing_replies_with_accounts(accounts):
     logger.info("Connected to Gmail API")
 
     # Create a lookup dictionary for email addresses from Workato accounts
+    # Store both original and normalized versions for matching
     account_emails = {}
+    normalized_account_emails = {}  # Maps normalized email -> account info
     for account in accounts:
-        email_addr = account.get('email', '').lower()
+        email_addr = account.get('email', '').lower().strip()
         if email_addr:
+            normalized = normalize_email(email_addr)
             account_emails[email_addr] = {
                 'contact_id': account.get('contact_id'),
                 'account_id': account.get('account_id'),
-                'contact_name': account.get('name')
+                'contact_name': account.get('name'),
+                'normalized_email': normalized
             }
+            # Store normalized version for alias matching
+            normalized_account_emails[normalized] = account_emails[email_addr]
 
     logger.info(f"Processing {len(account_emails)} email addresses from Workato")
+    logger.info(f"Normalized email lookup: {list(normalized_account_emails.keys())}")
 
     # Fetch ALL emails from inbox (not just unread)
     results = service.users().messages().list(userId='me', labelIds=['INBOX'], maxResults=100).execute()
@@ -1023,19 +1053,24 @@ def get_emails_needing_replies_with_accounts(accounts):
         message_id = next((h['value'] for h in headers if h['name'] == 'Message-ID'), '')
         thread_id = message.get('threadId')
         
-        # Extract sender email address
-        sender_email = sender
-        if '<' in sender and '>' in sender:
-            sender_email = sender.split('<')[1].split('>')[0]
-        sender_email = sender_email.lower()
+        # Extract and normalize sender email address
+        sender_email = normalize_email(sender)
+        sender_email_original = sender.lower()
+        if '<' in sender_email_original and '>' in sender_email_original:
+            sender_email_original = sender_email_original.split('<')[1].split('>')[0]
         
         # Check if this email is from one of the Workato-provided accounts
-        if sender_email in account_emails:
+        # Check both exact match and normalized match (for alias handling)
+        account_info = None
+        if sender_email_original in account_emails:
+            account_info = account_emails[sender_email_original]
+        elif sender_email in normalized_account_emails:
+            account_info = normalized_account_emails[sender_email]
+            logger.info(f"📧 Matched email alias: {sender_email_original} -> {sender_email} (normalized)")
+        
+        if account_info:
             # Get email body
             body = extract_email_body(message['payload'])
-            
-            # Add account information from Workato
-            account_info = account_emails[sender_email]
             
             email_data = {
                 'id': msg_id,
@@ -1047,21 +1082,78 @@ def get_emails_needing_replies_with_accounts(accounts):
                 'message_id': message_id,
                 'contact_name': account_info['contact_name'],
                 'account_id': account_info['account_id'],
-                'contact_id': account_info['contact_id']
+                'contact_id': account_info['contact_id'],
+                'normalized_sender': sender_email  # Store normalized for thread matching
             }
             emails.append(email_data)
-            logger.info(f"Found email from Workato account: {sender} - {subject}")
+            logger.info(f"Found email from Workato account: {sender} (normalized: {sender_email}) - {subject}")
 
     logger.info(f"Found {len(emails)} emails from Workato-provided accounts")
 
+    # Also check threads that contain emails from our accounts (even if latest email doesn't match)
+    # This handles cases where original email was from alias, but reply is from base email
+    thread_ids_from_emails = {email.get('threadId') for email in emails if email.get('threadId')}
+    
+    # For each thread that has at least one email from our accounts, check ALL messages in thread
+    all_thread_emails = {}
+    for thread_id in thread_ids_from_emails:
+        try:
+            thread_data = service.users().threads().get(userId='me', id=thread_id).execute()
+            thread_messages = thread_data.get('messages', [])
+            
+            for msg in thread_messages:
+                msg_id = msg['id']
+                message = service.users().messages().get(userId='me', id=msg_id).execute()
+                
+                headers = message['payload'].get('headers', [])
+                sender = next((h['value'] for h in headers if h['name'] == 'From'), '')
+                subject = next((h['value'] for h in headers if h['name'] == 'Subject'), '')
+                date = next((h['value'] for h in headers if h['name'] == 'Date'), '')
+                
+                sender_normalized = normalize_email(sender)
+                
+                # Check if this message is from one of our accounts (exact or normalized)
+                is_from_account = False
+                account_info = None
+                
+                sender_original = sender.lower()
+                if '<' in sender_original and '>' in sender_original:
+                    sender_original = sender_original.split('<')[1].split('>')[0]
+                
+                if sender_original in account_emails:
+                    account_info = account_emails[sender_original]
+                    is_from_account = True
+                elif sender_normalized in normalized_account_emails:
+                    account_info = normalized_account_emails[sender_normalized]
+                    is_from_account = True
+                    logger.info(f"📧 Found alias match in thread {thread_id}: {sender_original} -> {sender_normalized}")
+                
+                if thread_id not in all_thread_emails:
+                    all_thread_emails[thread_id] = []
+                
+                all_thread_emails[thread_id].append({
+                    'id': msg_id,
+                    'threadId': thread_id,
+                    'sender': sender,
+                    'subject': subject,
+                    'date': date,
+                    'body': extract_email_body(message['payload']),
+                    'is_from_account': is_from_account,
+                    'account_info': account_info,
+                    'normalized_sender': sender_normalized
+                })
+        except Exception as e:
+            logger.warning(f"⚠️ Error processing thread {thread_id}: {e}")
+            # Fall back to emails we already found
+            if thread_id not in all_thread_emails:
+                all_thread_emails[thread_id] = []
+                for email in emails:
+                    if email.get('threadId') == thread_id:
+                        email['is_from_account'] = True
+                        all_thread_emails[thread_id].append(email)
+
     # Group emails by conversation thread (threadId)
-    thread_emails = {}
-    for email in emails:
-        thread_id = email.get('threadId')
-        if thread_id:
-            if thread_id not in thread_emails:
-                thread_emails[thread_id] = []
-            thread_emails[thread_id].append(email)
+    thread_emails = all_thread_emails
     
     emails_needing_replies = []
     
@@ -1071,22 +1163,72 @@ def get_emails_needing_replies_with_accounts(accounts):
         emails_in_thread.sort(key=lambda x: x.get('date', ''), reverse=True)
         latest_email = emails_in_thread[0]  # Most recent email in this thread
         
+        # Ensure latest_email has account_info if it's from one of our accounts
+        if latest_email.get('account_info'):
+            # Use the account_info from the email
+            pass
+        else:
+            # Try to find account_info for this email
+            latest_sender = latest_email.get('sender', '').lower()
+            latest_sender_normalized = latest_email.get('normalized_sender') or normalize_email(latest_sender)
+            
+            sender_original = latest_sender
+            if '<' in sender_original and '>' in sender_original:
+                sender_original = sender_original.split('<')[1].split('>')[0]
+            
+            if sender_original in account_emails:
+                latest_email['account_info'] = account_emails[sender_original]
+            elif latest_sender_normalized in normalized_account_emails:
+                latest_email['account_info'] = normalized_account_emails[latest_sender_normalized]
+        
         # Check if the latest message is from the merchant (not from us)
         latest_sender = latest_email.get('sender', '').lower()
+        latest_sender_normalized = latest_email.get('normalized_sender') or normalize_email(latest_sender)
         is_from_merchant = False
         
         # Check if latest sender is one of our Workato accounts (merchant)
-        for account_email in account_emails.keys():
-            if account_email in latest_sender:
+        # Check both exact match and normalized match
+        if latest_sender_normalized in normalized_account_emails:
+            is_from_merchant = True
+        else:
+            # Also check if any part of the sender string matches
+            sender_original = latest_sender
+            if '<' in sender_original and '>' in sender_original:
+                sender_original = sender_original.split('<')[1].split('>')[0]
+            
+            if sender_original in account_emails:
                 is_from_merchant = True
-                break
+            else:
+                for account_email, account_data in account_emails.items():
+                    normalized_account = account_data.get('normalized_email', normalize_email(account_email))
+                    if account_email in latest_sender or normalized_account == latest_sender_normalized:
+                        is_from_merchant = True
+                        break
         
         # Only reply if:
         # 1. Latest message is from merchant (not from us)
         # 2. Thread hasn't been replied to yet
         if is_from_merchant and not has_been_replied_to(latest_email['id'], service):
-            emails_needing_replies.append(latest_email)
-            logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from merchant)")
+            # Ensure email has all required fields for reply processing
+            if not latest_email.get('account_info'):
+                logger.warning(f"⚠️ Thread {thread_id} needs reply but missing account_info, skipping")
+                continue
+            
+            # Add account info to email for reply processing
+            account_info = latest_email['account_info']
+            reply_email = {
+                'id': latest_email['id'],
+                'threadId': thread_id,
+                'sender': latest_email['sender'],
+                'subject': latest_email['subject'],
+                'body': latest_email.get('body', ''),
+                'date': latest_email.get('date', ''),
+                'contact_name': account_info.get('contact_name', latest_email.get('sender', '').split('@')[0].capitalize()),
+                'account_id': account_info.get('account_id'),
+                'contact_id': account_info.get('contact_id')
+            }
+            emails_needing_replies.append(reply_email)
+            logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from merchant, normalized: {latest_sender_normalized})")
         else:
             if not is_from_merchant:
                 logger.info(f"Conversation thread {thread_id} - latest message is from us, skipping reply")
