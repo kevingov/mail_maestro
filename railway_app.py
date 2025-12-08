@@ -579,6 +579,14 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     For technical support, refer to customercare@affirm.com.
     """
 
+    # Log the prompt being used
+    logger.info(f"📝 PROMPT USED FOR REPLY EMAIL:")
+    logger.info(f"   Endpoint: /api/workato/reply-to-emails (Default)")
+    logger.info(f"   Prompt Type: reply-email")
+    logger.info(f"   Prompt Length: {len(prompt)} characters")
+    logger.info(f"   Conversation History Length: {len(conversation_history) if conversation_history else 0} characters")
+    logger.info(f"   Prompt Preview (first 500 chars):\n{prompt[:500]}...")
+
     try:
         api_key = os.environ.get('OPENAI_API_KEY')
         if not api_key:
@@ -586,6 +594,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
         
         client = OpenAI(api_key=api_key)
         
+        logger.info(f"🤖 Sending prompt to OpenAI GPT-4...")
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}]
@@ -637,6 +646,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
     merchant_website_str = merchant_website if merchant_website else "Not provided"
     
     # Use custom prompt template if provided, otherwise use default
+    prompt_source = "default"
     if prompt_template:
         # Format the custom template with variables
         try:
@@ -653,6 +663,11 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
                 account_employees_str=account_employees_str,
                 account_location_str=account_location_str
             )
+            prompt_source = "custom_template"
+            logger.info(f"📝 PROMPT USED FOR NEW EMAIL:")
+            logger.info(f"   Source: Custom prompt template")
+            logger.info(f"   Prompt Length: {len(prompt)} characters")
+            logger.info(f"   Prompt Preview (first 500 chars):\n{prompt[:500]}...")
         except KeyError as e:
             logger.warning(f"⚠️ Custom prompt template missing variable {e}, using default")
             prompt_template = None
@@ -660,11 +675,11 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
     # Default prompt if no custom template or formatting failed
     if not prompt_template:
         prompt = f"""
-        {AFFIRM_VOICE_GUIDELINES}
-        
-        Generate a **professional, Affirm-branded business email** to re-engage {merchant_name}, a merchant in the {merchant_industry_str} industry, who has completed technical integration with Affirm but has **not yet launched**. The goal is to encourage them to go live — without offering a meeting or call.
+    {AFFIRM_VOICE_GUIDELINES}
+    
+    Generate a **professional, Affirm-branded business email** to re-engage {merchant_name}, a merchant in the {merchant_industry_str} industry, who has completed technical integration with Affirm but has **not yet launched**. The goal is to encourage them to go live — without offering a meeting or call.
 
-        **Context:**
+    **Context:**
         - Contact Name: {merchant_name}
         - Contact Title: {contact_title_str}
         - Industry: {merchant_industry_str}
@@ -705,7 +720,16 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
 
         Keep the email under 130 words. Make it feel natural and human, not like marketing automation.
         """
-
+        
+        # Log default prompt usage
+        if prompt_source == "default":
+            logger.info(f"📝 PROMPT USED FOR NEW EMAIL:")
+            logger.info(f"   Source: Default prompt template")
+            logger.info(f"   Endpoint: /api/workato/send-new-email (Default)")
+            logger.info(f"   Prompt Type: new-email")
+            logger.info(f"   Prompt Length: {len(prompt)} characters")
+            logger.info(f"   Prompt Preview (first 500 chars):\n{prompt[:500]}...")
+    
     try:
         api_key = os.environ.get('OPENAI_API_KEY')
         if not api_key:
@@ -3009,6 +3033,13 @@ def create_versioned_endpoint(prompt_type, version_letter, endpoint_path, prompt
                             "reason": reason,
                             "emails_sent": 0
                         }), 200
+                    
+                    # Log which version is being used
+                    logger.info(f"📝 PROMPT VERSION BEING USED:")
+                    logger.info(f"   Endpoint: {endpoint_path}")
+                    logger.info(f"   Version Letter: {version_letter}")
+                    logger.info(f"   Prompt Type: {prompt_type}")
+                    logger.info(f"   Prompt Content Length: {len(prompt_content)} characters")
                     
                     # Generate email using custom prompt template
                     subject_line, email_content = generate_message(
