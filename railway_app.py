@@ -538,6 +538,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     """
     Generates an AI response using the same detailed prompt as generate_message.
     Creates a professional, Affirm-branded email response with full conversation context.
+    Reads prompt template from REPLY_EMAIL_PROMPT_TEMPLATE environment variable if available.
     """
     
     # Build conversation context if provided
@@ -556,7 +557,29 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     {email_body}
     """
 
-    prompt = f"""
+    # Try to get custom prompt template from environment variable
+    reply_email_prompt_template = os.getenv('REPLY_EMAIL_PROMPT_TEMPLATE')
+    prompt_source = "default"
+    
+    if reply_email_prompt_template:
+        # Use custom template from environment variable
+        try:
+            prompt = reply_email_prompt_template.format(
+                AFFIRM_VOICE_GUIDELINES=AFFIRM_VOICE_GUIDELINES,
+                recipient_name=recipient_name,
+                sender_name=sender_name,
+                conversation_context=conversation_context,
+                email_body=email_body
+            )
+            prompt_source = "env_variable"
+            logger.info(f"📝 Using REPLY_EMAIL_PROMPT_TEMPLATE from environment variable")
+        except KeyError as e:
+            logger.warning(f"⚠️ REPLY_EMAIL_PROMPT_TEMPLATE missing variable {e}, using default")
+            reply_email_prompt_template = None
+    
+    # Default prompt if no custom template or formatting failed
+    if not reply_email_prompt_template:
+        prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
 
     **TASK:** Generate a professional Affirm-branded email response to {recipient_name} from {sender_name}.
@@ -581,6 +604,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
 
     # Log the prompt being used
     logger.info(f"📝 PROMPT USED FOR REPLY EMAIL:")
+    logger.info(f"   Source: {prompt_source}")
     logger.info(f"   Endpoint: /api/workato/reply-to-emails (Default)")
     logger.info(f"   Prompt Type: reply-email")
     logger.info(f"   Prompt Length: {len(prompt)} characters")
@@ -671,6 +695,35 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
         except KeyError as e:
             logger.warning(f"⚠️ Custom prompt template missing variable {e}, using default")
             prompt_template = None
+    
+    # If no custom template provided, try to get from environment variable
+    if not prompt_template:
+        env_prompt_template = os.getenv('NEW_EMAIL_PROMPT_TEMPLATE')
+        if env_prompt_template:
+            try:
+                prompt = env_prompt_template.format(
+                    AFFIRM_VOICE_GUIDELINES=AFFIRM_VOICE_GUIDELINES,
+                    merchant_name=merchant_name,
+                    contact_title_str=contact_title_str,
+                    merchant_industry_str=merchant_industry_str,
+                    merchant_website_str=merchant_website_str,
+                    sender_name=sender_name,
+                    account_description_str=account_description_str,
+                    account_revenue_str=account_revenue_str,
+                    account_gmv_str=account_gmv_str,
+                    account_employees_str=account_employees_str,
+                    account_location_str=account_location_str
+                )
+                prompt_source = "env_variable"
+                logger.info(f"📝 PROMPT USED FOR NEW EMAIL:")
+                logger.info(f"   Source: NEW_EMAIL_PROMPT_TEMPLATE environment variable")
+                logger.info(f"   Endpoint: /api/workato/send-new-email (Default)")
+                logger.info(f"   Prompt Type: new-email")
+                logger.info(f"   Prompt Length: {len(prompt)} characters")
+                logger.info(f"   Prompt Preview (first 500 chars):\n{prompt[:500]}...")
+            except KeyError as e:
+                logger.warning(f"⚠️ NEW_EMAIL_PROMPT_TEMPLATE missing variable {e}, using default")
+                prompt_template = None
     
     # Default prompt if no custom template or formatting failed
     if not prompt_template:
