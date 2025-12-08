@@ -429,35 +429,69 @@ def has_been_replied_to(email_id, service):
         if not messages:
             return False
         
-        # Filter to only messages that are still in INBOX (not deleted/trashed)
+        logger.info(f"📧 Thread {thread_id} has {len(messages)} total messages")
+        
+        # Filter to messages that are accessible (in INBOX or SENT, not deleted/trashed)
+        # We need to check SENT folder too because Jake's replies go to SENT, not INBOX
         # Also collect their internal dates for proper chronological sorting
-        inbox_messages_with_dates = []
+        accessible_messages_with_dates = []
         for msg in messages:
             try:
                 msg_data = service.users().messages().get(userId='me', id=msg['id']).execute()
                 labels = msg_data.get('labelIds', [])
-                # Only include messages that are in INBOX (not in TRASH)
-                if 'INBOX' in labels and 'TRASH' not in labels:
+                # Include messages that are in INBOX or SENT (not in TRASH)
+                # This ensures we catch Jake's replies which go to SENT folder
+                if 'TRASH' not in labels and ('INBOX' in labels or 'SENT' in labels):
                     internal_date = msg_data.get('internalDate', 0)
-                    inbox_messages_with_dates.append({
+                    headers = msg_data['payload'].get('headers', [])
+                    sender = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown')
+                    subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
+                    date_str = next((h['value'] for h in headers if h['name'] == 'Date'), '')
+                    
+                    # Convert internal_date to readable time
+                    import datetime
+                    readable_time = datetime.datetime.fromtimestamp(int(internal_date) / 1000).strftime('%Y-%m-%d %H:%M:%S') if internal_date else 'Unknown'
+                    
+                    location = 'SENT' if 'SENT' in labels else 'INBOX'
+                    accessible_messages_with_dates.append({
                         'message': msg,
-                        'internal_date': int(internal_date) if internal_date else 0
+                        'internal_date': int(internal_date) if internal_date else 0,
+                        'labels': labels,
+                        'sender': sender,
+                        'subject': subject,
+                        'date_str': date_str,
+                        'readable_time': readable_time,
+                        'location': location
                     })
+                    
+                    logger.info(f"  📨 Message {msg['id']}: From={sender}, Time={readable_time}, Location={location}, Subject={subject[:50]}")
             except Exception as e:
                 # If message was deleted, skip it
                 logger.debug(f"Message {msg['id']} not accessible (likely deleted): {e}")
                 continue
         
-        if not inbox_messages_with_dates:
-            # No messages in inbox, consider it as needing reply
-            logger.info(f"Thread {thread_id} has no messages in INBOX, considering as needing reply")
+        if not accessible_messages_with_dates:
+            # No accessible messages, consider it as needing reply
+            logger.info(f"Thread {thread_id} has no accessible messages (INBOX or SENT), considering as needing reply")
             return False
         
+        logger.info(f"📧 Found {len(accessible_messages_with_dates)} accessible messages (INBOX or SENT)")
+        
         # Sort by internal date (chronological order) to get the actual latest message
-        inbox_messages_with_dates.sort(key=lambda x: x['internal_date'])
-        latest_message_data = inbox_messages_with_dates[-1]
+        accessible_messages_with_dates.sort(key=lambda x: x['internal_date'])
+        latest_message_data = accessible_messages_with_dates[-1]
         latest_message = latest_message_data['message']
         latest_internal_date = latest_message_data['internal_date']
+        latest_labels = latest_message_data['labels']
+        latest_sender_info = latest_message_data['sender']
+        latest_readable_time = latest_message_data['readable_time']
+        latest_location = latest_message_data['location']
+        
+        logger.info(f"📧 LATEST MESSAGE in thread {thread_id}:")
+        logger.info(f"  📨 ID: {latest_message['id']}")
+        logger.info(f"  👤 From: {latest_sender_info}")
+        logger.info(f"  🕐 Time: {latest_readable_time} (internal_date: {latest_internal_date})")
+        logger.info(f"  📍 Location: {latest_location}")
         
         # Get full message data for the latest message
         latest_msg_data = service.users().messages().get(userId='me', id=latest_message['id']).execute()
@@ -473,14 +507,16 @@ def has_been_replied_to(email_id, service):
             time_since_reply_ms = current_time_ms - latest_internal_date
             hours_since_reply = time_since_reply_ms / (1000 * 60 * 60)  # Convert to hours
             
+            location = "SENT" if 'SENT' in latest_labels else "INBOX"
             if hours_since_reply < 27:
-                logger.info(f"Thread {thread_id} - latest INBOX message is from us (replied {hours_since_reply:.1f} hours ago, less than 27 hours - skipping)")
+                logger.info(f"Thread {thread_id} - latest message is from us in {location} (replied {hours_since_reply:.1f} hours ago, less than 27 hours - skipping)")
                 return True  # Don't reply, it's been less than 27 hours
             else:
-                logger.info(f"Thread {thread_id} - latest INBOX message is from us (replied {hours_since_reply:.1f} hours ago, 27+ hours - can reply)")
+                logger.info(f"Thread {thread_id} - latest message is from us in {location} (replied {hours_since_reply:.1f} hours ago, 27+ hours - can reply)")
                 return False  # Can reply, it's been 27+ hours
         else:
-            logger.info(f"Thread {thread_id} - latest INBOX message is from {sender} (needs reply)")
+            location = "SENT" if 'SENT' in latest_labels else "INBOX"
+            logger.info(f"Thread {thread_id} - latest message in {location} is from {sender} (needs reply)")
             return False  # Can reply, latest message is not from us
         
     except Exception as e:
