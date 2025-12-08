@@ -401,7 +401,10 @@ def get_original_message_id(gmail_message_id):
         return None
 
 def has_been_replied_to(email_id, service):
-    """Check if the LATEST message in the thread is from us (Jake Morgan)."""
+    """
+    Check if the LATEST message in the thread (that's still in INBOX) is from us (Jake Morgan).
+    Only considers messages that are still in the inbox (not deleted/trashed).
+    """
     try:
         # Get the thread ID for this email
         email_data = service.users().messages().get(userId='me', id=email_id).execute()
@@ -416,15 +419,39 @@ def has_been_replied_to(email_id, service):
         
         if not messages:
             return False
+        
+        # Filter to only messages that are still in INBOX (not deleted/trashed)
+        inbox_messages = []
+        for msg in messages:
+            try:
+                msg_data = service.users().messages().get(userId='me', id=msg['id']).execute()
+                labels = msg_data.get('labelIds', [])
+                # Only include messages that are in INBOX (not in TRASH)
+                if 'INBOX' in labels and 'TRASH' not in labels:
+                    inbox_messages.append(msg)
+            except Exception as e:
+                # If message was deleted, skip it
+                logger.debug(f"Message {msg['id']} not accessible (likely deleted): {e}")
+                continue
+        
+        if not inbox_messages:
+            # No messages in inbox, consider it as needing reply
+            logger.info(f"Thread {thread_id} has no messages in INBOX, considering as needing reply")
+            return False
             
-        # Get the latest message (last in the array)
-        latest_message = messages[-1]
+        # Get the latest message that's still in inbox (last in the array)
+        latest_message = inbox_messages[-1]
         latest_msg_data = service.users().messages().get(userId='me', id=latest_message['id']).execute()
         headers = latest_msg_data['payload']['headers']
         sender = next((h['value'] for h in headers if h['name'] == 'From'), '')
         
         # Check if the latest message is from us
         is_from_us = 'jake.morgan@affirm.com' in sender.lower()
+        
+        if is_from_us:
+            logger.info(f"Thread {thread_id} - latest INBOX message is from us (already replied)")
+        else:
+            logger.info(f"Thread {thread_id} - latest INBOX message is from {sender} (needs reply)")
         
         return is_from_us
         
