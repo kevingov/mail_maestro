@@ -943,33 +943,24 @@ def reply_to_emails_with_accounts(accounts):
 
     logger.info(f"🔍 Found {len(emails_needing_replies)} threads needing replies")
     
-    # Group threads by sender email to find the latest thread per sender
-    threads_by_sender = {}
+    # Deduplicate by threadId to ensure we only send ONE reply per Gmail thread
+    # This handles cases where the same thread might appear multiple times
+    seen_threads = {}
+    unique_threads = []
     for email in emails_needing_replies:
-        sender_email = email.get('sender', '').lower()
-        # Extract email address from sender string
-        if '<' in sender_email and '>' in sender_email:
-            sender_email = sender_email.split('<')[1].split('>')[0]
-        
-        if sender_email not in threads_by_sender:
-            threads_by_sender[sender_email] = []
-        threads_by_sender[sender_email].append(email)
+        thread_id = email.get('threadId')
+        if thread_id and thread_id not in seen_threads:
+            seen_threads[thread_id] = email
+            unique_threads.append(email)
+        elif thread_id:
+            logger.info(f"⚠️ Skipping duplicate thread {thread_id} - already processing")
     
-    # For each sender, keep only the latest thread (by date)
-    latest_threads = []
-    for sender_email, threads in threads_by_sender.items():
-        if len(threads) > 1:
-            logger.info(f"📧 Found {len(threads)} threads from {sender_email}, selecting latest thread only")
-            # Sort by date (most recent first) and take the first one
-            threads.sort(key=lambda x: x.get('date', ''), reverse=True)
-        latest_threads.append(threads[0])  # Add the latest (or only) thread
+    logger.info(f"📧 Processing {len(unique_threads)} unique thread(s) that need replies...")
     
-    logger.info(f"📧 Processing {len(latest_threads)} latest thread(s) individually...")
-    
-    # Process only the latest thread for each sender
-    for i, email in enumerate(latest_threads):
+    # Process all unique threads that need replies
+    for i, email in enumerate(unique_threads):
         thread_id = email.get('threadId', 'No ID')
-        logger.info(f"📧 Processing thread {i+1}/{len(emails_needing_replies)}: {thread_id}")
+        logger.info(f"📧 Processing thread {i+1}/{len(unique_threads)}: {thread_id} from {email.get('sender', 'unknown')}")
         
         # Extract contact information
         contact_name = email.get('contact_name', email['sender'].split("@")[0].capitalize())
