@@ -610,6 +610,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     logger.info(f"   Prompt Length: {len(prompt)} characters")
     logger.info(f"   Conversation History Length: {len(conversation_history) if conversation_history else 0} characters")
     logger.info(f"   Prompt Preview (first 500 chars):\n{prompt[:500]}...")
+    logger.info(f"   Prompt Last 200 chars (to verify support line):\n...{prompt[-200:]}")
 
     try:
         api_key = os.environ.get('OPENAI_API_KEY')
