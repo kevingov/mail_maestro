@@ -1027,11 +1027,63 @@ def reply_to_emails_with_accounts(accounts):
         sender_name = "Jake Morgan"
         sender_title = "Business Development"
         
-        # For single email, use it as the conversation context
-        conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {email['body']}"
+        # Build full conversation history from the thread
+        try:
+            creds = authenticate_gmail()
+            service = build('gmail', 'v1', credentials=creds)
+            
+            # Get all messages in the thread to build full conversation history
+            thread_data = service.users().threads().get(userId='me', id=thread_id).execute()
+            thread_messages = thread_data.get('messages', [])
+            
+            # Build conversation history with all messages in chronological order
+            conversation_parts = []
+            for msg in thread_messages:
+                try:
+                    msg_data = service.users().messages().get(userId='me', id=msg['id']).execute()
+                    headers = msg_data['payload'].get('headers', [])
+                    msg_sender = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown')
+                    msg_subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
+                    msg_date = next((h['value'] for h in headers if h['name'] == 'Date'), '')
+                    msg_body = extract_email_body(msg_data['payload'])
+                    
+                    # Get internal date for sorting
+                    internal_date = msg_data.get('internalDate', 0)
+                    
+                    conversation_parts.append({
+                        'sender': msg_sender,
+                        'subject': msg_subject,
+                        'date': msg_date,
+                        'body': msg_body,
+                        'internal_date': int(internal_date) if internal_date else 0
+                    })
+                except Exception as e:
+                    logger.debug(f"Error extracting message {msg['id']} from thread: {e}")
+                    continue
+            
+            # Sort by internal date to get chronological order
+            conversation_parts.sort(key=lambda x: x['internal_date'])
+            
+            # Build conversation history string
+            conversation_history_lines = []
+            for i, msg_part in enumerate(conversation_parts, 1):
+                conversation_history_lines.append(f"--- Message {i} ---")
+                conversation_history_lines.append(f"From: {msg_part['sender']}")
+                conversation_history_lines.append(f"Date: {msg_part['date']}")
+                conversation_history_lines.append(f"Subject: {msg_part['subject']}")
+                conversation_history_lines.append(f"Body:\n{msg_part['body']}")
+                conversation_history_lines.append("")
+            
+            conversation_content = "\n".join(conversation_history_lines)
+            logger.info(f"📧 Built conversation history with {len(conversation_parts)} messages for thread {thread_id}")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Could not build full conversation history, using single email: {e}")
+            # Fallback to single email if we can't get thread history
+            conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {email['body']}"
         
         try:
-            # Generate AI response using the email content
+            # Generate AI response using the full conversation history
             ai_response = generate_ai_response(email['body'], sender_name, contact_name, conversation_content)
             
             # Send threaded reply
