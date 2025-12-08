@@ -1254,7 +1254,10 @@ def get_emails_needing_replies_with_accounts(accounts):
         # Only reply if:
         # 1. Latest message is from merchant (not from us)
         # 2. Thread hasn't been replied to yet
-        if is_from_merchant and not has_been_replied_to(latest_email['id'], service):
+        has_been_replied = has_been_replied_to(latest_email['id'], service)
+        logger.info(f"🔍 Thread {thread_id} decision: is_from_merchant={is_from_merchant}, has_been_replied={has_been_replied}, latest_sender={latest_sender_normalized}")
+        
+        if is_from_merchant and not has_been_replied:
             # Ensure email has all required fields for reply processing
             if not latest_email.get('account_info'):
                 logger.warning(f"⚠️ Thread {thread_id} needs reply but missing account_info, skipping")
