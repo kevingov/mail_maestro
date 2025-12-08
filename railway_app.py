@@ -404,8 +404,17 @@ def has_been_replied_to(email_id, service):
     """
     Check if the LATEST message in the thread (that's still in INBOX) is from us (Jake Morgan).
     Only considers messages that are still in the inbox (not deleted/trashed).
+    
+    If the latest message is from Jake Morgan, also checks if it's been at least 27 hours.
+    Returns True (don't reply) if:
+    - Latest message is from Jake AND it's been less than 27 hours
+    Returns False (can reply) if:
+    - Latest message is NOT from Jake, OR
+    - Latest message is from Jake but it's been 27+ hours
     """
     try:
+        import time
+        
         # Get the thread ID for this email
         email_data = service.users().messages().get(userId='me', id=email_id).execute()
         thread_id = email_data.get('threadId')
@@ -448,6 +457,7 @@ def has_been_replied_to(email_id, service):
         inbox_messages_with_dates.sort(key=lambda x: x['internal_date'])
         latest_message_data = inbox_messages_with_dates[-1]
         latest_message = latest_message_data['message']
+        latest_internal_date = latest_message_data['internal_date']
         
         # Get full message data for the latest message
         latest_msg_data = service.users().messages().get(userId='me', id=latest_message['id']).execute()
@@ -458,11 +468,20 @@ def has_been_replied_to(email_id, service):
         is_from_us = 'jake.morgan@affirm.com' in sender.lower()
         
         if is_from_us:
-            logger.info(f"Thread {thread_id} - latest INBOX message is from us (already replied)")
+            # Check if Jake's reply was sent within the last 27 hours
+            current_time_ms = int(time.time() * 1000)  # Current time in milliseconds
+            time_since_reply_ms = current_time_ms - latest_internal_date
+            hours_since_reply = time_since_reply_ms / (1000 * 60 * 60)  # Convert to hours
+            
+            if hours_since_reply < 27:
+                logger.info(f"Thread {thread_id} - latest INBOX message is from us (replied {hours_since_reply:.1f} hours ago, less than 27 hours - skipping)")
+                return True  # Don't reply, it's been less than 27 hours
+            else:
+                logger.info(f"Thread {thread_id} - latest INBOX message is from us (replied {hours_since_reply:.1f} hours ago, 27+ hours - can reply)")
+                return False  # Can reply, it's been 27+ hours
         else:
             logger.info(f"Thread {thread_id} - latest INBOX message is from {sender} (needs reply)")
-        
-        return is_from_us
+            return False  # Can reply, latest message is not from us
         
     except Exception as e:
         logger.error(f"Error checking reply status for email {email_id}: {e}")
