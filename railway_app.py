@@ -421,26 +421,35 @@ def has_been_replied_to(email_id, service):
             return False
         
         # Filter to only messages that are still in INBOX (not deleted/trashed)
-        inbox_messages = []
+        # Also collect their internal dates for proper chronological sorting
+        inbox_messages_with_dates = []
         for msg in messages:
             try:
                 msg_data = service.users().messages().get(userId='me', id=msg['id']).execute()
                 labels = msg_data.get('labelIds', [])
                 # Only include messages that are in INBOX (not in TRASH)
                 if 'INBOX' in labels and 'TRASH' not in labels:
-                    inbox_messages.append(msg)
+                    internal_date = msg_data.get('internalDate', 0)
+                    inbox_messages_with_dates.append({
+                        'message': msg,
+                        'internal_date': int(internal_date) if internal_date else 0
+                    })
             except Exception as e:
                 # If message was deleted, skip it
                 logger.debug(f"Message {msg['id']} not accessible (likely deleted): {e}")
                 continue
         
-        if not inbox_messages:
+        if not inbox_messages_with_dates:
             # No messages in inbox, consider it as needing reply
             logger.info(f"Thread {thread_id} has no messages in INBOX, considering as needing reply")
             return False
-            
-        # Get the latest message that's still in inbox (last in the array)
-        latest_message = inbox_messages[-1]
+        
+        # Sort by internal date (chronological order) to get the actual latest message
+        inbox_messages_with_dates.sort(key=lambda x: x['internal_date'])
+        latest_message_data = inbox_messages_with_dates[-1]
+        latest_message = latest_message_data['message']
+        
+        # Get full message data for the latest message
         latest_msg_data = service.users().messages().get(userId='me', id=latest_message['id']).execute()
         headers = latest_msg_data['payload']['headers']
         sender = next((h['value'] for h in headers if h['name'] == 'From'), '')
