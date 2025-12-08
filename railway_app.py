@@ -495,11 +495,22 @@ def has_been_replied_to(email_id, service):
         
         # Get full message data for the latest message
         latest_msg_data = service.users().messages().get(userId='me', id=latest_message['id']).execute()
-        headers = latest_msg_data['payload']['headers']
+        headers = latest_msg_data['payload'].get('headers', [])
         sender = next((h['value'] for h in headers if h['name'] == 'From'), '')
         
-        # Check if the latest message is from us
-        is_from_us = 'jake.morgan@affirm.com' in sender.lower()
+        # If message is in SENT folder, it's from us (Jake Morgan)
+        # Also check the sender header for jake.morgan@affirm.com
+        is_from_us = False
+        if 'SENT' in latest_labels:
+            # Messages in SENT folder are from us
+            is_from_us = True
+            logger.info(f"Thread {thread_id} - latest message is in SENT folder (from us)")
+        elif sender and 'jake.morgan@affirm.com' in sender.lower():
+            # Check sender header as backup
+            is_from_us = True
+            logger.info(f"Thread {thread_id} - latest message From header indicates it's from us: {sender}")
+        else:
+            logger.info(f"Thread {thread_id} - latest message is NOT from us. Sender: {sender}, Labels: {latest_labels}")
         
         if is_from_us:
             # Check if Jake's reply was sent within the last 27 hours
