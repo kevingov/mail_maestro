@@ -599,7 +599,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     - **Subject Line:** [Concise subject]
     - **Email Body:** [Your response]
 
-    For technical support, refer to customercare@affirm.com.
+    For all support, refer to customercare@affirm.com Only.
     """
 
     # Log the prompt being used
@@ -2676,7 +2676,7 @@ Keep the email under 130 words. Make it feel natural and human, not like marketi
 - **Subject Line:** [Concise subject]
 - **Email Body:** [Your response]
 
-For technical support, refer to customercare@affirm.com."""
+For all support, refer to customercare@affirm.com Only."""
 
         # Get from environment or use defaults
         new_email_prompt = os.getenv('NEW_EMAIL_PROMPT_TEMPLATE', new_email_prompt_default)
