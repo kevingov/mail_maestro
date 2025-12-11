@@ -233,6 +233,26 @@ def init_database():
             )
         ''')
         
+        # Test merchants table for prompt testing
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS test_merchants (
+                id SERIAL PRIMARY KEY,
+                merchant_name VARCHAR(255) NOT NULL,
+                contact_email VARCHAR(255),
+                contact_title VARCHAR(255),
+                merchant_industry VARCHAR(255),
+                merchant_website VARCHAR(255),
+                account_description TEXT,
+                account_revenue DECIMAL(15, 2),
+                account_employees INTEGER,
+                account_location VARCHAR(255),
+                account_gmv DECIMAL(15, 2),
+                last_activity VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
         conn.commit()
         conn.close()
         logger.info("✅ PostgreSQL database initialized")
@@ -428,7 +448,7 @@ def has_been_replied_to(email_id, service):
         
         if not messages:
             return False
-        
+            
         logger.info(f"📧 Thread {thread_id} has {len(messages)} total messages")
         
         # Filter to messages that are accessible (in INBOX or SENT, not deleted/trashed)
@@ -579,7 +599,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     
     # Default prompt if no custom template or formatting failed
     if not reply_email_prompt_template:
-        prompt = f"""
+    prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
 
     **TASK:** Generate a professional Affirm-branded email response to {recipient_name} from {sender_name}.
@@ -728,62 +748,62 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
     
     # Default prompt if no custom template or formatting failed
     if not prompt_template:
-        prompt = f"""
+    prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
     
     Generate a **professional, Affirm-branded business email** to re-engage {merchant_name}, a merchant in the {merchant_industry_str} industry, who has completed technical integration with Affirm but has **not yet launched**. The goal is to encourage them to go live — without offering a meeting or call.
 
     **Context:**
-        - Contact Name: {merchant_name}
-        - Contact Title: {contact_title_str}
-        - Industry: {merchant_industry_str}
-        - Website: {merchant_website_str}
-        - Sender: {sender_name}
-        - Status: Integrated with Affirm, not yet live
-        - Account Description: {account_description_str}
-        - Annual Revenue: {account_revenue_str}
-        - Trailing 12M GMV: {account_gmv_str}
-        - Employees: {account_employees_str}
-        - Location: {account_location_str}
+    - Contact Name: {merchant_name}
+    - Contact Title: {contact_title_str}
+    - Industry: {merchant_industry_str}
+    - Website: {merchant_website_str}
+    - Sender: {sender_name}
+    - Status: Integrated with Affirm, not yet live
+    - Account Description: {account_description_str}
+    - Annual Revenue: {account_revenue_str}
+    - Trailing 12M GMV: {account_gmv_str}
+    - Employees: {account_employees_str}
+    - Location: {account_location_str}
 
-        **Tone & Style Guidelines:**
-        - Use Affirm's brand voice: smart, approachable, efficient
-        - Do **not** offer a call or meeting
-        - Make it feel like a 1:1 business development check-in
-        - Be helpful, not pushy
-        - Reference their specific industry and business context
+    **Tone & Style Guidelines:**
+    - Use Affirm's brand voice: smart, approachable, efficient
+    - Do **not** offer a call or meeting
+    - Make it feel like a 1:1 business development check-in
+    - Be helpful, not pushy
+    - Reference their specific industry and business context
 
-        **Spam Avoidance Rules:**
-        - No excessive punctuation or all-caps
-        - Avoid trigger words like "FREE," "ACT NOW," or "LIMITED TIME"
-        - Avoid heavy use of numbers or dollar signs
+    **Spam Avoidance Rules:**
+    - No excessive punctuation or all-caps
+    - Avoid trigger words like "FREE," "ACT NOW," or "LIMITED TIME"
+    - Avoid heavy use of numbers or dollar signs
 
-        **Include in the Email:**
-        - **Subject Line**: Under 50 characters, straightforward and relevant
-        - **Opening Line**: Greet the merchant by name and acknowledge that integration is complete
-        - **Body**: 
-            - Reiterate the value of Affirm to their specific industry or customer base
-            - Reference their business context (size, industry, etc.) if relevant
-            - Encourage them to take the final step to go live
-            - Offer light-touch support or resources (but **not** a meeting)
-        - **CTA**: Prompt action, but keep it casual and async — e.g., "Let us know when you're ready," or "We're here if you need anything."
+    **Include in the Email:**
+    - **Subject Line**: Under 50 characters, straightforward and relevant
+    - **Opening Line**: Greet the merchant by name and acknowledge that integration is complete
+    - **Body**: 
+        - Reiterate the value of Affirm to their specific industry or customer base
+        - Reference their business context (size, industry, etc.) if relevant
+        - Encourage them to take the final step to go live
+        - Offer light-touch support or resources (but **not** a meeting)
+    - **CTA**: Prompt action, but keep it casual and async — e.g., "Let us know when you're ready," or "We're here if you need anything."
 
-        **Output Format:**
-        - **Subject Line:** [Concise subject line]
-        - **Email Body:** [Email message]
+    **Output Format:**
+    - **Subject Line:** [Concise subject line]
+    - **Email Body:** [Email message]
 
-        Keep the email under 130 words. Make it feel natural and human, not like marketing automation.
-        """
-        
-        # Log default prompt usage
-        if prompt_source == "default":
+    Keep the email under 130 words. Make it feel natural and human, not like marketing automation.
+    """
+    
+    # Log default prompt usage
+    if prompt_source == "default":
             logger.info(f"📝 PROMPT USED FOR NEW EMAIL:")
             logger.info(f"   Source: Default prompt template")
             logger.info(f"   Endpoint: /api/workato/send-new-email (Default)")
             logger.info(f"   Prompt Type: new-email")
             logger.info(f"   Prompt Length: {len(prompt)} characters")
             logger.info(f"   Prompt Preview (first 500 chars):\n{prompt[:500]}...")
-    
+
     try:
         api_key = os.environ.get('OPENAI_API_KEY')
         if not api_key:
@@ -1169,7 +1189,7 @@ def reply_to_emails_with_accounts(accounts):
         except Exception as e:
             logger.warning(f"⚠️ Could not build full conversation history, using single email: {e}")
             # Fallback to single email if we can't get thread history
-            conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {email['body']}"
+        conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {email['body']}"
         
         try:
             # Generate AI response using the full conversation history
@@ -1370,7 +1390,7 @@ def get_emails_needing_replies_with_accounts(accounts):
             # Fall back to emails we already found
             if thread_id not in all_thread_emails:
                 all_thread_emails[thread_id] = []
-                for email in emails:
+    for email in emails:
                     if email.get('threadId') == thread_id:
                         email['is_from_account'] = True
                         all_thread_emails[thread_id].append(email)
@@ -1425,8 +1445,8 @@ def get_emails_needing_replies_with_accounts(accounts):
                 for account_email, account_data in account_emails.items():
                     normalized_account = account_data.get('normalized_email', normalize_email(account_email))
                     if account_email in latest_sender or normalized_account == latest_sender_normalized:
-                        is_from_merchant = True
-                        break
+                is_from_merchant = True
+                break
         
         # Only reply if:
         # 1. Latest message is from merchant (not from us)
@@ -2244,6 +2264,14 @@ def prompts_ui():
                         Voice Guidelines
                     </div>
                 </div>
+                
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">Testing</div>
+                    <div class="prompt-type-item" onclick="selectPromptType('test-merchant')">
+                        <span class="dot"></span>
+                        Test Merchant
+                    </div>
+                </div>
             </div>
             
             <div class="content-area">
@@ -2281,6 +2309,121 @@ def prompts_ui():
                             <!-- Table rows will be populated by JavaScript -->
                         </tbody>
                     </table>
+                </div>
+                
+                <!-- Test Merchant Content -->
+                <div class="content-area" id="test-merchant-content" style="display: none;">
+                    <div class="content-header">
+                        <h2 style="margin: 0 0 24px 0; font-size: 24px; font-weight: 600;">Test Merchant</h2>
+                        <p style="color: #6b7280; margin-bottom: 24px;">Enter merchant information to test prompt responses</p>
+                    </div>
+                    
+                    <div style="padding: 24px; max-width: 1200px;">
+                        <div style="background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <h3 style="margin: 0 0 20px 0; font-size: 18px; font-weight: 600;">Merchant Information</h3>
+                            <form id="test-merchant-form" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Merchant Name *</label>
+                                    <input type="text" id="merchant_name" name="merchant_name" required 
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;" 
+                                           placeholder="Acme Corporation">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Contact Email</label>
+                                    <input type="email" id="contact_email" name="contact_email" 
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;" 
+                                           placeholder="contact@acme.com">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Contact Title</label>
+                                    <input type="text" id="contact_title" name="contact_title" 
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;" 
+                                           placeholder="CEO">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Industry</label>
+                                    <input type="text" id="merchant_industry" name="merchant_industry" 
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;" 
+                                           placeholder="E-commerce">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Website</label>
+                                    <input type="url" id="merchant_website" name="merchant_website" 
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;" 
+                                           placeholder="https://acme.com">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Location</label>
+                                    <input type="text" id="account_location" name="account_location" 
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;" 
+                                           placeholder="San Francisco, CA">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Annual Revenue ($)</label>
+                                    <input type="number" id="account_revenue" name="account_revenue" 
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;" 
+                                           placeholder="1000000">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Employees</label>
+                                    <input type="number" id="account_employees" name="account_employees" 
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;" 
+                                           placeholder="50">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">GMV ($)</label>
+                                    <input type="number" id="account_gmv" name="account_gmv" 
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;" 
+                                           placeholder="5000000">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Last Activity</label>
+                                    <input type="text" id="last_activity" name="last_activity" 
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;" 
+                                           placeholder="Recent" value="Recent">
+                                </div>
+                                <div style="grid-column: 1 / -1;">
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Account Description</label>
+                                    <textarea id="account_description" name="account_description" rows="3" 
+                                              style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; font-family: inherit;" 
+                                              placeholder="A leading e-commerce platform..."></textarea>
+                                </div>
+                                <div style="grid-column: 1 / -1; display: flex; gap: 12px; margin-top: 8px;">
+                                    <button type="button" onclick="saveTestMerchant()" class="btn-primary" style="flex: 0 0 auto;">Save Test Merchant</button>
+                                    <button type="button" onclick="loadTestMerchant()" class="btn-secondary" style="flex: 0 0 auto;">Load Saved</button>
+                                </div>
+                            </form>
+                        </div>
+                        
+                        <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <h3 style="margin: 0 0 20px 0; font-size: 18px; font-weight: 600;">Generate Sample Response</h3>
+                            <div style="margin-bottom: 20px;">
+                                <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Prompt Type</label>
+                                <select id="sample-prompt-type" style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+                                    <option value="new-email">New Email</option>
+                                    <option value="reply-email">Reply Email</option>
+                                </select>
+                            </div>
+                            <div id="conversation-context-section" style="margin-bottom: 20px; display: none;">
+                                <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Conversation Context (for reply emails)</label>
+                                <textarea id="conversation_context" rows="4" 
+                                          style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; font-family: inherit;" 
+                                          placeholder="Previous conversation history..."></textarea>
+                            </div>
+                            <div style="margin-bottom: 20px;">
+                                <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Use Custom Prompt (optional - leave empty to use default/current prompt)</label>
+                                <textarea id="custom-prompt-content" rows="6" 
+                                          style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; font-family: 'Courier New', monospace;" 
+                                          placeholder="Leave empty to use the current prompt version, or paste a custom prompt template here..."></textarea>
+                            </div>
+                            <button type="button" onclick="generateSample()" class="btn-primary" style="width: 100%;">Generate Sample Response</button>
+                            
+                            <div id="sample-results" style="margin-top: 24px; display: none;">
+                                <h4 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 600;">Generated Response</h4>
+                                <div id="sample-output" style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; white-space: pre-wrap; font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6;"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -2602,6 +2745,124 @@ def prompts_ui():
         document.getElementById('edit-modal')?.addEventListener('click', (e) => {
             if (e.target.id === 'edit-modal') {
                 closeModal();
+            }
+        });
+        
+        // Test Merchant Functions
+        async function saveTestMerchant() {
+            const form = document.getElementById('test-merchant-form');
+            const formData = {
+                merchant_name: document.getElementById('merchant_name').value,
+                contact_email: document.getElementById('contact_email').value,
+                contact_title: document.getElementById('contact_title').value,
+                merchant_industry: document.getElementById('merchant_industry').value,
+                merchant_website: document.getElementById('merchant_website').value,
+                account_description: document.getElementById('account_description').value,
+                account_revenue: parseFloat(document.getElementById('account_revenue').value) || 0,
+                account_employees: parseInt(document.getElementById('account_employees').value) || 0,
+                account_location: document.getElementById('account_location').value,
+                account_gmv: parseFloat(document.getElementById('account_gmv').value) || 0,
+                last_activity: document.getElementById('last_activity').value || 'Recent'
+            };
+            
+            if (!formData.merchant_name) {
+                alert('Please enter a merchant name');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/test-merchants/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+                
+                const data = await response.json();
+                if (data.status === 'success') {
+                    alert('✅ Test merchant saved successfully!');
+                } else {
+                    alert('❌ Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('❌ Error saving test merchant: ' + error.message);
+            }
+        }
+        
+        async function loadTestMerchant() {
+            try {
+                const response = await fetch('/api/test-merchants/get');
+                const data = await response.json();
+                
+                if (data.status === 'success' && data.merchant) {
+                    const m = data.merchant;
+                    document.getElementById('merchant_name').value = m.merchant_name || '';
+                    document.getElementById('contact_email').value = m.contact_email || '';
+                    document.getElementById('contact_title').value = m.contact_title || '';
+                    document.getElementById('merchant_industry').value = m.merchant_industry || '';
+                    document.getElementById('merchant_website').value = m.merchant_website || '';
+                    document.getElementById('account_description').value = m.account_description || '';
+                    document.getElementById('account_revenue').value = m.account_revenue || '';
+                    document.getElementById('account_employees').value = m.account_employees || '';
+                    document.getElementById('account_location').value = m.account_location || '';
+                    document.getElementById('account_gmv').value = m.account_gmv || '';
+                    document.getElementById('last_activity').value = m.last_activity || 'Recent';
+                }
+            } catch (error) {
+                console.error('Error loading test merchant:', error);
+            }
+        }
+        
+        async function generateSample() {
+            const promptType = document.getElementById('sample-prompt-type').value;
+            const conversationContext = document.getElementById('conversation_context').value;
+            const customPromptContent = document.getElementById('custom-prompt-content').value.trim();
+            
+            // Get current prompt content if editing and no custom prompt provided
+            let promptContent = null;
+            if (customPromptContent) {
+                promptContent = customPromptContent;
+            } else if (currentEditingPrompt && currentEditingPrompt.content) {
+                promptContent = currentEditingPrompt.content;
+            }
+            
+            const resultsDiv = document.getElementById('sample-results');
+            const outputDiv = document.getElementById('sample-output');
+            
+            resultsDiv.style.display = 'none';
+            outputDiv.textContent = 'Generating sample response...';
+            resultsDiv.style.display = 'block';
+            
+            try {
+                const response = await fetch('/api/test-merchants/generate-sample', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt_type: promptType,
+                        prompt_content: promptContent,
+                        conversation_context: conversationContext
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.status === 'success' && data.responses && data.responses.length > 0) {
+                    const response = data.responses[0];
+                    const output = `Subject: ${response.subject}\n\n${response.body}`;
+                    outputDiv.textContent = output;
+                } else {
+                    outputDiv.textContent = 'Error: ' + (data.message || 'Failed to generate sample');
+                }
+            } catch (error) {
+                outputDiv.textContent = 'Error: ' + error.message;
+            }
+        }
+        
+        // Show/hide conversation context based on prompt type
+        document.getElementById('sample-prompt-type')?.addEventListener('change', (e) => {
+            const contextSection = document.getElementById('conversation-context-section');
+            if (e.target.value === 'reply-email') {
+                contextSection.style.display = 'block';
+            } else {
+                contextSection.style.display = 'none';
             }
         });
     </script>
@@ -3218,6 +3479,324 @@ def load_prompt_versions():
 
 # Load versions on startup
 load_prompt_versions()
+
+@app.route('/api/test-merchants/save', methods=['POST', 'GET'])
+def save_test_merchant():
+    """
+    Save or update test merchant data.
+    Works with Workato - accepts both POST (JSON body) and GET (query parameters).
+    
+    Expected fields:
+    - merchant_name (required)
+    - contact_email
+    - contact_title
+    - merchant_industry
+    - merchant_website
+    - account_description
+    - account_revenue (number)
+    - account_employees (number)
+    - account_location
+    - account_gmv (number)
+    - last_activity
+    """
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available'
+            }), 503
+        
+        # Support both POST (JSON) and GET (query params) for Workato compatibility
+        if request.method == 'GET':
+            data = request.args.to_dict()
+            # Convert string numbers to appropriate types
+            if 'account_revenue' in data:
+                try:
+                    data['account_revenue'] = float(data['account_revenue']) if data['account_revenue'] else 0
+                except (ValueError, TypeError):
+                    data['account_revenue'] = 0
+            if 'account_employees' in data:
+                try:
+                    data['account_employees'] = int(data['account_employees']) if data['account_employees'] else 0
+                except (ValueError, TypeError):
+                    data['account_employees'] = 0
+            if 'account_gmv' in data:
+                try:
+                    data['account_gmv'] = float(data['account_gmv']) if data['account_gmv'] else 0
+                except (ValueError, TypeError):
+                    data['account_gmv'] = 0
+        else:
+            data = request.get_json() if request.is_json else {}
+        
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'message': 'No data provided'
+            }), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database connection failed'
+            }), 503
+        
+        cursor = conn.cursor()
+        
+        # Check if test merchant already exists (we'll only keep one test merchant)
+        cursor.execute('SELECT id FROM test_merchants LIMIT 1')
+        existing = cursor.fetchone()
+        
+        merchant_name = data.get('merchant_name', 'Test Merchant')
+        contact_email = data.get('contact_email', '')
+        contact_title = data.get('contact_title', '')
+        merchant_industry = data.get('merchant_industry', '')
+        merchant_website = data.get('merchant_website', '')
+        account_description = data.get('account_description', '')
+        account_revenue = data.get('account_revenue', 0) or 0
+        account_employees = data.get('account_employees', 0) or 0
+        account_location = data.get('account_location', '')
+        account_gmv = data.get('account_gmv', 0) or 0
+        last_activity = data.get('last_activity', 'Recent')
+        
+        if existing:
+            # Update existing test merchant
+            cursor.execute('''
+                UPDATE test_merchants SET
+                    merchant_name = %s,
+                    contact_email = %s,
+                    contact_title = %s,
+                    merchant_industry = %s,
+                    merchant_website = %s,
+                    account_description = %s,
+                    account_revenue = %s,
+                    account_employees = %s,
+                    account_location = %s,
+                    account_gmv = %s,
+                    last_activity = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            ''', (merchant_name, contact_email, contact_title, merchant_industry, merchant_website,
+                  account_description, account_revenue, account_employees, account_location,
+                  account_gmv, last_activity, existing[0]))
+            logger.info(f"✅ Updated test merchant: {merchant_name}")
+        else:
+            # Insert new test merchant
+            cursor.execute('''
+                INSERT INTO test_merchants 
+                (merchant_name, contact_email, contact_title, merchant_industry, merchant_website,
+                 account_description, account_revenue, account_employees, account_location,
+                 account_gmv, last_activity)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (merchant_name, contact_email, contact_title, merchant_industry, merchant_website,
+                  account_description, account_revenue, account_employees, account_location,
+                  account_gmv, last_activity))
+            logger.info(f"✅ Created test merchant: {merchant_name}")
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Test merchant saved via {'GET' if request.method == 'GET' else 'POST'}: {merchant_name}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Test merchant saved successfully',
+            'merchant_name': merchant_name,
+            'timestamp': datetime.datetime.now().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Error saving test merchant: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/test-merchants/get', methods=['GET'])
+def get_test_merchant():
+    """Get the saved test merchant data."""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available'
+            }), 503
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database connection failed'
+            }), 503
+        
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, merchant_name, contact_email, contact_title, merchant_industry,
+                   merchant_website, account_description, account_revenue, account_employees,
+                   account_location, account_gmv, last_activity
+            FROM test_merchants
+            ORDER BY updated_at DESC
+            LIMIT 1
+        ''')
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return jsonify({
+                'status': 'success',
+                'merchant': {
+                    'id': row[0],
+                    'merchant_name': row[1],
+                    'contact_email': row[2],
+                    'contact_title': row[3],
+                    'merchant_industry': row[4],
+                    'merchant_website': row[5],
+                    'account_description': row[6],
+                    'account_revenue': float(row[7]) if row[7] else 0,
+                    'account_employees': row[8] if row[8] else 0,
+                    'account_location': row[9],
+                    'account_gmv': float(row[10]) if row[10] else 0,
+                    'last_activity': row[11]
+                }
+            })
+        else:
+            return jsonify({
+                'status': 'success',
+                'merchant': None
+            })
+    except Exception as e:
+        logger.error(f"Error getting test merchant: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/test-merchants/generate-sample', methods=['POST'])
+def generate_sample_response():
+    """Generate sample email responses using test merchant data and specified prompt."""
+    try:
+        data = request.get_json()
+        prompt_type = data.get('prompt_type', 'new-email')  # 'new-email' or 'reply-email'
+        prompt_content = data.get('prompt_content', None)  # Optional custom prompt
+        conversation_context = data.get('conversation_context', '')  # For reply emails
+        
+        if not DB_AVAILABLE:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available'
+            }), 503
+        
+        # Get test merchant data
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database connection failed'
+            }), 503
+        
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT merchant_name, contact_email, contact_title, merchant_industry,
+                   merchant_website, account_description, account_revenue, account_employees,
+                   account_location, account_gmv, last_activity
+            FROM test_merchants
+            ORDER BY updated_at DESC
+            LIMIT 1
+        ''')
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return jsonify({
+                'status': 'error',
+                'message': 'No test merchant found. Please save test merchant data first.'
+            }), 400
+        
+        merchant_name = row[0]
+        contact_email = row[1] or 'test@example.com'
+        contact_title = row[2] or ''
+        merchant_industry = row[3] or 'Business'
+        merchant_website = row[4] or ''
+        account_description = row[5] or ''
+        account_revenue = float(row[6]) if row[6] else 0
+        account_employees = row[7] if row[7] else 0
+        account_location = row[8] or ''
+        account_gmv = float(row[9]) if row[9] else 0
+        last_activity = row[10] or 'Recent'
+        
+        sender_name = "Jake Morgan"
+        responses = []
+        
+        if prompt_type == 'new-email':
+            # Generate new email sample
+            subject_line, email_content = generate_message(
+                merchant_name=merchant_name,
+                last_activity=last_activity,
+                merchant_industry=merchant_industry,
+                merchant_website=merchant_website,
+                sender_name=sender_name,
+                account_description=account_description,
+                account_revenue=account_revenue,
+                account_employees=account_employees,
+                account_location=account_location,
+                contact_title=contact_title,
+                account_gmv=account_gmv,
+                prompt_template=prompt_content
+            )
+            
+            responses.append({
+                'type': 'new-email',
+                'subject': subject_line,
+                'body': email_content,
+                'merchant_name': merchant_name
+            })
+            
+        elif prompt_type == 'reply-email':
+            # Generate reply email sample
+            # Use a sample email body if no conversation context provided
+            sample_email_body = conversation_context or f"Hi Jake,\n\nI'm interested in learning more about Affirm. Can you tell me more about how it works?\n\nThanks,\n{merchant_name}"
+            
+            ai_response = generate_ai_response(
+                email_body=sample_email_body,
+                sender_name=sender_name,
+                recipient_name=merchant_name,
+                conversation_history=conversation_context if conversation_context else None
+            )
+            
+            # Extract the email content from the formatted response
+            import re
+            body_match = re.search(r'<body[^>]*>(.*?)</body>', ai_response, re.DOTALL | re.IGNORECASE)
+            if body_match:
+                email_body = body_match.group(1)
+            else:
+                email_body = ai_response
+            
+            responses.append({
+                'type': 'reply-email',
+                'subject': f"Re: Your Message",
+                'body': email_body,
+                'merchant_name': merchant_name
+            })
+        
+        return jsonify({
+            'status': 'success',
+            'responses': responses,
+            'test_merchant': {
+                'merchant_name': merchant_name,
+                'merchant_industry': merchant_industry,
+                'contact_title': contact_title
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating sample response: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 @app.route('/api/track-send', methods=['POST'])
 def track_email_send():
@@ -4022,7 +4601,7 @@ def workato_reply_to_emails():
         if 'responses' in result and result['responses']:
             for response in result['responses']:
                 # Clean AI response for display
-                import re
+                    import re
                 ai_response_text = response.get('ai_response', '')
                 if ai_response_text:
                     # Remove HTML tags
@@ -4470,11 +5049,11 @@ def workato_send_new_email():
                         raise ValueError("Could not extract contact_email")
                 except Exception as fallback_error:
                     logger.error(f"❌ Fallback parsing also failed: {fallback_error}")
-                    return jsonify({
-                        "status": "error",
+            return jsonify({
+                "status": "error",
                         "message": f"Invalid JSON format: {str(json_error)}. Please check your Workato request format.",
-                        "timestamp": datetime.datetime.now().isoformat()
-                    }), 400
+                "timestamp": datetime.datetime.now().isoformat()
+            }), 400
         
         if not data:
             return jsonify({
