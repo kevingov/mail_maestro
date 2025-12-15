@@ -2992,7 +2992,7 @@ def prompts_ui():
                     body: JSON.stringify({
                         prompt_type: promptType,
                         prompt_content: promptContent,
-                        conversation_context: promptType === 'reply-email' ? 'Hi Jake,\n\nI\'m interested in learning more about Affirm. Can you tell me more about how it works?\n\nThanks' : ''
+                        conversation_context: promptType === 'reply-email' ? "Hi Jake,\\n\\nI'm interested in learning more about Affirm. Can you tell me more about how it works?\\n\\nThanks" : ''
                     })
                 });
                 
