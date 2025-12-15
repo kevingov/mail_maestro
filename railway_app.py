@@ -642,7 +642,8 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
         
         client = OpenAI(api_key=api_key)
         
-        logger.info(f"🤖 Sending prompt to OpenAI {OPENAI_MODEL}...")
+        logger.info(f"🤖 Using OpenAI model: {OPENAI_MODEL}")
+        logger.info(f"🤖 Sending prompt to OpenAI...")
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[{"role": "user", "content": prompt}]
@@ -814,6 +815,8 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
         
         client = OpenAI(api_key=api_key)
         
+        logger.info(f"🤖 Using OpenAI model: {OPENAI_MODEL}")
+        logger.info(f"🤖 Generating new email message...")
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[{"role": "user", "content": prompt}]
@@ -4782,6 +4785,8 @@ def debug_openai():
         
         client = OpenAI(api_key=api_key)
         
+        logger.info(f"🤖 Using OpenAI model: {OPENAI_MODEL}")
+        logger.info(f"🤖 Testing OpenAI connection...")
         # Simple test request
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
