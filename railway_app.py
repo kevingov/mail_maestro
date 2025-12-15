@@ -2292,23 +2292,37 @@ def prompts_ui():
                     </div>
                 </div>
                 
-                <div class="table-container">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th style="width: 40px;"><input type="checkbox"></th>
-                                <th style="width: 60px;">#</th>
-                                <th>Version Name / Preview</th>
-                                <th style="width: 120px;">Status</th>
-                                <th style="width: 150px;">Endpoint</th>
-                                <th style="width: 120px;">Open Rate</th>
-                                <th style="width: 100px;">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="prompts-table-body">
-                            <!-- Table rows will be populated by JavaScript -->
-                        </tbody>
-                    </table>
+                <div style="display: flex; gap: 24px; flex: 1; overflow: hidden;">
+                    <div class="table-container" style="flex: 1;">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;"><input type="checkbox"></th>
+                                    <th style="width: 60px;">#</th>
+                                    <th>Version Name / Preview</th>
+                                    <th style="width: 120px;">Status</th>
+                                    <th style="width: 150px;">Endpoint</th>
+                                    <th style="width: 120px;">Open Rate</th>
+                                    <th style="width: 100px;">Actions</th>
+                                    <th style="width: 100px;">Test</th>
+                                </tr>
+                            </thead>
+                            <tbody id="prompts-table-body">
+                                <!-- Table rows will be populated by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Test Results Panel -->
+                    <div id="test-results-panel" style="display: none; width: 400px; background: white; border-left: 1px solid #e5e7eb; padding: 24px; overflow-y: auto;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                            <h3 style="margin: 0; font-size: 18px; font-weight: 600;">Test Results</h3>
+                            <button onclick="closeTestPanel()" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #6b7280; padding: 4px 8px;">✕</button>
+                        </div>
+                        <div id="test-results-content" style="font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; background: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; min-height: 200px;">
+                            Click "Test" on any prompt to see results here.
+                        </div>
+                    </div>
                 </div>
                 
                 <!-- Test Merchant Content -->
@@ -2602,7 +2616,7 @@ def prompts_ui():
             if (filtered.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="7" style="text-align: center; padding: 40px; color: #6b7280;">
+                        <td colspan="8" style="text-align: center; padding: 40px; color: #6b7280;">
                             No prompts found. ${prompts.length === 0 ? 'Click "+ Create Version" to create your first prompt version.' : 'Try selecting a different tab.'}
                         </td>
                     </tr>
@@ -2636,6 +2650,9 @@ def prompts_ui():
                         </td>
                         <td>
                             <button class="edit-btn" onclick="openEditModal(${prompt.id})">Edit</button>
+                        </td>
+                        <td>
+                            <button class="edit-btn" onclick="testPrompt(${prompt.id})" style="background: #f0fdf4; color: #166534;">Test</button>
                         </td>
                     </tr>
                 `;
@@ -2865,6 +2882,62 @@ def prompts_ui():
                 contextSection.style.display = 'none';
             }
         });
+        
+        // Test Prompt Function
+        async function testPrompt(promptId) {
+            const prompts = promptsData[currentPromptType] || [];
+            const prompt = prompts.find(p => p.id === promptId);
+            if (!prompt) {
+                alert('Prompt not found');
+                return;
+            }
+            
+            // Skip test for voice guidelines
+            if (currentPromptType === 'voice-guidelines') {
+                alert('Cannot test voice guidelines. Please use a new-email or reply-email prompt.');
+                return;
+            }
+            
+            // Show test panel
+            const testPanel = document.getElementById('test-results-panel');
+            const testContent = document.getElementById('test-results-content');
+            testPanel.style.display = 'block';
+            testContent.textContent = 'Generating test response...';
+            
+            try {
+                // Determine prompt type
+                const promptType = currentPromptType === 'new-email' ? 'new-email' : 'reply-email';
+                
+                // Get the prompt content
+                const promptContent = prompt.content || '';
+                
+                // Call generate-sample endpoint
+                const response = await fetch('/api/test-merchants/generate-sample', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt_type: promptType,
+                        prompt_content: promptContent,
+                        conversation_context: promptType === 'reply-email' ? 'Hi Jake,\n\nI\'m interested in learning more about Affirm. Can you tell me more about how it works?\n\nThanks' : ''
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.status === 'success' && data.responses && data.responses.length > 0) {
+                    const result = data.responses[0];
+                    const output = `Subject: ${result.subject}\n\n${result.body}`;
+                    testContent.textContent = output;
+                } else {
+                    testContent.textContent = 'Error: ' + (data.message || 'Failed to generate sample. Make sure you have saved a test merchant first.');
+                }
+            } catch (error) {
+                testContent.textContent = 'Error: ' + error.message;
+            }
+        }
+        
+        function closeTestPanel() {
+            document.getElementById('test-results-panel').style.display = 'none';
+        }
     </script>
 </body>
 </html>
