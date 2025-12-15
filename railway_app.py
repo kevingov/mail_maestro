@@ -15,6 +15,7 @@ import base64
 import email
 import pickle
 import re
+import hashlib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -595,7 +596,16 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
                 email_body=email_body
             )
             prompt_source = "env_variable"
-            logger.info(f"📝 Using REPLY_EMAIL_PROMPT_TEMPLATE from environment variable")
+            prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
+            logger.info(f"📝 PROMPT USED FOR REPLY EMAIL:")
+            logger.info(f"   Source: REPLY_EMAIL_PROMPT_TEMPLATE environment variable")
+            logger.info(f"   Endpoint: /api/workato/reply-to-emails (Default)")
+            logger.info(f"   Prompt Type: reply-email")
+            logger.info(f"   Prompt Hash: {prompt_hash}")
+            logger.info(f"   Prompt Length: {len(prompt)} characters")
+            logger.info(f"   Recipient: {recipient_name}")
+            logger.info(f"   Conversation History Length: {len(conversation_history) if conversation_history else 0} characters")
+            logger.info(f"   Full Prompt Content:\n{'='*80}\n{prompt}\n{'='*80}")
         except KeyError as e:
             logger.warning(f"⚠️ REPLY_EMAIL_PROMPT_TEMPLATE missing variable {e}, using default")
             reply_email_prompt_template = None
@@ -625,15 +635,18 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     For all support, refer to customercare@affirm.com Only.
     """
 
-    # Log the prompt being used
-    logger.info(f"📝 PROMPT USED FOR REPLY EMAIL:")
-    logger.info(f"   Source: {prompt_source}")
-    logger.info(f"   Endpoint: /api/workato/reply-to-emails (Default)")
-    logger.info(f"   Prompt Type: reply-email")
-    logger.info(f"   Prompt Length: {len(prompt)} characters")
-    logger.info(f"   Conversation History Length: {len(conversation_history) if conversation_history else 0} characters")
-    logger.info(f"   Prompt Preview (first 500 chars):\n{prompt[:500]}...")
-    logger.info(f"   Prompt Last 200 chars (to verify support line):\n...{prompt[-200:]}")
+    # Log the prompt being used (for default prompt)
+    if prompt_source == "default":
+        prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
+        logger.info(f"📝 PROMPT USED FOR REPLY EMAIL:")
+        logger.info(f"   Source: Default prompt template (hardcoded)")
+        logger.info(f"   Endpoint: /api/workato/reply-to-emails (Default)")
+        logger.info(f"   Prompt Type: reply-email")
+        logger.info(f"   Prompt Hash: {prompt_hash}")
+        logger.info(f"   Prompt Length: {len(prompt)} characters")
+        logger.info(f"   Recipient: {recipient_name}")
+        logger.info(f"   Conversation History Length: {len(conversation_history) if conversation_history else 0} characters")
+        logger.info(f"   Full Prompt Content:\n{'='*80}\n{prompt}\n{'='*80}")
 
     try:
         api_key = os.environ.get('OPENAI_API_KEY')
@@ -713,10 +726,13 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
                 account_location_str=account_location_str
             )
             prompt_source = "custom_template"
+            prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
             logger.info(f"📝 PROMPT USED FOR NEW EMAIL:")
-            logger.info(f"   Source: Custom prompt template")
+            logger.info(f"   Source: Custom prompt template (versioned endpoint)")
+            logger.info(f"   Prompt Hash: {prompt_hash}")
             logger.info(f"   Prompt Length: {len(prompt)} characters")
-            logger.info(f"   Prompt Preview (first 500 chars):\n{prompt[:500]}...")
+            logger.info(f"   Merchant: {merchant_name}")
+            logger.info(f"   Full Prompt Content:\n{'='*80}\n{prompt}\n{'='*80}")
         except KeyError as e:
             logger.warning(f"⚠️ Custom prompt template missing variable {e}, using default")
             prompt_template = None
@@ -740,12 +756,15 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
                     account_location_str=account_location_str
                 )
                 prompt_source = "env_variable"
+                prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
                 logger.info(f"📝 PROMPT USED FOR NEW EMAIL:")
                 logger.info(f"   Source: NEW_EMAIL_PROMPT_TEMPLATE environment variable")
                 logger.info(f"   Endpoint: /api/workato/send-new-email (Default)")
                 logger.info(f"   Prompt Type: new-email")
+                logger.info(f"   Prompt Hash: {prompt_hash}")
                 logger.info(f"   Prompt Length: {len(prompt)} characters")
-                logger.info(f"   Prompt Preview (first 500 chars):\n{prompt[:500]}...")
+                logger.info(f"   Merchant: {merchant_name}")
+                logger.info(f"   Full Prompt Content:\n{'='*80}\n{prompt}\n{'='*80}")
             except KeyError as e:
                 logger.warning(f"⚠️ NEW_EMAIL_PROMPT_TEMPLATE missing variable {e}, using default")
                 prompt_template = None
@@ -801,12 +820,15 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
     
     # Log default prompt usage
     if prompt_source == "default":
-            logger.info(f"📝 PROMPT USED FOR NEW EMAIL:")
-            logger.info(f"   Source: Default prompt template")
-            logger.info(f"   Endpoint: /api/workato/send-new-email (Default)")
-            logger.info(f"   Prompt Type: new-email")
-            logger.info(f"   Prompt Length: {len(prompt)} characters")
-            logger.info(f"   Prompt Preview (first 500 chars):\n{prompt[:500]}...")
+        prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
+        logger.info(f"📝 PROMPT USED FOR NEW EMAIL:")
+        logger.info(f"   Source: Default prompt template (hardcoded)")
+        logger.info(f"   Endpoint: /api/workato/send-new-email (Default)")
+        logger.info(f"   Prompt Type: new-email")
+        logger.info(f"   Prompt Hash: {prompt_hash}")
+        logger.info(f"   Prompt Length: {len(prompt)} characters")
+        logger.info(f"   Merchant: {merchant_name}")
+        logger.info(f"   Full Prompt Content:\n{'='*80}\n{prompt}\n{'='*80}")
 
     try:
         api_key = os.environ.get('OPENAI_API_KEY')
@@ -1452,7 +1474,7 @@ def get_emails_needing_replies_with_accounts(accounts):
                     normalized_account = account_data.get('normalized_email', normalize_email(account_email))
                     if account_email in latest_sender or normalized_account == latest_sender_normalized:
                         is_from_merchant = True
-                break
+                        break
         
         # Only reply if:
         # 1. Latest message is from merchant (not from us)
@@ -3207,18 +3229,21 @@ def update_prompt():
                 'message': 'Missing key or value'
             }), 400
         
-        # Note: In Railway, you need to update environment variables through the dashboard
-        # This endpoint will log the new value but won't persist it automatically
+        # Update the environment variable in the current process
+        # This change takes effect IMMEDIATELY for all new email generations
+        # Note: Changes will be lost on app restart unless also updated in Railway dashboard
         logger.info(f"📝 Prompt update requested: {prompt_key}")
-        logger.info(f"New value: {prompt_value[:100]}...")
+        logger.info(f"📝 New prompt value (first 200 chars): {prompt_value[:200]}...")
+        logger.info(f"📝 Prompt length: {len(prompt_value)} characters")
         
-        # For now, we'll store it in a way that can be read back
-        # In production, you'd want to update Railway env vars via API or file
+        # Update the environment variable - this is dynamic and takes effect immediately
         os.environ[prompt_key] = prompt_value
+        
+        logger.info(f"✅ Prompt {prompt_key} updated successfully. Changes take effect immediately for new emails.")
         
         return jsonify({
             'status': 'success',
-            'message': f'Prompt {prompt_key} updated. Note: App restart may be required for changes to take effect.',
+            'message': f'Prompt {prompt_key} updated successfully. Changes take effect immediately for new emails. Note: Changes will be lost on app restart unless also updated in Railway dashboard.',
             'key': prompt_key
         })
     except Exception as e:
