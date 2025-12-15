@@ -2251,15 +2251,15 @@ def prompts_ui():
                 
                 <div class="sidebar-section">
                     <div class="sidebar-section-title">Prompt Types</div>
-                    <div class="prompt-type-item active" onclick="selectPromptType('new-email')">
+                    <div class="prompt-type-item active" onclick="selectPromptType('new-email', event)">
                         <span class="dot"></span>
                         New Email Prompts
                     </div>
-                    <div class="prompt-type-item" onclick="selectPromptType('reply-email')">
+                    <div class="prompt-type-item" onclick="selectPromptType('reply-email', event)">
                         <span class="dot"></span>
                         Reply Email Prompts
                     </div>
-                    <div class="prompt-type-item" onclick="selectPromptType('voice-guidelines')">
+                    <div class="prompt-type-item" onclick="selectPromptType('voice-guidelines', event)">
                         <span class="dot"></span>
                         Voice Guidelines
                     </div>
@@ -2267,7 +2267,7 @@ def prompts_ui():
                 
                 <div class="sidebar-section">
                     <div class="sidebar-section-title">Testing</div>
-                    <div class="prompt-type-item" onclick="selectPromptType('test-merchant')">
+                    <div class="prompt-type-item" onclick="selectPromptType('test-merchant', event)">
                         <span class="dot"></span>
                         Test Merchant
                     </div>
@@ -2278,13 +2278,13 @@ def prompts_ui():
                 <div class="content-header">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                         <div class="tabs">
-                            <button class="tab active" onclick="selectTab('all')">
+                            <button class="tab active" onclick="selectTab('all', event)">
                                 All prompts <span class="tab-count" id="all-count">3</span>
                             </button>
-                            <button class="tab" onclick="selectTab('active')">
+                            <button class="tab" onclick="selectTab('active', event)">
                                 Active <span class="tab-count" id="active-count">2</span>
                             </button>
-                            <button class="tab" onclick="selectTab('draft')">
+                            <button class="tab" onclick="selectTab('draft', event)">
                                 Draft <span class="tab-count" id="draft-count">1</span>
                             </button>
                         </div>
@@ -2515,16 +2515,40 @@ def prompts_ui():
             renderTable();
         });
         
-        function selectPromptType(type) {
+        function selectPromptType(type, event) {
             currentPromptType = type;
             document.querySelectorAll('.prompt-type-item').forEach(item => {
                 item.classList.remove('active');
             });
-            event.currentTarget.classList.add('active');
-            Promise.all([loadAllPrompts(), loadStats()]).then(() => {
-                console.log('Reloaded prompts and stats for type:', type);
-                renderTable();
-            });
+            if (event && event.currentTarget) {
+                event.currentTarget.classList.add('active');
+            } else {
+                // Fallback: find the clicked element by type
+                document.querySelectorAll('.prompt-type-item').forEach(item => {
+                    if (item.getAttribute('onclick') && item.getAttribute('onclick').includes(`'${type}'`)) {
+                        item.classList.add('active');
+                    }
+                });
+            }
+            
+            // Show/hide content areas
+            const tableContainer = document.querySelector('div[style*="display: flex"]') || document.querySelector('.table-container')?.parentElement;
+            const testMerchantContent = document.getElementById('test-merchant-content');
+            
+            if (type === 'test-merchant') {
+                if (tableContainer) tableContainer.style.display = 'none';
+                if (testMerchantContent) {
+                    testMerchantContent.style.display = 'block';
+                    loadTestMerchant();
+                }
+            } else {
+                if (tableContainer) tableContainer.style.display = 'flex';
+                if (testMerchantContent) testMerchantContent.style.display = 'none';
+                Promise.all([loadAllPrompts(), loadStats()]).then(() => {
+                    console.log('Reloaded prompts and stats for type:', type);
+                    renderTable();
+                });
+            }
         }
         
         function selectTab(tab) {
