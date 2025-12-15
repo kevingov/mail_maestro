@@ -2319,6 +2319,14 @@ def prompts_ui():
                             <h3 style="margin: 0; font-size: 18px; font-weight: 600;">Test Results</h3>
                             <button onclick="closeTestPanel()" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #6b7280; padding: 4px 8px;">✕</button>
                         </div>
+                        
+                        <!-- Reply Input Section (only for reply-email prompts) -->
+                        <div id="test-reply-input-section" style="display: none; margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151; font-size: 14px;">Message to Reply To:</label>
+                            <textarea id="test-reply-input" rows="6" style="width: 100%; padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; font-family: inherit; resize: vertical;" placeholder="Enter the message you want the AI to reply to..."></textarea>
+                            <button onclick="generateTestReply()" class="btn-primary" style="width: 100%; margin-top: 12px;">Generate Reply</button>
+                        </div>
+                        
                         <div id="test-results-content" style="font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; background: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; min-height: 200px;">
                             Click "Test" on any prompt to see results here.
                         </div>
@@ -2975,24 +2983,85 @@ def prompts_ui():
             // Show test panel
             const testPanel = document.getElementById('test-results-panel');
             const testContent = document.getElementById('test-results-content');
+            const replyInputSection = document.getElementById('test-reply-input-section');
+            const replyInput = document.getElementById('test-reply-input');
+            
             testPanel.style.display = 'block';
-            testContent.textContent = 'Generating test response...';
+            
+            // Determine prompt type
+            const promptType = currentPromptType === 'new-email' ? 'new-email' : 'reply-email';
+            
+            // For reply-email, show input box and wait for user input
+            if (promptType === 'reply-email') {
+                replyInputSection.style.display = 'block';
+                testContent.textContent = 'Enter a message above and click "Generate Reply" to test the prompt.';
+                replyInput.value = '';
+                replyInput.focus();
+                // Store prompt info for later use
+                testContent.dataset.promptId = promptId;
+                testContent.dataset.promptContent = prompt.content || '';
+            } else {
+                // For new-email, generate immediately
+                replyInputSection.style.display = 'none';
+                testContent.textContent = 'Generating test response...';
+                
+                try {
+                    const promptContent = prompt.content || '';
+                    
+                    const response = await fetch('/api/test-merchants/generate-sample', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            prompt_type: promptType,
+                            prompt_content: promptContent,
+                            conversation_context: ''
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    if (data.status === 'success' && data.responses && data.responses.length > 0) {
+                        const result = data.responses[0];
+                        const output = `Subject: ${result.subject}\n\n${result.body}`;
+                        testContent.textContent = output;
+                    } else {
+                        testContent.textContent = 'Error: ' + (data.message || 'Failed to generate sample. Make sure you have saved a test merchant first.');
+                    }
+                } catch (error) {
+                    testContent.textContent = 'Error: ' + error.message;
+                }
+            }
+        }
+        
+        // Generate Reply Function (for reply-email prompts)
+        async function generateTestReply() {
+            const replyInput = document.getElementById('test-reply-input');
+            const testContent = document.getElementById('test-results-content');
+            const messageToReplyTo = replyInput.value.trim();
+            
+            if (!messageToReplyTo) {
+                alert('Please enter a message to reply to');
+                return;
+            }
+            
+            // Get stored prompt info
+            const promptId = testContent.dataset.promptId;
+            const promptContent = testContent.dataset.promptContent || '';
+            
+            if (!promptId) {
+                alert('Prompt information not found. Please click "Test" again.');
+                return;
+            }
+            
+            testContent.textContent = 'Generating reply...';
             
             try {
-                // Determine prompt type
-                const promptType = currentPromptType === 'new-email' ? 'new-email' : 'reply-email';
-                
-                // Get the prompt content
-                const promptContent = prompt.content || '';
-                
-                // Call generate-sample endpoint
                 const response = await fetch('/api/test-merchants/generate-sample', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        prompt_type: promptType,
+                        prompt_type: 'reply-email',
                         prompt_content: promptContent,
-                        conversation_context: promptType === 'reply-email' ? "Hi Jake,\\n\\nI'm interested in learning more about Affirm. Can you tell me more about how it works?\\n\\nThanks" : ''
+                        conversation_context: messageToReplyTo
                     })
                 });
                 
@@ -3002,7 +3071,7 @@ def prompts_ui():
                     const output = `Subject: ${result.subject}\n\n${result.body}`;
                     testContent.textContent = output;
                 } else {
-                    testContent.textContent = 'Error: ' + (data.message || 'Failed to generate sample. Make sure you have saved a test merchant first.');
+                    testContent.textContent = 'Error: ' + (data.message || 'Failed to generate reply. Make sure you have saved a test merchant first.');
                 }
             } catch (error) {
                 testContent.textContent = 'Error: ' + error.message;
