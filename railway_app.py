@@ -46,7 +46,7 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 
 # OpenAI configuration
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")  # Can be changed to "gpt-3.5-turbo", "gpt-4-turbo", etc.
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.2")  # Can be changed to "gpt-3.5-turbo", "gpt-4-turbo", etc.
 
 # Email configuration (same as 2025_hackathon.py)
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
@@ -2330,7 +2330,7 @@ def prompts_ui():
                             <button onclick="generateTestReply()" class="btn-primary" style="width: 100%; margin-top: 12px;">Generate Reply</button>
                         </div>
                         
-                        <div id="test-results-content" style="font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6; white-space: pre-wrap; background: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; min-height: 200px;">
+                        <div id="test-results-content" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 14px; line-height: 1.6; background: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; min-height: 200px; overflow-y: auto; max-height: 600px;">
                             Click "Test" on any prompt to see results here.
                         </div>
                     </div>
@@ -3003,7 +3003,7 @@ def prompts_ui():
             // For reply-email, show input box and wait for user input
             if (promptType === 'reply-email') {
                 replyInputSection.style.display = 'block';
-                testContent.textContent = 'Enter a message above and click "Generate Reply" to test the prompt.';
+                testContent.innerHTML = 'Enter a message above and click "Generate Reply" to test the prompt.';
                 replyInput.value = '';
                 replyInput.focus();
                 // Store prompt info for later use
@@ -3012,7 +3012,7 @@ def prompts_ui():
             } else {
                 // For new-email, generate immediately
                 replyInputSection.style.display = 'none';
-                testContent.textContent = 'Generating test response...';
+                testContent.innerHTML = 'Generating test response...';
                 
                 try {
                     const promptContent = prompt.content || '';
@@ -3030,13 +3030,14 @@ def prompts_ui():
                     const data = await response.json();
                     if (data.status === 'success' && data.responses && data.responses.length > 0) {
                         const result = data.responses[0];
-                        const output = `Subject: ${result.subject}\n\n${result.body}`;
-                        testContent.textContent = output;
+                        // Display with HTML rendering for proper formatting
+                        const output = `<div style="margin-bottom: 16px;"><strong>Subject:</strong> ${result.subject}</div><div style="border-top: 1px solid #e5e7eb; padding-top: 16px;">${result.body}</div>`;
+                        testContent.innerHTML = output;
                     } else {
-                        testContent.textContent = 'Error: ' + (data.message || 'Failed to generate sample. Make sure you have saved a test merchant first.');
+                        testContent.innerHTML = 'Error: ' + (data.message || 'Failed to generate sample. Make sure you have saved a test merchant first.');
                     }
                 } catch (error) {
-                    testContent.textContent = 'Error: ' + error.message;
+                    testContent.innerHTML = 'Error: ' + error.message;
                 }
             }
         }
@@ -3061,7 +3062,7 @@ def prompts_ui():
                 return;
             }
             
-            testContent.textContent = 'Generating reply...';
+            testContent.innerHTML = 'Generating reply...';
             
             try {
                 const response = await fetch('/api/test-merchants/generate-sample', {
@@ -3077,13 +3078,14 @@ def prompts_ui():
                 const data = await response.json();
                 if (data.status === 'success' && data.responses && data.responses.length > 0) {
                     const result = data.responses[0];
-                    const output = `Subject: ${result.subject}\n\n${result.body}`;
-                    testContent.textContent = output;
+                    // Display with HTML rendering for proper formatting
+                    const output = `<div style="margin-bottom: 16px;"><strong>Subject:</strong> ${result.subject}</div><div style="border-top: 1px solid #e5e7eb; padding-top: 16px;">${result.body}</div>`;
+                    testContent.innerHTML = output;
                 } else {
-                    testContent.textContent = 'Error: ' + (data.message || 'Failed to generate reply. Make sure you have saved a test merchant first.');
+                    testContent.innerHTML = 'Error: ' + (data.message || 'Failed to generate reply. Make sure you have saved a test merchant first.');
                 }
             } catch (error) {
-                testContent.textContent = 'Error: ' + error.message;
+                testContent.innerHTML = 'Error: ' + error.message;
             }
         }
         
@@ -4024,13 +4026,8 @@ def generate_sample_response():
                 conversation_history=conversation_context if conversation_context else None
             )
             
-            # Extract the email content from the formatted response
-            import re
-            body_match = re.search(r'<body[^>]*>(.*?)</body>', ai_response, re.DOTALL | re.IGNORECASE)
-            if body_match:
-                email_body = body_match.group(1)
-            else:
-                email_body = ai_response
+            # Return the full HTML email (not just body content) for proper rendering
+            email_body = ai_response
             
             responses.append({
                 'type': 'reply-email',
