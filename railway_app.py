@@ -45,6 +45,9 @@ if not GSPREAD_AVAILABLE:
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 
+# OpenAI configuration
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")  # Can be changed to "gpt-3.5-turbo", "gpt-4-turbo", etc.
+
 # Email configuration (same as 2025_hackathon.py)
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
@@ -639,9 +642,9 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
         
         client = OpenAI(api_key=api_key)
         
-        logger.info(f"🤖 Sending prompt to OpenAI GPT-4...")
+        logger.info(f"🤖 Sending prompt to OpenAI {OPENAI_MODEL}...")
         response = client.chat.completions.create(
-            model="gpt-4",
+            model=OPENAI_MODEL,
             messages=[{"role": "user", "content": prompt}]
         )
 
@@ -812,7 +815,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
         client = OpenAI(api_key=api_key)
         
         response = client.chat.completions.create(
-            model="gpt-4",
+            model=OPENAI_MODEL,
             messages=[{"role": "user", "content": prompt}]
         )
 
@@ -4784,7 +4787,7 @@ def debug_openai():
         
         # Simple test request
         response = client.chat.completions.create(
-            model="gpt-4",
+            model=OPENAI_MODEL,
             messages=[{"role": "user", "content": "Say 'Hello World'"}],
             max_tokens=10
         )
