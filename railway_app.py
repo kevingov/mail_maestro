@@ -3547,16 +3547,51 @@ def save_test_merchant():
         cursor.execute('SELECT id FROM test_merchants LIMIT 1')
         existing = cursor.fetchone()
         
-        merchant_name = data.get('merchant_name', 'Test Merchant')
+        # Map fields from send-new-email format if merchant_name is not provided
+        # This allows using the same request body as /api/workato/send-new-email
+        if 'merchant_name' not in data and 'contact_name' in data:
+            merchant_name = data.get('contact_name', 'Test Merchant')
+        else:
+            merchant_name = data.get('merchant_name', data.get('contact_name', 'Test Merchant'))
+        
         contact_email = data.get('contact_email', '')
         contact_title = data.get('contact_title', '')
-        merchant_industry = data.get('merchant_industry', '')
-        merchant_website = data.get('merchant_website', '')
+        
+        # Map account fields to merchant fields
+        merchant_industry = data.get('merchant_industry', data.get('account_industry', ''))
+        merchant_website = data.get('merchant_website', data.get('account_website', ''))
         account_description = data.get('account_description', '')
+        
+        # Handle numeric fields with proper conversion
         account_revenue = data.get('account_revenue', 0) or 0
+        if isinstance(account_revenue, str):
+            try:
+                account_revenue = float(account_revenue) if account_revenue else 0
+            except (ValueError, TypeError):
+                account_revenue = 0
+        
         account_employees = data.get('account_employees', 0) or 0
+        if isinstance(account_employees, str):
+            try:
+                account_employees = int(account_employees) if account_employees else 0
+            except (ValueError, TypeError):
+                account_employees = 0
+        
+        # Map location from account_city and account_state if account_location not provided
         account_location = data.get('account_location', '')
+        if not account_location:
+            account_city = data.get('account_city', '')
+            account_state = data.get('account_state', '')
+            if account_city or account_state:
+                account_location = f"{account_city}, {account_state}".strip(", ")
+        
         account_gmv = data.get('account_gmv', 0) or 0
+        if isinstance(account_gmv, str):
+            try:
+                account_gmv = float(account_gmv) if account_gmv else 0
+            except (ValueError, TypeError):
+                account_gmv = 0
+        
         last_activity = data.get('last_activity', 'Recent')
         
         if existing:
