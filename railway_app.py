@@ -2539,6 +2539,12 @@ def prompts_ui():
                 });
             }
             
+            // Close test panel when switching prompts
+            const testPanel = document.getElementById('test-results-panel');
+            if (testPanel) {
+                testPanel.style.display = 'none';
+            }
+            
             // Show/hide content areas
             const tableContainer = document.querySelector('div[style*="display: flex"][style*="gap: 24px"]') || 
                                    document.querySelector('.table-container')?.parentElement ||
