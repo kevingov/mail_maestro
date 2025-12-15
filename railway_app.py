@@ -599,7 +599,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     
     # Default prompt if no custom template or formatting failed
     if not reply_email_prompt_template:
-        prompt = f"""
+    prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
 
     **TASK:** Generate a professional Affirm-branded email response to {recipient_name} from {sender_name}.
@@ -748,7 +748,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
     
     # Default prompt if no custom template or formatting failed
     if not prompt_template:
-        prompt = f"""
+    prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
     
     Generate a **professional, Affirm-branded business email** to re-engage {merchant_name}, a merchant in the {merchant_industry_str} industry, who has completed technical integration with Affirm but has **not yet launched**. The goal is to encourage them to go live — without offering a meeting or call.
@@ -1445,8 +1445,8 @@ def get_emails_needing_replies_with_accounts(accounts):
                 for account_email, account_data in account_emails.items():
                     normalized_account = account_data.get('normalized_email', normalize_email(account_email))
                     if account_email in latest_sender or normalized_account == latest_sender_normalized:
-                        is_from_merchant = True
-                        break
+                is_from_merchant = True
+                break
         
         # Only reply if:
         # 1. Latest message is from merchant (not from us)
@@ -2532,44 +2532,86 @@ def prompts_ui():
             }
             
             // Show/hide content areas
-            const tableContainer = document.querySelector('div[style*="display: flex"]') || document.querySelector('.table-container')?.parentElement;
+            const tableContainer = document.querySelector('div[style*="display: flex"][style*="gap: 24px"]') || 
+                                   document.querySelector('.table-container')?.parentElement ||
+                                   document.querySelector('div[style*="flex: 1"]');
             const testMerchantContent = document.getElementById('test-merchant-content');
             
+            console.log('Switching to prompt type:', type);
+            console.log('Table container found:', !!tableContainer);
+            console.log('Test merchant content found:', !!testMerchantContent);
+            
             if (type === 'test-merchant') {
-                if (tableContainer) tableContainer.style.display = 'none';
+                if (tableContainer) {
+                    tableContainer.style.display = 'none';
+                    console.log('Hiding table container');
+                }
                 if (testMerchantContent) {
                     testMerchantContent.style.display = 'block';
+                    console.log('Showing test merchant content');
                     loadTestMerchant();
                 }
             } else {
-                if (tableContainer) tableContainer.style.display = 'flex';
-                if (testMerchantContent) testMerchantContent.style.display = 'none';
+                if (tableContainer) {
+                    tableContainer.style.display = 'flex';
+                    console.log('Showing table container');
+                }
+                if (testMerchantContent) {
+                    testMerchantContent.style.display = 'none';
+                    console.log('Hiding test merchant content');
+                }
+                
+                // Always reload prompts when switching types
+                console.log('Loading prompts for type:', type);
                 Promise.all([loadAllPrompts(), loadStats()]).then(() => {
                     console.log('Reloaded prompts and stats for type:', type);
+                    console.log('Prompts for', type, ':', promptsData[type]);
                     renderTable();
+                }).catch(error => {
+                    console.error('Error reloading prompts:', error);
+                    renderTable(); // Still try to render with existing data
                 });
             }
         }
         
-        function selectTab(tab) {
+        function selectTab(tab, event) {
             currentTab = tab;
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            event.currentTarget.classList.add('active');
+            if (event && event.currentTarget) {
+                event.currentTarget.classList.add('active');
+            } else {
+                // Fallback: find the clicked element
+                document.querySelectorAll('.tab').forEach(t => {
+                    if (t.getAttribute('onclick') && t.getAttribute('onclick').includes(`'${tab}'`)) {
+                        t.classList.add('active');
+                    }
+                });
+            }
             renderTable();
         }
         
         async function loadAllPrompts() {
             try {
+                console.log('Loading prompts from API...');
                 const [promptsResponse, versionsResponse] = await Promise.all([
                     fetch('/api/prompts/get'),
                     fetch('/api/prompts/get-versions')
                 ]);
                 
+                if (!promptsResponse.ok) {
+                    console.error('Failed to fetch prompts:', promptsResponse.status, promptsResponse.statusText);
+                }
+                
                 const promptsData_result = await promptsResponse.json();
+                console.log('Prompts API response:', promptsData_result);
+                
                 let versionsData = { status: 'success', versions: [] };
                 
                 try {
-                    versionsData = await versionsResponse.json();
+                    if (versionsResponse.ok) {
+                        versionsData = await versionsResponse.json();
+                        console.log('Versions API response:', versionsData);
+                    }
                 } catch (e) {
                     console.warn('Could not load versions:', e);
                 }
@@ -2634,7 +2676,15 @@ def prompts_ui():
         
         function renderTable() {
             const tbody = document.getElementById('prompts-table-body');
+            if (!tbody) {
+                console.error('Table body not found!');
+                return;
+            }
+            
             const prompts = promptsData[currentPromptType] || [];
+            console.log('Rendering table for type:', currentPromptType, 'with', prompts.length, 'prompts');
+            console.log('Prompts data:', prompts);
+            
             const filtered = currentTab === 'all' ? prompts : prompts.filter(p => p.status === currentTab);
             
             if (filtered.length === 0) {
@@ -4733,7 +4783,7 @@ def workato_reply_to_emails():
         if 'responses' in result and result['responses']:
             for response in result['responses']:
                 # Clean AI response for display
-                import re
+                    import re
                 ai_response_text = response.get('ai_response', '')
                 if ai_response_text:
                     # Remove HTML tags
