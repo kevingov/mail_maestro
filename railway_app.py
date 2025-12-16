@@ -2886,7 +2886,10 @@ def prompts_ui():
                             <button class="edit-btn" onclick="openEditModal(${prompt.id})">Edit</button>
                         </td>
                         <td>
-                            <button class="edit-btn" onclick="testPrompt(${prompt.id})" style="background: #f0fdf4; color: #166534;">Test</button>
+                            <div style="display: flex; gap: 8px;">
+                                <button class="edit-btn" onclick="testPrompt(${prompt.id})" style="background: #f0fdf4; color: #166534;">Test</button>
+                                <button class="edit-btn" onclick="deletePrompt(${prompt.id})" style="background: #fef2f2; color: #991b1b;">Delete</button>
+                            </div>
                         </td>
                     </tr>
                 `;
@@ -3252,6 +3255,51 @@ def prompts_ui():
         
         function closeTestPanel() {
             document.getElementById('test-results-panel').style.display = 'none';
+        }
+        
+        // Delete Prompt Function
+        async function deletePrompt(promptId) {
+            const prompts = promptsData[currentPromptType] || [];
+            const prompt = prompts.find(p => p.id === promptId);
+            if (!prompt) {
+                alert('Prompt not found');
+                return;
+            }
+            
+            // Check if it's a default prompt (no version_letter)
+            if (!prompt.version_letter) {
+                alert('Cannot delete default prompts. You can only delete version prompts (A, B, C, etc.).');
+                return;
+            }
+            
+            // Confirm deletion
+            const confirmMessage = `Are you sure you want to delete "${prompt.name}" (Version ${prompt.version_letter})?\n\nThis action cannot be undone.`;
+            if (!confirm(confirmMessage)) {
+                return;
+            }
+            
+            try {
+                // Get the actual version ID from the database
+                // The prompt.id is 1000 + version.id, so we need to extract the real version ID
+                const versionId = prompt.id - 1000;
+                
+                const response = await fetch('/api/prompts/delete-version', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ version_id: versionId })
+                });
+                
+                const data = await response.json();
+                if (data.status === 'success') {
+                    alert('✅ Prompt version deleted successfully!');
+                    await Promise.all([loadAllPrompts(), loadStats()]);
+                    renderTable();
+                } else {
+                    alert('❌ Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('❌ Error deleting prompt: ' + error.message);
+            }
         }
     </script>
 </body>
@@ -3751,6 +3799,78 @@ def update_prompt_version():
         return jsonify({
             'status': 'error',
             'message': f'Error updating prompt version: {str(e)}'
+        }), 500
+
+@app.route('/api/prompts/delete-version', methods=['POST'])
+def delete_prompt_version():
+    """Delete a prompt version from the database."""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available'
+            }), 503
+        
+        data = request.get_json()
+        version_id = data.get('version_id')
+        
+        if not version_id:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing required field: version_id'
+            }), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database connection failed'
+            }), 503
+        
+        cursor = conn.cursor()
+        
+        # Get version info before deleting (for logging)
+        cursor.execute('''
+            SELECT version_name, version_letter, endpoint_path, prompt_type
+            FROM prompt_versions
+            WHERE id = %s
+        ''', (version_id,))
+        
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({
+                'status': 'error',
+                'message': 'Prompt version not found'
+            }), 404
+        
+        version_name, version_letter, endpoint_path, prompt_type = row
+        
+        # Delete the version from database
+        cursor.execute('''
+            DELETE FROM prompt_versions
+            WHERE id = %s
+        ''', (version_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✅ Deleted prompt version {version_id} ({version_letter}): {version_name}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Prompt version "{version_name}" (Version {version_letter}) deleted successfully',
+            'version_id': version_id,
+            'version_letter': version_letter
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error deleting prompt version: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'Error deleting prompt version: {str(e)}'
         }), 500
 
 # Store dynamically created endpoints
