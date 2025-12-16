@@ -2931,8 +2931,26 @@ def prompts_ui():
             try {
                 // If it's a version (has version_letter), update via version endpoint
                 if (currentEditingPrompt.version_letter) {
-                    // TODO: Add update version endpoint
-                    alert('Version updates coming soon!');
+                    const response = await fetch('/api/prompts/update-version', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ 
+                            version_id: currentEditingPrompt.id,
+                            prompt_content: content 
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    if (data.status === 'success') {
+                        currentEditingPrompt.content = content;
+                        currentEditingPrompt.preview = content.substring(0, 100);
+                        await Promise.all([loadAllPrompts(), loadStats()]);
+                        renderTable();
+                        closeModal();
+                        alert('✅ Version prompt saved successfully!');
+                    } else {
+                        alert('❌ Error: ' + data.message);
+                    }
                     return;
                 }
                 
@@ -3653,6 +3671,86 @@ def create_prompt_version():
         return jsonify({
             'status': 'error',
             'message': f'Error creating prompt version: {str(e)}'
+        }), 500
+
+@app.route('/api/prompts/update-version', methods=['POST'])
+def update_prompt_version():
+    """Update an existing prompt version in the database and update the dynamic endpoint."""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available'
+            }), 503
+        
+        data = request.get_json()
+        version_id = data.get('version_id')
+        prompt_content = data.get('prompt_content', '').strip()
+        
+        if not version_id or not prompt_content:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing required fields: version_id, prompt_content'
+            }), 400
+        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database connection failed'
+            }), 503
+        
+        cursor = conn.cursor()
+        
+        # Get the existing version to get its details
+        cursor.execute('''
+            SELECT prompt_type, version_letter, endpoint_path
+            FROM prompt_versions
+            WHERE id = %s
+        ''', (version_id,))
+        
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({
+                'status': 'error',
+                'message': 'Prompt version not found'
+            }), 404
+        
+        prompt_type, version_letter, endpoint_path = row
+        
+        # Update the prompt content in the database
+        cursor.execute('''
+            UPDATE prompt_versions
+            SET prompt_content = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        ''', (prompt_content, version_id))
+        
+        conn.commit()
+        conn.close()
+        
+        # Update the dynamic endpoint with the new prompt content
+        create_versioned_endpoint(prompt_type, version_letter, endpoint_path, prompt_content)
+        
+        logger.info(f"✅ Updated prompt version {version_id} ({version_letter}) with new content")
+        logger.info(f"📝 Updated prompt content (first 200 chars): {prompt_content[:200]}...")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Prompt version updated successfully',
+            'version_id': version_id,
+            'version_letter': version_letter,
+            'endpoint_path': endpoint_path
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error updating prompt version: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'Error updating prompt version: {str(e)}'
         }), 500
 
 # Store dynamically created endpoints
