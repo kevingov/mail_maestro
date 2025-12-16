@@ -2451,6 +2451,7 @@ def prompts_ui():
                                     <th style="width: 120px;">Open Rate</th>
                                     <th style="width: 100px;">Actions</th>
                                     <th style="width: 100px;">Test</th>
+                                    <th style="width: 100px;">Delete</th>
                                 </tr>
                             </thead>
                             <tbody id="prompts-table-body">
@@ -2850,7 +2851,7 @@ def prompts_ui():
             if (filtered.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="8" style="text-align: center; padding: 40px; color: #6b7280;">
+                        <td colspan="9" style="text-align: center; padding: 40px; color: #6b7280;">
                             No prompts found. ${prompts.length === 0 ? 'Click "+ Create Version" to create your first prompt version.' : 'Try selecting a different tab.'}
                         </td>
                     </tr>
@@ -2886,10 +2887,10 @@ def prompts_ui():
                             <button class="edit-btn" onclick="openEditModal(${prompt.id})">Edit</button>
                         </td>
                         <td>
-                            <div style="display: flex; gap: 8px;">
-                                <button class="edit-btn" onclick="testPrompt(${prompt.id})" style="background: #f0fdf4; color: #166534;">Test</button>
-                                <button class="edit-btn" onclick="deletePrompt(${prompt.id})" style="background: #fef2f2; color: #991b1b;">Delete</button>
-                            </div>
+                            <button class="edit-btn" onclick="testPrompt(${prompt.id})" style="background: #f0fdf4; color: #166534;">Test</button>
+                        </td>
+                        <td>
+                            ${prompt.version_letter ? `<button class="edit-btn" onclick="deletePrompt(${prompt.id})" style="background: #fef2f2; color: #991b1b;">Delete</button>` : '<span style="color: #9ca3af; font-size: 12px;">N/A</span>'}
                         </td>
                     </tr>
                 `;
