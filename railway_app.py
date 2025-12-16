@@ -712,7 +712,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
     if prompt_template:
         # Format the custom template with variables
         try:
-            prompt = prompt_template.format(
+            formatted_prompt = prompt_template.format(
                 AFFIRM_VOICE_GUIDELINES=AFFIRM_VOICE_GUIDELINES,
                 merchant_name=merchant_name,
                 contact_title_str=contact_title_str,
@@ -725,12 +725,44 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
                 account_employees_str=account_employees_str,
                 account_location_str=account_location_str
             )
+            
+            # If the formatted prompt is very short (< 100 chars), it's likely just an instruction
+            # Wrap it in a proper prompt structure
+            if len(formatted_prompt.strip()) < 100 and '{' not in prompt_template:
+                # This looks like a simple instruction, not a full prompt template
+                # Wrap it in a proper prompt structure
+                prompt = f"""
+{AFFIRM_VOICE_GUIDELINES}
+
+**TASK:** {formatted_prompt}
+
+**CONTEXT:**
+- Contact Name: {merchant_name}
+- Contact Title: {contact_title_str}
+- Industry: {merchant_industry_str}
+- Website: {merchant_website_str}
+- Sender: {sender_name}
+- Account Description: {account_description_str}
+- Annual Revenue: {account_revenue_str}
+- Trailing 12M GMV: {account_gmv_str}
+- Employees: {account_employees_str}
+- Location: {account_location_str}
+
+**OUTPUT FORMAT:**
+- **Subject Line:** [Concise subject line]
+- **Email Body:** [Email message]
+"""
+            else:
+                # Use the formatted prompt as-is (it's a full template)
+                prompt = formatted_prompt
+            
             prompt_source = "custom_template"
             prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
             logger.info(f"📝 PROMPT USED FOR NEW EMAIL:")
             logger.info(f"   Source: Custom prompt template (versioned endpoint)")
+            logger.info(f"   Original Prompt Length: {len(prompt_template)} characters")
+            logger.info(f"   Final Prompt Length: {len(prompt)} characters")
             logger.info(f"   Prompt Hash: {prompt_hash}")
-            logger.info(f"   Prompt Length: {len(prompt)} characters")
             logger.info(f"   Merchant: {merchant_name}")
             logger.info(f"   Full Prompt Content:\n{'='*80}\n{prompt}\n{'='*80}")
         except KeyError as e:
