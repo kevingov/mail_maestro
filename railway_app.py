@@ -1370,9 +1370,12 @@ def reply_to_emails_with_accounts(accounts):
         
         try:
             # Generate AI response using the full conversation history
+            logger.info(f"🤖 Generating AI response for thread {thread_id} from {contact_email}")
             ai_response = generate_ai_response(email['body'], sender_name, contact_name, conversation_content)
+            logger.info(f"✅ AI response generated for thread {thread_id}")
             
             # Send threaded reply (include CC recipients if found)
+            logger.info(f"📧 Sending reply email to {contact_email} for thread {thread_id}")
             email_result = send_threaded_email_reply(
                 to_email=contact_email,
                 subject=email['subject'],
@@ -1385,13 +1388,17 @@ def reply_to_emails_with_accounts(accounts):
             email_status = email_result['status'] if isinstance(email_result, dict) else email_result
             tracking_info = f" | Tracking ID: {email_result.get('tracking_id', 'N/A')}" if isinstance(email_result, dict) else ""
             
-            # Salesforce logging removed
-            
-            logger.info(f"✅ Sent reply to thread {thread_id}")
+            # Check if email was actually sent successfully
+            if isinstance(email_result, dict) and email_result.get('status') == 'success':
+                logger.info(f"✅ Successfully sent reply to thread {thread_id} from {contact_email}")
+            else:
+                logger.warning(f"⚠️ Reply email result for thread {thread_id}: {email_result}")
             
         except Exception as e:
-            logger.error(f"❌ Error processing email from {contact_email}: {e}")
-            email_status = "❌ Failed to process email"
+            logger.error(f"❌ Error processing email from {contact_email} (thread {thread_id}): {e}")
+            import traceback
+            logger.error(f"❌ Full traceback: {traceback.format_exc()}")
+            email_status = f"❌ Failed to process email: {str(e)}"
             email_result = None
             tracking_info = ""
             ai_response = "<p>Sorry, I couldn't generate a response at this time.</p>"
@@ -1401,6 +1408,9 @@ def reply_to_emails_with_accounts(accounts):
         #     mark_emails_as_read([email['id']])
         # except Exception as e:
         #     logger.error(f"❌ Error marking email as read: {e}")
+
+        # Determine if email was successfully sent
+        was_sent = isinstance(email_result, dict) and email_result.get('status') == 'success'
 
         responses.append({
             "sender": contact_email,
@@ -1414,14 +1424,22 @@ def reply_to_emails_with_accounts(accounts):
             "email_status": email_status + tracking_info,
             "tracking_id": email_result.get('tracking_id') if isinstance(email_result, dict) else None,
             "tracking_url": email_result.get('tracking_url') if isinstance(email_result, dict) else None,
-            "emails_processed": 1
+            "emails_processed": 1,
+            "reply_sent": was_sent
         })
 
-    logger.info(f"📊 Processed {len(responses)} conversation threads")
+    # Count successful replies sent
+    replies_sent = sum(1 for r in responses if r.get('reply_sent', False))
+    
+    logger.info(f"📊 Summary: Processed {len(responses)} conversation threads, {replies_sent} replies successfully sent")
+    if replies_sent < len(responses):
+        logger.warning(f"⚠️ {len(responses) - replies_sent} threads processed but replies were not sent (check email_status in responses)")
+    
     return {
         "status": "success",
-        "message": f"Processed {len(responses)} conversation threads",
+        "message": f"Processed {len(responses)} conversation threads, {replies_sent} replies sent",
         "emails_processed": len(responses),
+        "replies_sent": replies_sent,
         "responses": responses
     }
 
@@ -1624,7 +1642,7 @@ def get_emails_needing_replies_with_accounts(accounts):
                     normalized_account = account_data.get('normalized_email', normalize_email(account_email))
                     if account_email in latest_sender or normalized_account == latest_sender_normalized:
                         is_from_merchant = True
-                break
+                        break
         
         # Only reply if:
         # 1. Latest message is from merchant (not from us)
