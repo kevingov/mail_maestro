@@ -1169,20 +1169,51 @@ def reply_to_emails_with_accounts(accounts):
     # This handles cases where the same thread might appear multiple times
     seen_threads = {}
     unique_threads = []
+    threads_without_id = []  # Track emails without threadId separately
+    
     for email in emails_needing_replies:
         thread_id = email.get('threadId')
-        if thread_id and thread_id not in seen_threads:
+        email_id = email.get('id', 'unknown')
+        sender = email.get('sender', 'unknown')
+        
+        if not thread_id:
+            # If no threadId, use email ID as fallback for deduplication
+            if email_id not in seen_threads:
+                seen_threads[email_id] = email
+                threads_without_id.append(email)
+                logger.warning(f"⚠️ Email {email_id} from {sender} has no threadId - using email ID for deduplication")
+            else:
+                logger.info(f"⚠️ Skipping duplicate email {email_id} (no threadId) - already processing")
+        elif thread_id not in seen_threads:
             seen_threads[thread_id] = email
             unique_threads.append(email)
-        elif thread_id:
-            logger.info(f"⚠️ Skipping duplicate thread {thread_id} - already processing")
+            logger.info(f"✅ Added thread {thread_id} from {sender} (email {email_id}) to processing queue")
+        else:
+            logger.warning(f"⚠️ Skipping duplicate thread {thread_id} from {sender} (email {email_id}) - already processing")
+            logger.warning(f"   First occurrence: {seen_threads[thread_id].get('id')} from {seen_threads[thread_id].get('sender')}")
+    
+    # Add emails without threadId to unique_threads (they'll be processed separately)
+    unique_threads.extend(threads_without_id)
     
     logger.info(f"📧 Processing {len(unique_threads)} unique thread(s) that need replies...")
+    logger.info(f"   - {len([t for t in unique_threads if t.get('threadId')])} with threadId")
+    logger.info(f"   - {len(threads_without_id)} without threadId")
     
     # Process all unique threads that need replies
+    processed_thread_ids = set()  # Track processed threads to prevent duplicates
+    
     for i, email in enumerate(unique_threads):
         thread_id = email.get('threadId', 'No ID')
-        logger.info(f"📧 Processing thread {i+1}/{len(unique_threads)}: {thread_id} from {email.get('sender', 'unknown')}")
+        email_id = email.get('id', 'unknown')
+        sender = email.get('sender', 'unknown')
+        logger.info(f"📧 Processing thread {i+1}/{len(unique_threads)}: threadId={thread_id}, emailId={email_id}, sender={sender}")
+        
+        # Double-check we haven't already processed this thread in this batch (safety check)
+        if thread_id and thread_id != 'No ID':
+            if thread_id in processed_thread_ids:
+                logger.warning(f"⚠️ Thread {thread_id} already processed in this batch - skipping to prevent duplicate reply")
+                continue
+            processed_thread_ids.add(thread_id)
         
         # Extract contact information
         contact_name = email.get('contact_name', email['sender'].split("@")[0].capitalize())
