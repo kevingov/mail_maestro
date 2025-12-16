@@ -2934,11 +2934,15 @@ def prompts_ui():
             try {
                 // If it's a version (has version_letter), update via version endpoint
                 if (currentEditingPrompt.version_letter) {
+                    // Extract the real version ID from the database
+                    // The prompt.id is 1000 + version.id, so we need to extract the real version ID
+                    const versionId = currentEditingPrompt.id - 1000;
+                    
                     const response = await fetch('/api/prompts/update-version', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ 
-                            version_id: currentEditingPrompt.id,
+                            version_id: versionId,
                             prompt_content: content 
                         })
                     });
@@ -3751,8 +3755,9 @@ def update_prompt_version():
         cursor = conn.cursor()
         
         # Get the existing version to get its details
+        logger.info(f"📝 Updating prompt version with ID: {version_id}")
         cursor.execute('''
-            SELECT prompt_type, version_letter, endpoint_path
+            SELECT prompt_type, version_letter, endpoint_path, version_name
             FROM prompt_versions
             WHERE id = %s
         ''', (version_id,))
@@ -3760,12 +3765,15 @@ def update_prompt_version():
         row = cursor.fetchone()
         if not row:
             conn.close()
+            logger.error(f"❌ Prompt version with ID {version_id} not found in database")
             return jsonify({
                 'status': 'error',
-                'message': 'Prompt version not found'
+                'message': f'Prompt version with ID {version_id} not found'
             }), 404
         
-        prompt_type, version_letter, endpoint_path = row
+        logger.info(f"✅ Found prompt version: {row[3]} (ID: {version_id})")
+        
+        prompt_type, version_letter, endpoint_path, version_name = row
         
         # Update the prompt content in the database
         cursor.execute('''
