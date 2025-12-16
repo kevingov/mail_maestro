@@ -558,11 +558,11 @@ def has_been_replied_to(email_id, service):
         logger.error(f"Error checking reply status for email {email_id}: {e}")
         return False
 
-def generate_ai_response(email_body, sender_name, recipient_name, conversation_history=None):
+def generate_ai_response(email_body, sender_name, recipient_name, conversation_history=None, prompt_template=None):
     """
     Generates an AI response using the same detailed prompt as generate_message.
     Creates a professional, Affirm-branded email response with full conversation context.
-    Reads prompt template from REPLY_EMAIL_PROMPT_TEMPLATE environment variable if available.
+    Can use a custom prompt_template if provided, otherwise reads from REPLY_EMAIL_PROMPT_TEMPLATE environment variable.
     """
     
     # Build conversation context if provided
@@ -581,12 +581,12 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     {email_body}
     """
 
-    # Try to get custom prompt template from environment variable
-    reply_email_prompt_template = os.getenv('REPLY_EMAIL_PROMPT_TEMPLATE')
-    prompt_source = "default"
+    # Use custom prompt template if provided, otherwise try environment variable
+    reply_email_prompt_template = prompt_template or os.getenv('REPLY_EMAIL_PROMPT_TEMPLATE')
+    prompt_source = "custom" if prompt_template else ("env_variable" if os.getenv('REPLY_EMAIL_PROMPT_TEMPLATE') else "default")
     
     if reply_email_prompt_template:
-        # Use custom template from environment variable
+        # Use custom template (from parameter, environment variable, or default)
         try:
             prompt = reply_email_prompt_template.format(
                 AFFIRM_VOICE_GUIDELINES=AFFIRM_VOICE_GUIDELINES,
@@ -595,10 +595,10 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
                 conversation_context=conversation_context,
                 email_body=email_body
             )
-            prompt_source = "env_variable"
             prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
+            source_description = "Custom prompt (from test/API)" if prompt_template else ("REPLY_EMAIL_PROMPT_TEMPLATE environment variable" if os.getenv('REPLY_EMAIL_PROMPT_TEMPLATE') else "Default prompt template (hardcoded)")
             logger.info(f"📝 PROMPT USED FOR REPLY EMAIL:")
-            logger.info(f"   Source: REPLY_EMAIL_PROMPT_TEMPLATE environment variable")
+            logger.info(f"   Source: {source_description}")
             logger.info(f"   Endpoint: /api/workato/reply-to-emails (Default)")
             logger.info(f"   Prompt Type: reply-email")
             logger.info(f"   Prompt Hash: {prompt_hash}")
@@ -2970,8 +2970,8 @@ def prompts_ui():
                 
                 const data = await response.json();
                 if (data.status === 'success') {
-                    currentEditingPrompt.content = content;
-                    currentEditingPrompt.preview = content.substring(0, 100);
+                    // Reload prompts from database to ensure sync
+                    await Promise.all([loadAllPrompts(), loadStats()]);
                     renderTable();
                     closeModal();
                     alert('✅ Prompt saved successfully!');
@@ -4534,7 +4534,8 @@ def generate_sample_response():
                 email_body=sample_email_body,
                 sender_name=sender_name,
                 recipient_name=merchant_name,
-                conversation_history=conversation_context if conversation_context else None
+                conversation_history=conversation_context if conversation_context else None,
+                prompt_template=prompt_content  # Use the custom prompt from frontend if provided
             )
             
             # Return the full HTML email (not just body content) for proper rendering
