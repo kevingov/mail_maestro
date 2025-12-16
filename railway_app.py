@@ -221,7 +221,7 @@ def init_database():
             )
         ''')
         
-        # Prompt versions table for A/B testing
+        # Prompt versions table for A/B testing (also stores default prompts with version_letter = 'DEFAULT')
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS prompt_versions (
                 id SERIAL PRIMARY KEY,
@@ -3313,11 +3313,8 @@ def prompts_ui():
 
 @app.route('/api/prompts/get', methods=['GET'])
 def get_prompts():
-    """Get all current prompts."""
+    """Get all current prompts (from database first, then environment variables, then defaults)."""
     try:
-        # Get prompts from environment variables or use defaults
-        voice_guidelines = os.getenv('AFFIRM_VOICE_GUIDELINES', AFFIRM_VOICE_GUIDELINES)
-        
         # Default prompt templates (extracted from code)
         new_email_prompt_default = """Generate a **professional, Affirm-branded business email** to re-engage {merchant_name}, a merchant in the {merchant_industry_str} industry, who has completed technical integration with Affirm but has **not yet launched**. The goal is to encourage them to go live — without offering a meeting or call.
 
@@ -3380,9 +3377,48 @@ Keep the email under 130 words. Make it feel natural and human, not like marketi
 
 For all support, refer to customercare@affirm.com Only."""
 
-        # Get from environment or use defaults
-        new_email_prompt = os.getenv('NEW_EMAIL_PROMPT_TEMPLATE', new_email_prompt_default)
-        reply_email_prompt = os.getenv('REPLY_EMAIL_PROMPT_TEMPLATE', reply_email_prompt_default)
+        # Try to get from database first (from prompt_versions table with version_letter = 'DEFAULT')
+        new_email_prompt = None
+        reply_email_prompt = None
+        voice_guidelines = None
+        
+        if DB_AVAILABLE:
+            try:
+                conn = get_db_connection()
+                if conn:
+                    cursor = conn.cursor()
+                    
+                    # Get saved default prompts from prompt_versions table
+                    cursor.execute('''
+                        SELECT prompt_type, prompt_content
+                        FROM prompt_versions
+                        WHERE version_letter = 'DEFAULT'
+                    ''')
+                    
+                    for row in cursor.fetchall():
+                        prompt_type, content = row
+                        if prompt_type == 'new-email':
+                            new_email_prompt = content
+                        elif prompt_type == 'reply-email':
+                            reply_email_prompt = content
+                    
+                    conn.close()
+                    logger.info(f"📝 Loaded prompts from database: new_email={bool(new_email_prompt)}, reply_email={bool(reply_email_prompt)}")
+            except Exception as e:
+                logger.warning(f"Could not load prompts from database: {e}")
+        
+        # Fall back to environment variables if not in database
+        if not new_email_prompt:
+            new_email_prompt = os.getenv('NEW_EMAIL_PROMPT_TEMPLATE', new_email_prompt_default)
+        if not reply_email_prompt:
+            reply_email_prompt = os.getenv('REPLY_EMAIL_PROMPT_TEMPLATE', reply_email_prompt_default)
+        if not voice_guidelines:
+            voice_guidelines = os.getenv('AFFIRM_VOICE_GUIDELINES', AFFIRM_VOICE_GUIDELINES)
+        
+        # Update environment variables to keep them in sync
+        os.environ['NEW_EMAIL_PROMPT_TEMPLATE'] = new_email_prompt
+        os.environ['REPLY_EMAIL_PROMPT_TEMPLATE'] = reply_email_prompt
+        os.environ['AFFIRM_VOICE_GUIDELINES'] = voice_guidelines
         
         return jsonify({
             'status': 'success',
@@ -3399,6 +3435,8 @@ For all support, refer to customercare@affirm.com Only."""
         })
     except Exception as e:
         logger.error(f"Error getting prompts: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({
             'status': 'error',
             'message': str(e)
@@ -3406,8 +3444,14 @@ For all support, refer to customercare@affirm.com Only."""
 
 @app.route('/api/prompts/update', methods=['POST'])
 def update_prompt():
-    """Update a prompt (stores in environment variable - note: requires app restart to take effect)."""
+    """Update a default prompt (stores in database and environment variable)."""
     try:
+        if not DB_AVAILABLE:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database not available'
+            }), 503
+        
         data = request.get_json()
         prompt_key = data.get('key')
         prompt_value = data.get('value')
@@ -3418,25 +3462,76 @@ def update_prompt():
                 'message': 'Missing key or value'
             }), 400
         
-        # Update the environment variable in the current process
-        # This change takes effect IMMEDIATELY for all new email generations
-        # Note: Changes will be lost on app restart unless also updated in Railway dashboard
         logger.info(f"📝 Prompt update requested: {prompt_key}")
         logger.info(f"📝 New prompt value (first 200 chars): {prompt_value[:200]}...")
         logger.info(f"📝 Prompt length: {len(prompt_value)} characters")
         
-        # Update the environment variable - this is dynamic and takes effect immediately
+        # Map prompt_key to prompt_type and endpoint
+        prompt_type_map = {
+            'NEW_EMAIL_PROMPT_TEMPLATE': ('new-email', '/api/workato/send-new-email'),
+            'REPLY_EMAIL_PROMPT_TEMPLATE': ('reply-email', '/api/workato/reply-to-emails')
+        }
+        
+        if prompt_key not in prompt_type_map:
+            return jsonify({
+                'status': 'error',
+                'message': f'Invalid prompt key: {prompt_key}. Only NEW_EMAIL_PROMPT_TEMPLATE and REPLY_EMAIL_PROMPT_TEMPLATE are supported.'
+            }), 400
+        
+        prompt_type, endpoint_path = prompt_type_map[prompt_key]
+        
+        # Save to database using prompt_versions table with version_letter = 'DEFAULT'
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database connection failed'
+            }), 503
+        
+        cursor = conn.cursor()
+        
+        # Check if default prompt already exists
+        cursor.execute('''
+            SELECT id FROM prompt_versions 
+            WHERE prompt_type = %s AND version_letter = 'DEFAULT'
+        ''', (prompt_type,))
+        existing = cursor.fetchone()
+        
+        if existing:
+            # Update existing default prompt
+            cursor.execute('''
+                UPDATE prompt_versions
+                SET prompt_content = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE prompt_type = %s AND version_letter = 'DEFAULT'
+            ''', (prompt_value, prompt_type))
+            logger.info(f"✅ Updated existing default prompt {prompt_key} in database")
+        else:
+            # Insert new default prompt
+            cursor.execute('''
+                INSERT INTO prompt_versions 
+                (version_name, prompt_type, prompt_content, version_letter, endpoint_path, status)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            ''', ('Default Version', prompt_type, prompt_value, 'DEFAULT', endpoint_path, 'active'))
+            logger.info(f"✅ Created new default prompt {prompt_key} in database")
+        
+        conn.commit()
+        conn.close()
+        
+        # Also update the environment variable for immediate use
         os.environ[prompt_key] = prompt_value
         
-        logger.info(f"✅ Prompt {prompt_key} updated successfully. Changes take effect immediately for new emails.")
+        logger.info(f"✅ Prompt {prompt_key} saved to database and updated in memory. Changes take effect immediately.")
         
         return jsonify({
             'status': 'success',
-            'message': f'Prompt {prompt_key} updated successfully. Changes take effect immediately for new emails. Note: Changes will be lost on app restart unless also updated in Railway dashboard.',
+            'message': f'Prompt {prompt_key} saved successfully. Changes take effect immediately for new emails.',
             'key': prompt_key
         })
     except Exception as e:
         logger.error(f"Error updating prompt: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({
             'status': 'error',
             'message': str(e)
