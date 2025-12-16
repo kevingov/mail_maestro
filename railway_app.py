@@ -973,10 +973,11 @@ def send_email(to_email, merchant_name, subject_line, email_content, campaign_na
             'error': str(e)
         }
 
-def send_threaded_email_reply(to_email, subject, reply_content, original_message_id, sender_name):
+def send_threaded_email_reply(to_email, subject, reply_content, original_message_id, sender_name, cc_recipients=None):
     """
     Send a threaded email reply that maintains the conversation thread.
     Uses SMTP like 2025_hackathon.py for better outbox visibility.
+    Includes CC recipients from the original email if provided.
     """
     try:
         import smtplib
@@ -984,7 +985,21 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
         import random
         from email_tracker import EmailTracker
         
+        # Build recipient list (To + CC)
+        all_recipients = [to_email]
+        if cc_recipients:
+            # cc_recipients can be a string (comma-separated) or a list
+            if isinstance(cc_recipients, str):
+                # Parse comma-separated string
+                cc_list = [cc.strip() for cc in cc_recipients.split(',') if cc.strip()]
+            else:
+                cc_list = [cc.strip() for cc in cc_recipients if cc.strip()]
+            all_recipients.extend(cc_list)
+            logger.info(f"📧 Reply will include CC recipients: {', '.join(cc_list)}")
+        
         logger.info(f"Preparing to send threaded reply to {to_email} with subject: {subject}")
+        if cc_recipients:
+            logger.info(f"📧 CC recipients: {cc_recipients}")
         
         # Initialize email tracker (same as 2025_hackathon.py)
         tracker = EmailTracker()
@@ -1009,6 +1024,12 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
         msg = MIMEMultipart()
         msg["From"] = f"Jake Morgan - Affirm <{os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com')}>"
         msg["To"] = to_email
+        if cc_recipients:
+            # Format CC header (can be string or list)
+            if isinstance(cc_recipients, str):
+                msg["Cc"] = cc_recipients
+            else:
+                msg["Cc"] = ", ".join(cc_recipients)
         msg["Subject"] = f"Re: {subject}" if not subject.startswith('Re:') else subject
         msg["Reply-To"] = os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com')
         msg["Return-Path"] = os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com')
@@ -1058,6 +1079,13 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
             # Create message for Gmail API with proper threading
             message = MIMEMultipart()
             message["to"] = to_email
+            if cc_recipients:
+                # Format CC header for Gmail API
+                if isinstance(cc_recipients, str):
+                    message["cc"] = cc_recipients
+                else:
+                    message["cc"] = ", ".join(cc_recipients)
+                logger.info(f"📧 Including CC recipients in reply: {message['cc']}")
             message["subject"] = subject
             message["from"] = "jake.morgan@affirm.com"
             
@@ -1084,6 +1112,8 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
                 logger.info(f"📧 Sending to existing thread: {thread_id}")
             
             logger.info(f"📧 Sending email to: {to_email}")
+            if cc_recipients:
+                logger.info(f"📧 CC recipients: {cc_recipients}")
             logger.info(f"📧 Subject: {subject}")
             logger.info(f"📧 Message size: {len(raw_message)} characters")
             
@@ -1175,6 +1205,8 @@ def reply_to_emails_with_accounts(accounts):
             
             # Build conversation history with all messages in chronological order
             conversation_parts = []
+            cc_recipients = None  # Will store CC from the latest message that needs a reply
+            
             for msg in thread_messages:
                 try:
                     msg_data = service.users().messages().get(userId='me', id=msg['id']).execute()
@@ -1192,7 +1224,9 @@ def reply_to_emails_with_accounts(accounts):
                         'subject': msg_subject,
                         'date': msg_date,
                         'body': msg_body,
-                        'internal_date': int(internal_date) if internal_date else 0
+                        'internal_date': int(internal_date) if internal_date else 0,
+                        'cc': next((h['value'] for h in headers if h['name'] == 'Cc'), None),
+                        'message_id': msg['id']
                     })
                 except Exception as e:
                     logger.debug(f"Error extracting message {msg['id']} from thread: {e}")
@@ -1200,6 +1234,14 @@ def reply_to_emails_with_accounts(accounts):
             
             # Sort by internal date to get chronological order
             conversation_parts.sort(key=lambda x: x['internal_date'])
+            
+            # Get CC recipients from the LATEST message (the one we're actually replying to)
+            # This ensures we reply to all CC'd recipients from the most recent email
+            if conversation_parts:
+                latest_message = conversation_parts[-1]  # Last message is the latest
+                if latest_message.get('cc'):
+                    cc_recipients = latest_message['cc']
+                    logger.info(f"📧 Found CC recipients from latest message: {cc_recipients}")
             
             # Build conversation history string
             conversation_history_lines = []
@@ -1214,22 +1256,67 @@ def reply_to_emails_with_accounts(accounts):
             conversation_content = "\n".join(conversation_history_lines)
             logger.info(f"📧 Built conversation history with {len(conversation_parts)} messages for thread {thread_id}")
             
+            # Only use CC recipients from the latest message
+            # Filter out the sender and Jake's email from CC
+            if cc_recipients:
+                # Parse CC recipients
+                if isinstance(cc_recipients, str):
+                    cc_list = [cc.strip() for cc in cc_recipients.split(',') if cc.strip()]
+                else:
+                    cc_list = [cc.strip() for cc in cc_recipients if cc.strip()]
+                
+                # Remove the sender's email from CC (we're replying to them, not CC'ing them)
+                sender_email_normalized = normalize_email(contact_email)
+                filtered_cc = [cc for cc in cc_list if normalize_email(cc) != sender_email_normalized]
+                
+                # Remove Jake's email from CC (we're sending from Jake, don't CC him)
+                jake_email = os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com').lower()
+                filtered_cc = [cc for cc in filtered_cc if normalize_email(cc) != normalize_email(jake_email)]
+                
+                if filtered_cc:
+                    cc_recipients = ', '.join(sorted(filtered_cc))
+                    logger.info(f"📧 Using CC recipients from latest message (filtered): {cc_recipients}")
+                else:
+                    cc_recipients = None
+                    logger.info(f"📧 No valid CC recipients after filtering (removed sender and Jake)")
+            
         except Exception as e:
             logger.warning(f"⚠️ Could not build full conversation history, using single email: {e}")
             # Fallback to single email if we can't get thread history
-        conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {email['body']}"
+            conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {email['body']}"
+            cc_recipients = None  # Initialize if we couldn't get thread history
+        
+        # If we don't have conversation_content yet, set it
+        if 'conversation_content' not in locals():
+            conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {email['body']}"
+        
+        # If we don't have cc_recipients yet, try to get it from the original email
+        if not cc_recipients:
+            try:
+                creds = authenticate_gmail()
+                service = build('gmail', 'v1', credentials=creds)
+                original_msg_data = service.users().messages().get(userId='me', id=email['id']).execute()
+                original_headers = original_msg_data['payload'].get('headers', [])
+                original_cc = next((h['value'] for h in original_headers if h['name'] == 'Cc'), None)
+                if original_cc:
+                    cc_recipients = original_cc
+                    logger.info(f"📧 Found CC recipients from original email: {cc_recipients}")
+            except Exception as e:
+                logger.debug(f"Could not extract CC from original email: {e}")
+                cc_recipients = None
         
         try:
             # Generate AI response using the full conversation history
             ai_response = generate_ai_response(email['body'], sender_name, contact_name, conversation_content)
             
-            # Send threaded reply
+            # Send threaded reply (include CC recipients if found)
             email_result = send_threaded_email_reply(
                 to_email=contact_email,
                 subject=email['subject'],
                 reply_content=ai_response,
                 original_message_id=email['id'],
-                sender_name=sender_name
+                sender_name=sender_name,
+                cc_recipients=cc_recipients
             )
             
             email_status = email_result['status'] if isinstance(email_result, dict) else email_result
@@ -1474,7 +1561,7 @@ def get_emails_needing_replies_with_accounts(accounts):
                     normalized_account = account_data.get('normalized_email', normalize_email(account_email))
                     if account_email in latest_sender or normalized_account == latest_sender_normalized:
                         is_from_merchant = True
-                        break
+                break
         
         # Only reply if:
         # 1. Latest message is from merchant (not from us)
