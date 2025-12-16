@@ -3633,7 +3633,7 @@ def get_prompt_versions():
                 SELECT id, version_name, prompt_type, prompt_content, version_letter, 
                        endpoint_path, status, created_at, updated_at
                 FROM prompt_versions
-                WHERE prompt_type = %s
+                WHERE prompt_type = %s AND version_letter != 'DEFAULT'
                 ORDER BY version_letter
             ''', (prompt_type,))
         else:
@@ -3641,6 +3641,7 @@ def get_prompt_versions():
                 SELECT id, version_name, prompt_type, prompt_content, version_letter, 
                        endpoint_path, status, created_at, updated_at
                 FROM prompt_versions
+                WHERE version_letter != 'DEFAULT'
                 ORDER BY prompt_type, version_letter
             ''')
         
