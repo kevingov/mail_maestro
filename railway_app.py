@@ -851,18 +851,18 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
             subject_line_match = re.search(r"\*\*Subject Line:\*\*\s*(.*)", response_text)
             email_body_match = re.search(r"\*\*Email Body:\*\*\s*(.*)", response_text, re.DOTALL)
 
-            subject_line = subject_line_match.group(1).strip() if subject_line_match else f"Hi {merchant_name}, Let's Connect!"
-            email_body = email_body_match.group(1).strip() if email_body_match else "Let's connect to discuss how Affirm can benefit your business."
+            subject_line = subject_line_match.group(1).strip() if subject_line_match else f"Ready to go live with Affirm?"
+            email_body = email_body_match.group(1).strip() if email_body_match else f"Hi {merchant_name},\n\nI wanted to check in on your Affirm integration. You've completed the technical setup, and we're here to help you take the final step to go live.\n\nIf you have any questions or need support, feel free to reach out. We're here when you're ready.\n\nBest,\n{sender_name}"
 
             return subject_line, email_body
 
         else:
-            return f"Hi {merchant_name}, Let's Connect!", "Let's connect to discuss how Affirm can benefit your business."
+            return f"Ready to go live with Affirm?", f"Hi {merchant_name},\n\nI wanted to check in on your Affirm integration. You've completed the technical setup, and we're here to help you take the final step to go live.\n\nIf you have any questions or need support, feel free to reach out. We're here when you're ready.\n\nBest,\n{sender_name}"
 
         
     except Exception as e:
         logger.error(f"❌ Error generating AI response: {e}")
-        return f"Hi {merchant_name}, Let's Connect!", "Let's connect to discuss how Affirm can benefit your business."
+        return f"Ready to go live with Affirm?", f"Hi {merchant_name},\n\nI wanted to check in on your Affirm integration. You've completed the technical setup, and we're here to help you take the final step to go live.\n\nIf you have any questions or need support, feel free to reach out. We're here when you're ready.\n\nBest,\n{sender_name}"
 
 def send_email(to_email, merchant_name, subject_line, email_content, campaign_name=None, base_url="https://web-production-6dfbd.up.railway.app", version_endpoint=None):
     """Send email with tracking - exact copy from 2025_hackathon.py."""
