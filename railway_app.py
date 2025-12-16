@@ -3649,7 +3649,7 @@ def create_prompt_version():
         conn.commit()
         conn.close()
         
-        # Dynamically create the endpoint
+        # Store endpoint info (routes handled by catch-all)
         create_versioned_endpoint(prompt_type, version_letter, endpoint_path, prompt_content)
         
         logger.info(f"✅ Created prompt version: {version_name} ({version_letter}) with endpoint: {endpoint_path}")
@@ -3757,169 +3757,48 @@ def update_prompt_version():
 _dynamic_endpoints = {}
 
 def create_versioned_endpoint(prompt_type, version_letter, endpoint_path, prompt_content):
-    """Dynamically create a Flask route for a versioned endpoint."""
+    """Store versioned endpoint info (routes are handled by catch-all route)."""
     global _dynamic_endpoints
     
-    def create_endpoint_handler(prompt_content, prompt_type):
-        """Factory function to create endpoint handlers with closure over prompt_content."""
-        if prompt_type == 'new-email':
-            def versioned_send_new_email():
-                """Versioned endpoint for sending new emails with custom prompt."""
-                try:
-                    # Get the same logic as workato_send_new_email but with custom prompt
-                    data = request.get_json() if request.is_json else {}
-                    
-                    # Extract all the same fields as the original endpoint
-                    contact_name = data.get('contact_name', '')
-                    contact_email = data.get('contact_email', '')
-                    contact_title = data.get('contact_title', '')
-                    account_name = data.get('account_name', '')
-                    account_industry = data.get('account_industry', 'Business')
-                    account_website = data.get('account_website', '')
-                    account_description = data.get('account_description', '')
-                    
-                    try:
-                        account_revenue = int(data.get('account_revenue', 0)) if data.get('account_revenue', '') else 0
-                    except (ValueError, TypeError):
-                        account_revenue = 0
-                    
-                    try:
-                        account_employees = int(data.get('account_employees', 0)) if data.get('account_employees', '') else 0
-                    except (ValueError, TypeError):
-                        account_employees = 0
-                    
-                    try:
-                        account_gmv = float(data.get('account_gmv', 0)) if data.get('account_gmv', '') else 0
-                    except (ValueError, TypeError):
-                        account_gmv = 0
-                    
-                    account_city = data.get('account_city', '')
-                    account_state = data.get('account_state', '')
-                    account_id = data.get('account_id', '')
-                    
-                    activities = data.get('activities', [])
-                    sender_name = "Jake Morgan"
-                    
-                    if not contact_email:
-                        return jsonify({
-                            "status": "error",
-                            "message": "Missing required 'contact_email' parameter",
-                            "timestamp": datetime.datetime.now().isoformat()
-                        }), 400
-                    
-                    # Check if email has already been sent
-                    has_been_sent, reason = check_if_email_already_sent(contact_email, activities)
-                    if has_been_sent:
-                        return jsonify({
-                            "status": "skipped",
-                            "message": f"Email already sent to this contact - {reason}",
-                            "timestamp": datetime.datetime.now().isoformat(),
-                            "contact": contact_name,
-                            "account": account_name,
-                            "reason": reason,
-                            "emails_sent": 0
-                        }), 200
-                    
-                    # Log which version is being used
-                    logger.info(f"📝 PROMPT VERSION BEING USED:")
-                    logger.info(f"   Endpoint: {endpoint_path}")
-                    logger.info(f"   Version Letter: {version_letter}")
-                    logger.info(f"   Prompt Type: {prompt_type}")
-                    logger.info(f"   Prompt Content Length: {len(prompt_content)} characters")
-                    
-                    # Generate email using custom prompt template
-                    subject_line, email_content = generate_message(
-                        merchant_name=contact_name,
-                        last_activity="Recent",
-                        merchant_industry=account_industry,
-                        merchant_website=account_website,
-                        sender_name=sender_name,
-                        account_description=account_description,
-                        account_revenue=account_revenue,
-                        account_employees=account_employees,
-                        account_location=f"{account_city}, {account_state}".strip(", ") if account_city else "",
-                        contact_title=contact_title,
-                        account_gmv=account_gmv,
-                        prompt_template=prompt_content
-                    )
-                    
-                    # Format and send email
-                    formatted_email = format_pardot_email(
-                        first_name=contact_name,
-                        email_content=email_content,
-                        recipient_email=contact_email,
-                        sender_name=sender_name
-                    )
-                    
-                    email_result = send_email(
-                        to_email=contact_email,
-                        merchant_name=contact_name,
-                        subject_line=subject_line,
-                        email_content=formatted_email,
-                        campaign_name="MSS Signed But Not Activated Campaign",
-                        version_endpoint=endpoint_path
-                    )
-                    
-                    email_status = email_result['status'] if isinstance(email_result, dict) else email_result
-                    tracking_info = f" | Tracking ID: {email_result.get('tracking_id', 'N/A')}" if isinstance(email_result, dict) else ""
-                    
-                    clean_email_body = email_content.replace('\n', ' ').replace('\r', ' ').strip()
-                    import re
-                    clean_email_body = re.sub(r'\s+', ' ', clean_email_body)
-                    
-                    return jsonify({
-                        "status": "success",
-                        "message": "Personalized email sent successfully",
-                        "timestamp": datetime.datetime.now().isoformat(),
-                        "contact": contact_name,
-                        "account": account_name,
-                        "email_status": email_status + tracking_info,
-                        "subject": subject_line,
-                        "email_body": clean_email_body,
-                        "tracking_id": email_result.get('tracking_id') if isinstance(email_result, dict) else None,
-                        "tracking_url": email_result.get('tracking_url') if isinstance(email_result, dict) else None,
-                        "emails_sent": 1,
-                        "version": version_letter
-                    })
-                    
-                except Exception as e:
-                    logger.error(f"❌ Error in versioned send-new-email endpoint: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    return jsonify({
-                        "status": "error",
-                        "message": f"Error sending email: {str(e)}",
-                        "timestamp": datetime.datetime.now().isoformat()
-                    }), 500
-            
-            return versioned_send_new_email
-        else:  # reply-email
-            def versioned_reply_to_emails():
-                """Versioned endpoint for replying to emails with custom prompt."""
-                # Similar implementation for reply emails
-                # This would use generate_ai_response with custom prompt
-                return jsonify({
-                    "status": "error",
-                    "message": "Reply email versions not yet implemented",
-                    "timestamp": datetime.datetime.now().isoformat()
-                }), 501
-            
-            return versioned_reply_to_emails
-    
-    # Create the handler
-    handler = create_endpoint_handler(prompt_content, prompt_type)
-    
-    # Register the route dynamically
-    app.add_url_rule(endpoint_path, f'versioned_{prompt_type}_{version_letter}', handler, methods=['POST'])
-    
-    # Store for reference
+    # Store for reference (no longer creating routes dynamically)
     _dynamic_endpoints[endpoint_path] = {
         'prompt_type': prompt_type,
         'version_letter': version_letter,
         'prompt_content': prompt_content
     }
     
-    logger.info(f"✅ Created dynamic endpoint: {endpoint_path}")
+    logger.info(f"✅ Registered versioned endpoint info: {endpoint_path} (will be handled by catch-all route)")
+
+def get_versioned_prompt_from_db(endpoint_path):
+    """Get prompt content for a versioned endpoint from the database."""
+    try:
+        if not DB_AVAILABLE:
+            return None
+        
+        conn = get_db_connection()
+        if not conn:
+            return None
+        
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT prompt_type, prompt_content, version_letter
+            FROM prompt_versions
+            WHERE endpoint_path = %s AND status = 'active'
+        ''', (endpoint_path,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return {
+                'prompt_type': row[0],
+                'prompt_content': row[1],
+                'version_letter': row[2]
+            }
+        return None
+    except Exception as e:
+        logger.error(f"Error getting versioned prompt from DB: {e}")
+        return None
 
 # Load existing versions and create endpoints on startup
 def load_prompt_versions():
@@ -3948,8 +3827,172 @@ def load_prompt_versions():
     except Exception as e:
         logger.warning(f"⚠️ Could not load prompt versions: {e}")
 
-# Load versions on startup
+# Load versions on startup (just store info, routes handled by catch-all)
 load_prompt_versions()
+
+# Catch-all route for versioned send-new-email endpoints
+@app.route('/api/workato/send-new-email-version-<version_letter>', methods=['POST'])
+def handle_versioned_send_new_email(version_letter):
+    """Handle versioned send-new-email endpoints by looking up prompt from database."""
+    endpoint_path = f'/api/workato/send-new-email-version-{version_letter.lower()}'
+    
+    # Get prompt from database
+    version_info = get_versioned_prompt_from_db(endpoint_path)
+    if not version_info:
+        return jsonify({
+            "status": "error",
+            "message": f"Version {version_letter.upper()} not found or not active",
+            "timestamp": datetime.datetime.now().isoformat()
+        }), 404
+    
+    prompt_content = version_info['prompt_content']
+    version_letter_upper = version_info['version_letter']
+    
+    try:
+        # Get the same logic as workato_send_new_email but with custom prompt
+        data = request.get_json() if request.is_json else {}
+        
+        # Extract all the same fields as the original endpoint
+        contact_name = data.get('contact_name', '')
+        contact_email = data.get('contact_email', '')
+        contact_title = data.get('contact_title', '')
+        account_name = data.get('account_name', '')
+        account_industry = data.get('account_industry', 'Business')
+        account_website = data.get('account_website', '')
+        account_description = data.get('account_description', '')
+        
+        try:
+            account_revenue = int(data.get('account_revenue', 0)) if data.get('account_revenue', '') else 0
+        except (ValueError, TypeError):
+            account_revenue = 0
+        
+        try:
+            account_employees = int(data.get('account_employees', 0)) if data.get('account_employees', '') else 0
+        except (ValueError, TypeError):
+            account_employees = 0
+        
+        try:
+            account_gmv = float(data.get('account_gmv', 0)) if data.get('account_gmv', '') else 0
+        except (ValueError, TypeError):
+            account_gmv = 0
+        
+        account_city = data.get('account_city', '')
+        account_state = data.get('account_state', '')
+        account_id = data.get('account_id', '')
+        
+        activities = data.get('activities', [])
+        sender_name = "Jake Morgan"
+        
+        if not contact_email:
+            return jsonify({
+                "status": "error",
+                "message": "Missing required 'contact_email' parameter",
+                "timestamp": datetime.datetime.now().isoformat()
+            }), 400
+        
+        # Check if email has already been sent
+        has_been_sent, reason = check_if_email_already_sent(contact_email, activities)
+        if has_been_sent:
+            return jsonify({
+                "status": "skipped",
+                "message": f"Email already sent to this contact - {reason}",
+                "timestamp": datetime.datetime.now().isoformat(),
+                "contact": contact_name,
+                "account": account_name,
+                "reason": reason,
+                "emails_sent": 0
+            }), 200
+        
+        # Log which version is being used
+        logger.info(f"📝 PROMPT VERSION BEING USED:")
+        logger.info(f"   Endpoint: {endpoint_path}")
+        logger.info(f"   Version Letter: {version_letter_upper}")
+        logger.info(f"   Prompt Content Length: {len(prompt_content)} characters")
+        
+        # Generate email using custom prompt template
+        subject_line, email_content = generate_message(
+            merchant_name=contact_name,
+            last_activity="Recent",
+            merchant_industry=account_industry,
+            merchant_website=account_website,
+            sender_name=sender_name,
+            account_description=account_description,
+            account_revenue=account_revenue,
+            account_employees=account_employees,
+            account_location=f"{account_city}, {account_state}".strip(", ") if account_city else "",
+            contact_title=contact_title,
+            account_gmv=account_gmv,
+            prompt_template=prompt_content
+        )
+        
+        # Format and send email
+        formatted_email = format_pardot_email(
+            first_name=contact_name,
+            email_content=email_content,
+            recipient_email=contact_email,
+            sender_name=sender_name
+        )
+        
+        email_result = send_email(
+            to_email=contact_email,
+            merchant_name=contact_name,
+            subject_line=subject_line,
+            email_content=formatted_email,
+            campaign_name="MSS Signed But Not Activated Campaign",
+            version_endpoint=endpoint_path
+        )
+        
+        email_status = email_result['status'] if isinstance(email_result, dict) else email_result
+        tracking_info = f" | Tracking ID: {email_result.get('tracking_id', 'N/A')}" if isinstance(email_result, dict) else ""
+        
+        clean_email_body = email_content.replace('\n', ' ').replace('\r', ' ').strip()
+        import re
+        clean_email_body = re.sub(r'\s+', ' ', clean_email_body)
+        
+        return jsonify({
+            "status": "success",
+            "message": "Personalized email sent successfully",
+            "timestamp": datetime.datetime.now().isoformat(),
+            "contact": contact_name,
+            "account": account_name,
+            "email_status": email_status + tracking_info,
+            "subject": subject_line,
+            "email_body": clean_email_body,
+            "tracking_id": email_result.get('tracking_id') if isinstance(email_result, dict) else None,
+            "tracking_url": email_result.get('tracking_url') if isinstance(email_result, dict) else None,
+            "emails_sent": 1,
+            "version": version_letter_upper
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error in versioned send-new-email endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "status": "error",
+            "message": f"Error sending email: {str(e)}",
+            "timestamp": datetime.datetime.now().isoformat()
+        }), 500
+
+@app.route('/api/workato/reply-to-emails-version-<version_letter>', methods=['POST'])
+def handle_versioned_reply_to_emails(version_letter):
+    """Handle versioned reply-to-emails endpoints by looking up prompt from database."""
+    endpoint_path = f'/api/workato/reply-to-emails-version-{version_letter.lower()}'
+    
+    # Get prompt from database
+    version_info = get_versioned_prompt_from_db(endpoint_path)
+    if not version_info:
+        return jsonify({
+            "status": "error",
+            "message": f"Version {version_letter.upper()} not found or not active",
+            "timestamp": datetime.datetime.now().isoformat()
+        }), 404
+    
+    return jsonify({
+        "status": "error",
+        "message": "Reply email versions not yet implemented",
+        "timestamp": datetime.datetime.now().isoformat()
+    }), 501
 
 @app.route('/api/test-merchants/save', methods=['POST', 'GET'])
 def save_test_merchant():
