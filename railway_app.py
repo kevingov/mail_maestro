@@ -6002,11 +6002,18 @@ def workato_send_new_email():
                         # Find the colon and the opening quote
                         value_start = raw_data.find('"', activities_start + len('"activities":'))
                         if value_start != -1:
-                            # Find the matching closing quote (handle escaped quotes)
+                            # Find the matching closing quote (handle escaped quotes properly)
+                            # We need to look for a quote that's not escaped
                             value_end = value_start + 1
+                            escaped = False
                             while value_end < len(raw_data):
-                                if raw_data[value_end] == '"' and raw_data[value_end - 1] != '\\':
+                                char = raw_data[value_end]
+                                if char == '\\':
+                                    escaped = not escaped
+                                elif char == '"' and not escaped:
                                     break
+                                else:
+                                    escaped = False
                                 value_end += 1
                             
                             if value_end < len(raw_data):
@@ -6094,10 +6101,45 @@ def workato_send_new_email():
                                     except Exception as simple_error:
                                         logger.debug(f"⚠️ Simple replacement also failed: {simple_error}")
                                         # Remove the activities field entirely to allow the rest to parse
-                                        raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[value_end + 1:]
-                                        logger.info(f"🔍 Removed malformed activities field, set to empty array")
+                                        # The issue is that value_end might not be correct if there are escaped quotes
+                                        # Let's try a different approach: find the end of the activities field value more carefully
+                                        # Look for the pattern: "activities": "..." where ... ends with a quote not preceded by backslash
+                                        # But we need to account for the fact that the value itself contains escaped quotes
+                                        
+                                        # Alternative: use regex to find and replace the entire activities field
+                                        activities_field_pattern = r'"activities"\s*:\s*"[^"]*(?:\\.[^"]*)*"'
+                                        activities_match = re.search(activities_field_pattern, raw_data[activities_start:], re.DOTALL)
+                                        
+                                        if activities_match:
+                                            # Found the activities field using regex
+                                            field_end = activities_start + activities_match.end()
+                                            raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[field_end:]
+                                            logger.info(f"🔍 Removed malformed activities field using regex, set to empty array")
+                                        else:
+                                            # Fallback: use the original approach but be more careful
+                                            # Find the next newline or closing brace after value_end
+                                            next_newline = raw_data.find('\n', value_end + 1)
+                                            next_brace = raw_data.find('}', value_end + 1)
+                                            if next_newline != -1 and (next_brace == -1 or next_newline < next_brace):
+                                                # Replace up to the newline
+                                                raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[next_newline:]
+                                            elif next_brace != -1:
+                                                # Replace up to the closing brace
+                                                raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[next_brace:]
+                                            else:
+                                                # Just replace from activities_start to value_end
+                                                raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[value_end + 1:]
+                                            logger.info(f"🔍 Removed malformed activities field, set to empty array")
+                                        
+                                        logger.debug(f"🔍 After replacement, raw_data preview: ...{raw_data[activities_start-50:activities_start+100]}...")
                 
-                data = json.loads(raw_data)
+                # Try to parse the fixed JSON
+                try:
+                    data = json.loads(raw_data)
+                except json.JSONDecodeError as final_error:
+                    logger.error(f"❌ Final JSON parse failed after activities fix: {final_error}")
+                    logger.error(f"❌ Raw data around error (char {final_error.pos}): ...{raw_data[max(0, final_error.pos-50):final_error.pos+50]}...")
+                    raise
                 logger.info(f"🔍 DEBUG: Manually parsed JSON data successfully")
             except Exception as manual_parse_error:
                 logger.error(f"❌ JSON parsing error (both standard and manual failed): {json_error}")
