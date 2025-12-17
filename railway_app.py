@@ -612,7 +612,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     
     # Default prompt if no custom template or formatting failed
     if not reply_email_prompt_template:
-        prompt = f"""
+    prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
 
     **TASK:** Generate a professional Affirm-branded email response to {recipient_name} from {sender_name}.
@@ -803,7 +803,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
     
     # Default prompt if no custom template or formatting failed
     if not prompt_template:
-        prompt = f"""
+    prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
     
     Generate a **professional, Affirm-branded business email** to re-engage {merchant_name}, a merchant in the {merchant_industry_str} industry, who has completed technical integration with Affirm but has **not yet launched**. The goal is to encourage them to go live — without offering a meeting or call.
@@ -1378,7 +1378,7 @@ def reply_to_emails_with_accounts(accounts):
         except Exception as e:
             logger.warning(f"⚠️ Could not build full conversation history, using single email: {e}")
             # Fallback to single email if we can't get thread history
-            conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {email['body']}"
+        conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {email['body']}"
             cc_recipients = None  # Initialize if we couldn't get thread history
         
         # If we don't have conversation_content yet, set it
@@ -1773,8 +1773,8 @@ def get_emails_needing_replies_with_accounts(accounts):
                 for account_email, account_data in account_emails.items():
                     normalized_account = account_data.get('normalized_email', normalize_email(account_email))
                     if account_email in latest_sender or normalized_account == latest_sender_normalized:
-                        is_from_merchant = True
-                        break
+                is_from_merchant = True
+                break
         
         # Determine if we should reply:
         # 1. Latest message is from merchant, OR
@@ -1841,7 +1841,7 @@ def get_emails_needing_replies_with_accounts(accounts):
             emails_needing_replies.append(reply_email)
             if is_from_merchant:
                 logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from merchant, normalized: {latest_sender_normalized})")
-            else:
+        else:
                 logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from CC'd participant, normalized: {latest_sender_normalized})")
         else:
             if not should_reply:
@@ -5595,7 +5595,7 @@ def workato_reply_to_emails():
         if 'responses' in result and result['responses']:
             for response in result['responses']:
                 # Clean AI response for display
-                import re
+                    import re
                 ai_response_text = response.get('ai_response', '')
                 if ai_response_text:
                     # Remove HTML tags
@@ -6101,58 +6101,81 @@ def workato_send_new_email():
                                     except Exception as simple_error:
                                         logger.debug(f"⚠️ Simple replacement also failed: {simple_error}")
                                         # Remove the activities field entirely to allow the rest to parse
-                                        # Use a more robust regex that matches the entire activities field including the quoted value
-                                        # The pattern needs to match: "activities": "..." where ... can contain escaped quotes
-                                        # We'll match from "activities" to the closing quote of the value
+                                        # The issue is that the activities field value contains nested quotes and escaped characters
+                                        # We need to find the closing quote that's not escaped by scanning character by character
                                         
-                                        # Try to find the end of the activities field value by looking for the pattern
-                                        # that matches: "activities": "..." followed by newline or closing brace
-                                        activities_field_regex = r'"activities"\s*:\s*"(?:[^"\\]|\\.)*"'
-                                        match = re.search(activities_field_regex, raw_data[activities_start:], re.DOTALL)
+                                        # Find where the activities field value starts (after the colon and opening quote)
+                                        colon_pos = raw_data.find(':', activities_start)
+                                        if colon_pos == -1:
+                                            colon_pos = activities_start + len('"activities"')
                                         
-                                        if match:
-                                            # Found the activities field using regex
-                                            field_start_in_match = match.start()
-                                            field_end_in_match = match.end()
-                                            # Get the actual position in raw_data
-                                            actual_field_end = activities_start + field_end_in_match
-                                            
-                                            # Check what comes after the field (look at more characters to be sure)
-                                            after_field_raw = raw_data[actual_field_end:actual_field_end+20]
-                                            after_field = after_field_raw.strip()
-                                            
-                                            # Replace the field
-                                            replacement = '"activities": []'
-                                            
-                                            # Determine what to keep after the replacement
-                                            # Look for newline, comma, or closing brace
-                                            if '\n' in after_field_raw:
-                                                # There's a newline, keep everything from the newline onwards
-                                                newline_pos = raw_data.find('\n', actual_field_end)
-                                                if newline_pos != -1:
-                                                    raw_data = raw_data[:activities_start] + replacement + raw_data[newline_pos:]
-                                                else:
-                                                    raw_data = raw_data[:activities_start] + replacement + raw_data[actual_field_end:]
-                                            elif after_field.startswith(','):
-                                                # There's a comma - this shouldn't happen if activities is the last field, but handle it
-                                                comma_pos = raw_data.find(',', actual_field_end)
-                                                if comma_pos != -1:
-                                                    # Skip the comma and any whitespace after it
-                                                    after_comma = raw_data[comma_pos+1:].lstrip()
-                                                    raw_data = raw_data[:activities_start] + replacement + '\n' + after_comma
-                                                else:
-                                                    raw_data = raw_data[:activities_start] + replacement + raw_data[actual_field_end:]
-                                            elif after_field.startswith('}'):
-                                                # Closing brace - this is correct for the last field
-                                                raw_data = raw_data[:activities_start] + replacement + raw_data[actual_field_end:]
-                                            else:
-                                                # Default: just replace the field
-                                                raw_data = raw_data[:activities_start] + replacement + raw_data[actual_field_end:]
-                                            
-                                            logger.info(f"🔍 Removed malformed activities field using regex, set to empty array")
-                                            logger.debug(f"🔍 After replacement preview: ...{raw_data[max(0, activities_start-30):activities_start+80]}...")
-                                            logger.debug(f"🔍 Full JSON after replacement ends with: ...{raw_data[-100:]}")
+                                        # Find the opening quote of the value
+                                        value_start_quote = raw_data.find('"', colon_pos)
+                                        if value_start_quote == -1:
+                                            logger.warning("⚠️ Could not find opening quote for activities field value")
+                                            # Fallback: just remove from activities_start to next newline
+                                            next_newline = raw_data.find('\n', activities_start)
+                                            if next_newline != -1:
+                                                raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[next_newline:]
                                         else:
+                                            # Now find the matching closing quote by scanning character by character
+                                            # Start after the opening quote
+                                            value_end_quote = value_start_quote + 1
+                                            escaped = False
+                                            while value_end_quote < len(raw_data):
+                                                char = raw_data[value_end_quote]
+                                                if char == '\\' and not escaped:
+                                                    escaped = True
+                                                elif char == '"' and not escaped:
+                                                    # Found the closing quote!
+                                                    break
+                                                else:
+                                                    escaped = False
+                                                value_end_quote += 1
+                                            
+                                            if value_end_quote >= len(raw_data):
+                                                logger.warning("⚠️ Could not find closing quote for activities field value")
+                                                # Fallback: find next newline
+                                                next_newline = raw_data.find('\n', value_start_quote)
+                                                if next_newline != -1:
+                                                    raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[next_newline:]
+                                            else:
+                                                # Successfully found both quotes - proceed with replacement
+                                                actual_field_end = value_end_quote + 1
+                                                
+                                                # Check what comes after the field
+                                                after_field_raw = raw_data[actual_field_end:actual_field_end+20]
+                                                after_field = after_field_raw.strip()
+                                                
+                                                # Replace the field
+                                                replacement = '"activities": []'
+                                                
+                                                # Determine what to keep after the replacement
+                                                if '\n' in after_field_raw:
+                                                    # There's a newline, keep everything from the newline onwards
+                                                    newline_pos = raw_data.find('\n', actual_field_end)
+                                                    if newline_pos != -1:
+                                                        raw_data = raw_data[:activities_start] + replacement + raw_data[newline_pos:]
+                                                    else:
+                                                        raw_data = raw_data[:activities_start] + replacement + raw_data[actual_field_end:]
+                                                elif after_field.startswith(','):
+                                                    # There's a comma - skip it since activities is likely the last field
+                                                    comma_pos = raw_data.find(',', actual_field_end)
+                                                    if comma_pos != -1:
+                                                        after_comma = raw_data[comma_pos+1:].lstrip()
+                                                        raw_data = raw_data[:activities_start] + replacement + '\n' + after_comma
+                                                    else:
+                                                        raw_data = raw_data[:activities_start] + replacement + raw_data[actual_field_end:]
+                                                elif after_field.startswith('}'):
+                                                    # Closing brace - this is correct for the last field
+                                                    raw_data = raw_data[:activities_start] + replacement + raw_data[actual_field_end:]
+                                                else:
+                                                    # Default: just replace the field
+                                                    raw_data = raw_data[:activities_start] + replacement + raw_data[actual_field_end:]
+                                                
+                                                logger.info(f"🔍 Removed malformed activities field using character-by-character scan, set to empty array")
+                                                logger.debug(f"🔍 After replacement preview: ...{raw_data[max(0, activities_start-30):activities_start+80]}...")
+                                                logger.debug(f"🔍 Full JSON after replacement ends with: ...{raw_data[-100:]}")
                                             # Fallback: try to find the end by looking for newline or closing brace
                                             # Find the position after the closing quote
                                             next_newline = raw_data.find('\n', value_end + 1)
