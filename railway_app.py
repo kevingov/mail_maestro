@@ -6012,21 +6012,56 @@ def workato_send_new_email():
                             if value_end < len(raw_data):
                                 # Extract the activities string value
                                 activities_str = raw_data[value_start + 1:value_end]
-                                # Unescape the string
-                                activities_str = activities_str.replace('\\"', '"').replace('\\n', '\n').replace('\\\\', '\\')
+                                # Unescape the string (handle escaped quotes and newlines)
+                                # First, handle escaped backslashes, then escaped quotes
+                                activities_str = activities_str.replace('\\\\', '\\BACKSLASH_PLACEHOLDER\\')
+                                activities_str = activities_str.replace('\\"', '"')
+                                activities_str = activities_str.replace('\\n', '\n')
+                                activities_str = activities_str.replace('\\BACKSLASH_PLACEHOLDER\\', '\\')
+                                # Handle escaped single quotes: \' -> '
+                                activities_str = activities_str.replace("\\'", "'")
                                 
                                 # Convert Ruby hash syntax to JSON
                                 # Replace "key"=>"value" with "key":"value"
                                 activities_fixed = activities_str
                                 
                                 # Handle double-quoted keys with double-quoted values: "key"=>"value"
-                                activities_fixed = re.sub(r'"([^"]+)"\s*=>\s*"([^"]*)"', r'"\1": "\2"', activities_fixed)
+                                # Use a function to properly escape quotes in values
+                                def convert_ruby_to_json(match):
+                                    key = match.group(1)
+                                    value = match.group(2)
+                                    # Escape backslashes first, then double quotes for JSON
+                                    value = value.replace('\\', '\\\\').replace('"', '\\"')
+                                    return f'"{key}": "{value}"'
+                                
+                                # Match "key"=>"value" where value can contain escaped quotes
+                                # The pattern (?:[^"\\]|\\.)* matches any character except unescaped double quotes
+                                # We need to be careful - the value part should match until we find an unescaped closing quote
+                                # Process in multiple passes to handle nested structures
+                                
+                                # First pass: convert simple cases "key"=>"value"
+                                activities_fixed = re.sub(
+                                    r'"([^"]+)"\s*=>\s*"((?:[^"\\]|\\.)*)"',
+                                    convert_ruby_to_json,
+                                    activities_fixed
+                                )
+                                
+                                # If the regex didn't match everything, try a more aggressive approach
+                                # Find all remaining "key"=> patterns and convert them
+                                remaining = re.findall(r'"([^"]+)"\s*=>\s*"', activities_fixed)
+                                if remaining and '=>' in activities_fixed:
+                                    # There are still Ruby hash patterns, try a different approach
+                                    # Replace => with : for all remaining cases
+                                    activities_fixed = re.sub(r'"([^"]+)"\s*=>\s*"', r'"\1": "', activities_fixed)
+                                
                                 # Handle double-quoted keys with empty string: "key"=>""
                                 activities_fixed = re.sub(r'"([^"]+)"\s*=>\s*""', r'"\1": ""', activities_fixed)
-                                # Handle any remaining => with double-quoted keys
+                                
+                                # Handle any remaining => with double-quoted keys (for non-string values)
                                 activities_fixed = re.sub(r'"([^"]+)"\s*=>\s*', r'"\1": ', activities_fixed)
-                                # Handle single-quoted keys
-                                activities_fixed = re.sub(r"'([^']+)'\s*=>\s*'([^']*)'", r'"\1": "\2"', activities_fixed)
+                                
+                                # Handle single-quoted keys (less common but possible)
+                                activities_fixed = re.sub(r"'([^']+)'\s*=>\s*'((?:[^'\\]|\\.)*)'", r'"\1": "\2"', activities_fixed)
                                 activities_fixed = re.sub(r"'([^']+)'\s*=>\s*", r'"\1": ', activities_fixed)
                                 
                                 # Replace single quotes with double quotes for remaining keys/values
@@ -6044,11 +6079,23 @@ def workato_send_new_email():
                                     logger.info(f"🔍 Fixed activities field (length: {len(old_activities)} -> {len(new_activities)})")
                                 except json.JSONDecodeError as e:
                                     logger.warning(f"⚠️ Could not fix activities field to valid JSON: {e}")
-                                    logger.debug(f"⚠️ Activities string preview: {activities_str[:200]}")
-                                    logger.debug(f"⚠️ Activities fixed preview: {activities_fixed[:200]}")
-                                    # Remove the activities field entirely to allow the rest to parse
-                                    raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[value_end + 1:]
-                                    logger.info(f"🔍 Removed malformed activities field, set to empty array")
+                                    logger.debug(f"⚠️ Activities string preview: {activities_str[:300]}")
+                                    logger.debug(f"⚠️ Activities fixed preview: {activities_fixed[:300]}")
+                                    
+                                    # Try one more time with a simpler approach - just replace => with : globally
+                                    try:
+                                        activities_simple = activities_str.replace('=>', ':')
+                                        # Validate the simple replacement
+                                        json.loads(activities_simple)
+                                        old_activities = raw_data[activities_start:value_end + 1]
+                                        new_activities = f'"activities": {activities_simple}'
+                                        raw_data = raw_data[:activities_start] + new_activities + raw_data[value_end + 1:]
+                                        logger.info(f"🔍 Fixed activities field using simple replacement (=> to :)")
+                                    except Exception as simple_error:
+                                        logger.debug(f"⚠️ Simple replacement also failed: {simple_error}")
+                                        # Remove the activities field entirely to allow the rest to parse
+                                        raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[value_end + 1:]
+                                        logger.info(f"🔍 Removed malformed activities field, set to empty array")
                 
                 data = json.loads(raw_data)
                 logger.info(f"🔍 DEBUG: Manually parsed JSON data successfully")
