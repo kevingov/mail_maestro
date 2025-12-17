@@ -1565,9 +1565,71 @@ def get_emails_needing_replies_with_accounts(accounts):
     # This handles cases where original email was from alias, but reply is from base email
     thread_ids_from_emails = {email.get('threadId') for email in emails if email.get('threadId')}
     
-    # For each thread that has at least one email from our accounts, check ALL messages in thread
+    # Also find threads where Workato accounts appear in To or CC (not just From)
+    # This allows us to reply to threads where the latest message is from a CC'd participant
+    logger.info("🔍 Scanning inbox for threads where Workato accounts are recipients (To/CC)...")
+    thread_ids_with_account_recipients = set()
+    
+    def extract_email_from_header(header_value):
+        """Extract email address from header value (handles 'Name <email@domain.com>' format)."""
+        if not header_value:
+            return None
+        if '<' in header_value and '>' in header_value:
+            return header_value.split('<')[1].split('>')[0].strip().lower()
+        return header_value.strip().lower()
+    
+    def parse_email_list(header_value):
+        """Parse comma-separated email list and return list of clean email addresses."""
+        if not header_value:
+            return []
+        if isinstance(header_value, str):
+            email_list = [e.strip() for e in header_value.split(',') if e.strip()]
+        else:
+            email_list = [e.strip() for e in header_value if e.strip()]
+        
+        clean_emails = []
+        for email_str in email_list:
+            email_clean = extract_email_from_header(email_str)
+            if email_clean:
+                clean_emails.append(email_clean)
+        return clean_emails
+    
+    # Scan all inbox messages to find threads where Workato accounts are in To/CC
+    for msg in messages:
+        try:
+            msg_id = msg['id']
+            message = service.users().messages().get(userId='me', id=msg_id).execute()
+            thread_id = message.get('threadId')
+            if not thread_id:
+                continue
+            
+            headers = message['payload'].get('headers', [])
+            to_header = next((h['value'] for h in headers if h['name'] == 'To'), '')
+            cc_header = next((h['value'] for h in headers if h['name'] == 'Cc'), '')
+            
+            # Check if any Workato account is in To or CC
+            to_emails = parse_email_list(to_header)
+            cc_emails = parse_email_list(cc_header)
+            all_recipients = set(to_emails + cc_emails)
+            
+            # Check if any recipient matches a Workato account
+            for recipient in all_recipients:
+                recipient_normalized = normalize_email(recipient)
+                if recipient in account_emails or recipient_normalized in normalized_account_emails:
+                    thread_ids_with_account_recipients.add(thread_id)
+                    logger.info(f"📧 Found thread {thread_id} where Workato account {recipient} is a recipient")
+                    break
+        except Exception as e:
+            logger.debug(f"Error checking message {msg.get('id', 'unknown')} for recipient match: {e}")
+            continue
+    
+    # Combine thread IDs: those with emails from accounts + those with accounts as recipients
+    all_relevant_thread_ids = thread_ids_from_emails | thread_ids_with_account_recipients
+    logger.info(f"📊 Found {len(thread_ids_from_emails)} threads with emails from accounts, {len(thread_ids_with_account_recipients)} threads with accounts as recipients, {len(all_relevant_thread_ids)} total unique threads")
+    
+    # For each thread that has at least one email from our accounts OR has our accounts as recipients, check ALL messages in thread
     all_thread_emails = {}
-    for thread_id in thread_ids_from_emails:
+    for thread_id in all_relevant_thread_ids:
         try:
             thread_data = service.users().threads().get(userId='me', id=thread_id).execute()
             thread_messages = thread_data.get('messages', [])
@@ -1628,11 +1690,62 @@ def get_emails_needing_replies_with_accounts(accounts):
     
     emails_needing_replies = []
     
-    # Check each conversation thread - only reply if last message is from merchant
+    # Check each conversation thread - reply if:
+    # 1. Last message is from merchant (not from us), OR
+    # 2. Last message is from a CC'd participant and a Workato account is involved in the thread
     for thread_id, emails_in_thread in thread_emails.items():
         # Sort emails by date to get the latest one
         emails_in_thread.sort(key=lambda x: x.get('date', ''), reverse=True)
         latest_email = emails_in_thread[0]  # Most recent email in this thread
+        
+        # Get full message data to check To/CC headers
+        try:
+            latest_msg_data = service.users().messages().get(userId='me', id=latest_email['id']).execute()
+            latest_headers = latest_msg_data['payload'].get('headers', [])
+            latest_to = next((h['value'] for h in latest_headers if h['name'] == 'To'), '')
+            latest_cc = next((h['value'] for h in latest_headers if h['name'] == 'Cc'), '')
+        except Exception as e:
+            logger.warning(f"⚠️ Error getting headers for latest message in thread {thread_id}: {e}")
+            latest_to = ''
+            latest_cc = ''
+        
+        # Check if any Workato account is involved in this thread (in any message's To/CC)
+        thread_has_account_recipient = thread_id in thread_ids_with_account_recipients
+        
+        # Check if latest sender was CC'd in a previous message (if thread has account recipient)
+        latest_sender = latest_email.get('sender', '').lower()
+        latest_sender_normalized = latest_email.get('normalized_sender') or normalize_email(latest_sender)
+        latest_sender_original = latest_sender
+        if '<' in latest_sender_original and '>' in latest_sender_original:
+            latest_sender_original = latest_sender_original.split('<')[1].split('>')[0]
+        
+        # Check if latest sender was CC'd in any previous message in this thread
+        latest_sender_was_ccd = False
+        if thread_has_account_recipient:
+            # Check all previous messages (not the latest) to see if latest sender was CC'd
+            for prev_email in emails_in_thread[1:]:  # Skip latest email
+                try:
+                    prev_msg_data = service.users().messages().get(userId='me', id=prev_email['id']).execute()
+                    prev_headers = prev_msg_data['payload'].get('headers', [])
+                    prev_cc = next((h['value'] for h in prev_headers if h['name'] == 'Cc'), '')
+                    prev_cc_emails = parse_email_list(prev_cc)
+                    
+                    # Check if latest sender was in CC of this previous message
+                    for cc_email in prev_cc_emails:
+                        cc_normalized = normalize_email(cc_email)
+                        if (cc_email == latest_sender_original or 
+                            cc_normalized == latest_sender_normalized or
+                            latest_sender_original in cc_email or
+                            latest_sender_normalized in cc_normalized):
+                            latest_sender_was_ccd = True
+                            logger.info(f"📧 Thread {thread_id}: Latest sender {latest_sender_original} was CC'd in previous message")
+                            break
+                    
+                    if latest_sender_was_ccd:
+                        break
+                except Exception as e:
+                    logger.debug(f"Error checking CC in previous message: {e}")
+                    continue
         
         # Ensure latest_email has account_info if it's from one of our accounts
         if latest_email.get('account_info'):
@@ -1640,21 +1753,12 @@ def get_emails_needing_replies_with_accounts(accounts):
             pass
         else:
             # Try to find account_info for this email
-            latest_sender = latest_email.get('sender', '').lower()
-            latest_sender_normalized = latest_email.get('normalized_sender') or normalize_email(latest_sender)
-            
-            sender_original = latest_sender
-            if '<' in sender_original and '>' in sender_original:
-                sender_original = sender_original.split('<')[1].split('>')[0]
-            
-            if sender_original in account_emails:
-                latest_email['account_info'] = account_emails[sender_original]
+            if latest_sender_original in account_emails:
+                latest_email['account_info'] = account_emails[latest_sender_original]
             elif latest_sender_normalized in normalized_account_emails:
                 latest_email['account_info'] = normalized_account_emails[latest_sender_normalized]
         
         # Check if the latest message is from the merchant (not from us)
-        latest_sender = latest_email.get('sender', '').lower()
-        latest_sender_normalized = latest_email.get('normalized_sender') or normalize_email(latest_sender)
         is_from_merchant = False
         
         # Check if latest sender is one of our Workato accounts (merchant)
@@ -1663,11 +1767,7 @@ def get_emails_needing_replies_with_accounts(accounts):
             is_from_merchant = True
         else:
             # Also check if any part of the sender string matches
-            sender_original = latest_sender
-            if '<' in sender_original and '>' in sender_original:
-                sender_original = sender_original.split('<')[1].split('>')[0]
-            
-            if sender_original in account_emails:
+            if latest_sender_original in account_emails:
                 is_from_merchant = True
             else:
                 for account_email, account_data in account_emails.items():
@@ -1676,20 +1776,57 @@ def get_emails_needing_replies_with_accounts(accounts):
                         is_from_merchant = True
                         break
         
+        # Determine if we should reply:
+        # 1. Latest message is from merchant, OR
+        # 2. Latest message is from someone who was CC'd AND thread has a Workato account as recipient
+        should_reply = is_from_merchant or (latest_sender_was_ccd and thread_has_account_recipient)
+        
         # Only reply if:
-        # 1. Latest message is from merchant (not from us)
+        # 1. Latest message is from merchant OR from a CC'd participant (and thread has account recipient)
         # 2. Thread hasn't been replied to yet
         has_been_replied = has_been_replied_to(latest_email['id'], service)
-        logger.info(f"🔍 Thread {thread_id} decision: is_from_merchant={is_from_merchant}, has_been_replied={has_been_replied}, latest_sender={latest_sender_normalized}")
+        logger.info(f"🔍 Thread {thread_id} decision: is_from_merchant={is_from_merchant}, latest_sender_was_ccd={latest_sender_was_ccd}, thread_has_account_recipient={thread_has_account_recipient}, should_reply={should_reply}, has_been_replied={has_been_replied}, latest_sender={latest_sender_normalized}")
         
-        if is_from_merchant and not has_been_replied:
+        if should_reply and not has_been_replied:
+            # If latest sender is not a merchant, we need to find the account_info from the thread
+            account_info = latest_email.get('account_info')
+            
+            # If we don't have account_info, try to find it from the thread (find first Workato account in thread)
+            if not account_info and thread_has_account_recipient:
+                # Find the first Workato account that appears in To/CC of any message in this thread
+                for email_in_thread in emails_in_thread:
+                    try:
+                        msg_data = service.users().messages().get(userId='me', id=email_in_thread['id']).execute()
+                        headers = msg_data['payload'].get('headers', [])
+                        to_header = next((h['value'] for h in headers if h['name'] == 'To'), '')
+                        cc_header = next((h['value'] for h in headers if h['name'] == 'Cc'), '')
+                        
+                        to_emails = parse_email_list(to_header)
+                        cc_emails = parse_email_list(cc_header)
+                        all_recipients = set(to_emails + cc_emails)
+                        
+                        # Find first Workato account in recipients
+                        for recipient in all_recipients:
+                            recipient_normalized = normalize_email(recipient)
+                            if recipient in account_emails:
+                                account_info = account_emails[recipient]
+                                break
+                            elif recipient_normalized in normalized_account_emails:
+                                account_info = normalized_account_emails[recipient_normalized]
+                                break
+                        
+                        if account_info:
+                            break
+                    except Exception as e:
+                        logger.debug(f"Error finding account_info in thread: {e}")
+                        continue
+            
             # Ensure email has all required fields for reply processing
-            if not latest_email.get('account_info'):
+            if not account_info:
                 logger.warning(f"⚠️ Thread {thread_id} needs reply but missing account_info, skipping")
                 continue
             
             # Add account info to email for reply processing
-            account_info = latest_email['account_info']
             reply_email = {
                 'id': latest_email['id'],
                 'threadId': thread_id,
@@ -1702,10 +1839,13 @@ def get_emails_needing_replies_with_accounts(accounts):
                 'contact_id': account_info.get('contact_id')
             }
             emails_needing_replies.append(reply_email)
-            logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from merchant, normalized: {latest_sender_normalized})")
+            if is_from_merchant:
+                logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from merchant, normalized: {latest_sender_normalized})")
+            else:
+                logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from CC'd participant, normalized: {latest_sender_normalized})")
         else:
-            if not is_from_merchant:
-                logger.info(f"Conversation thread {thread_id} - latest message is from us, skipping reply")
+            if not should_reply:
+                logger.info(f"Conversation thread {thread_id} - latest message doesn't require reply (is_from_merchant={is_from_merchant}, latest_sender_was_ccd={latest_sender_was_ccd}, thread_has_account_recipient={thread_has_account_recipient})")
             else:
                 logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} already has a reply")
 
