@@ -6604,6 +6604,228 @@ def write_to_google_sheets(records):
         traceback.print_exc()
         return False, f"Error: {str(e)}"
 
+@app.route('/api/workato/check-non-campaign-emails', methods=['POST'])
+def workato_check_non_campaign_emails():
+    """
+    Check emails from the last 24 hours and auto-reply to senders not in the campaign contact list.
+    The provided contacts list represents campaign members. Non-campaign senders are directed to merchantcare@affirm.com.
+    
+    Expected input format:
+    {
+        "contacts": [
+            {"email": "contact1@example.com"},
+            {"email": "contact2@example.com"},
+            ...
+        ]
+    }
+    Or simpler format:
+    {
+        "contacts": ["contact1@example.com", "contact2@example.com", ...]
+    }
+    """
+    try:
+        import time
+        from datetime import datetime, timedelta
+        
+        data = request.get_json() if request.is_json else {}
+        
+        if not data or 'contacts' not in data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing required "contacts" parameter. Expected format: {"contacts": ["email1@example.com", "email2@example.com"]}',
+                'timestamp': datetime.datetime.now().isoformat()
+            }), 400
+        
+        contacts = data.get('contacts', [])
+        if not isinstance(contacts, list):
+            return jsonify({
+                'status': 'error',
+                'message': 'Contacts must be a list of email addresses',
+                'timestamp': datetime.datetime.now().isoformat()
+            }), 400
+        
+        # Normalize and extract emails from campaign contacts list
+        # Handle both formats: ["email@example.com"] or [{"email": "email@example.com"}]
+        campaign_emails = set()
+        for contact in contacts:
+            if isinstance(contact, str):
+                email = contact
+            elif isinstance(contact, dict):
+                email = contact.get('email', '')
+            else:
+                continue
+            
+            if email:
+                normalized = normalize_email(email)
+                campaign_emails.add(normalized)
+                # Also add the original email (lowercased) for matching
+                campaign_emails.add(email.lower().strip())
+        
+        logger.info(f"📋 Processing non-campaign email check with {len(campaign_emails)} campaign contacts")
+        logger.info(f"📋 Campaign emails: {', '.join(sorted(campaign_emails))}")
+        
+        # Authenticate Gmail
+        creds = authenticate_gmail()
+        service = build('gmail', 'v1', credentials=creds)
+        
+        # Calculate timestamp for 24 hours ago
+        current_time_ms = int(time.time() * 1000)
+        twenty_four_hours_ago_ms = current_time_ms - (24 * 60 * 60 * 1000)
+        
+        # Query for emails from the last 24 hours
+        # Use Gmail search query: after:timestamp
+        query = f'after:{twenty_four_hours_ago_ms // 1000}'
+        logger.info(f"🔍 Searching for emails in INBOX from last 24 hours (after {datetime.fromtimestamp(twenty_four_hours_ago_ms / 1000)})")
+        
+        results = service.users().messages().list(
+            userId='me',
+            labelIds=['INBOX'],
+            q=query,
+            maxResults=500
+        ).execute()
+        
+        messages = results.get('messages', [])
+        logger.info(f"📧 Found {len(messages)} emails in INBOX from last 24 hours")
+        
+        non_campaign_emails = []
+        processed_threads = set()  # Track threads we've already replied to
+        
+        for msg in messages:
+            try:
+                msg_id = msg['id']
+                message = service.users().messages().get(userId='me', id=msg_id).execute()
+                thread_id = message.get('threadId')
+                
+                # Skip if we've already processed this thread
+                if thread_id and thread_id in processed_threads:
+                    continue
+                
+                # Extract email details
+                headers = message['payload'].get('headers', [])
+                sender = next((h['value'] for h in headers if h['name'] == 'From'), '')
+                subject = next((h['value'] for h in headers if h['name'] == 'Subject'), '')
+                date = next((h['value'] for h in headers if h['name'] == 'Date'), '')
+                
+                # Extract and normalize sender email
+                sender_email = normalize_email(sender)
+                sender_email_original = sender.lower()
+                if '<' in sender_email_original and '>' in sender_email_original:
+                    sender_email_original = sender_email_original.split('<')[1].split('>')[0]
+                
+                # Check if sender is in campaign list (check both normalized and original)
+                is_campaign_member = (
+                    sender_email in campaign_emails or
+                    sender_email_original in campaign_emails or
+                    sender_email_original.lower() in campaign_emails
+                )
+                
+                # Also check if it's from us (Jake Morgan) - we should skip those
+                jake_email = os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com').lower()
+                is_from_us = (
+                    'jake.morgan@affirm.com' in sender.lower() or
+                    jake_email in sender.lower() or
+                    normalize_email(jake_email) == sender_email
+                )
+                
+                # Skip if campaign member or from us
+                if is_campaign_member or is_from_us:
+                    continue
+                
+                # Check if we've already replied to this thread
+                if thread_id:
+                    if has_been_replied_to(msg_id, service):
+                        logger.info(f"⏭️ Skipping thread {thread_id} from {sender_email_original} - already replied")
+                        processed_threads.add(thread_id)
+                        continue
+                
+                # This is a non-campaign sender - add to list and send auto-reply
+                non_campaign_emails.append({
+                    'id': msg_id,
+                    'threadId': thread_id,
+                    'sender': sender,
+                    'sender_email': sender_email_original,
+                    'subject': subject,
+                    'date': date
+                })
+                
+                # Extract email body for context
+                email_body = extract_email_body(message['payload'])
+                
+                # Generate auto-reply message directing to merchantcare@affirm.com
+                auto_reply_content = f"""<p>Thank you for reaching out to Affirm.</p>
+
+<p>For merchant support and inquiries, please contact our Merchant Care team directly at <a href="mailto:merchantcare@affirm.com">merchantcare@affirm.com</a>.</p>
+
+<p>They will be able to assist you with your questions and concerns.</p>
+
+<p>Best regards,<br>
+Jake Morgan<br>
+Business Development<br>
+Affirm</p>"""
+                
+                # Send auto-reply
+                try:
+                    sender_name = sender.split('<')[0].strip() if '<' in sender else sender_email_original.split('@')[0].capitalize()
+                    if not sender_name or sender_name == sender_email_original:
+                        sender_name = "there"
+                    
+                    email_result = send_threaded_email_reply(
+                        to_email=sender_email_original,
+                        subject=subject,
+                        reply_content=auto_reply_content,
+                        original_message_id=msg_id,
+                        sender_name="Jake Morgan",
+                        cc_recipients=None
+                    )
+                    
+                    if isinstance(email_result, dict) and email_result.get('status') == 'success':
+                        logger.info(f"✅ Sent auto-reply to non-campaign sender {sender_email_original} (thread {thread_id})")
+                        if thread_id:
+                            processed_threads.add(thread_id)
+                    else:
+                        logger.warning(f"⚠️ Failed to send auto-reply to {sender_email_original}: {email_result}")
+                        
+                except Exception as reply_error:
+                    logger.error(f"❌ Error sending auto-reply to {sender_email_original}: {reply_error}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                
+            except Exception as e:
+                logger.error(f"❌ Error processing message {msg.get('id', 'unknown')}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                continue
+        
+        logger.info(f"📊 Summary: Found {len(non_campaign_emails)} non-campaign emails, sent {len(processed_threads)} auto-replies")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Processed {len(messages)} emails from last 24 hours. Found {len(non_campaign_emails)} non-campaign senders and sent {len(processed_threads)} auto-replies.',
+            'total_emails_checked': len(messages),
+            'non_campaign_count': len(non_campaign_emails),
+            'replies_sent': len(processed_threads),
+            'non_campaign_emails': [
+                {
+                    'sender': email['sender'],
+                    'sender_email': email['sender_email'],
+                    'subject': email['subject'],
+                    'date': email['date']
+                }
+                for email in non_campaign_emails
+            ],
+            'timestamp': datetime.datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Error in check-non-campaign-emails endpoint: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'status': 'error',
+            'message': f'Error processing non-campaign emails: {str(e)}',
+            'timestamp': datetime.datetime.now().isoformat()
+        }), 500
+
 @app.route('/api/workato/update-sfdc-task-id', methods=['POST'])
 def workato_update_sfdc_task_id():
     """
