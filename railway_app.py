@@ -5994,30 +5994,61 @@ def workato_send_new_email():
                 
                 # Try to fix common issues with activities field containing Ruby hash syntax
                 # Pattern: "activities": "[{"id"=>"...", ...}]"
+                # The activities field is a string containing Ruby hash syntax that needs to be converted to JSON
                 if '"activities":' in raw_data:
-                    # Find the activities field - it might be a string containing Ruby syntax
-                    # Match: "activities": "..." where ... contains Ruby hash syntax
-                    activities_pattern = r'"activities"\s*:\s*"([^"]*(?:\\.[^"]*)*)"'
-                    activities_match = re.search(activities_pattern, raw_data, re.DOTALL)
-                    
-                    if activities_match:
-                        activities_str = activities_match.group(1)
-                        # Unescape the string
-                        activities_str = activities_str.replace('\\"', '"').replace('\\n', '\n')
-                        
-                        # Convert Ruby hash syntax to JSON
-                        # Replace "key"=>"value" with "key":"value"
-                        activities_fixed = re.sub(r'"([^"]+)"\s*=>\s*', r'"\1":', activities_str)
-                        activities_fixed = re.sub(r"'([^']+)'\s*=>\s*", r'"\1":', activities_fixed)
-                        # Replace single quotes with double quotes for keys
-                        activities_fixed = re.sub(r"'([^']+)':", r'"\1":', activities_fixed)
-                        
-                        # Replace the malformed activities in raw_data
-                        # Remove the quotes around the activities value and use the fixed version
-                        old_activities = activities_match.group(0)
-                        new_activities = f'"activities": {activities_fixed}'
-                        raw_data = raw_data.replace(old_activities, new_activities)
-                        logger.info(f"🔍 Fixed activities field: {old_activities[:100]}... -> {new_activities[:100]}...")
+                    # Find the start of the activities field value
+                    activities_start = raw_data.find('"activities":')
+                    if activities_start != -1:
+                        # Find the colon and the opening quote
+                        value_start = raw_data.find('"', activities_start + len('"activities":'))
+                        if value_start != -1:
+                            # Find the matching closing quote (handle escaped quotes)
+                            value_end = value_start + 1
+                            while value_end < len(raw_data):
+                                if raw_data[value_end] == '"' and raw_data[value_end - 1] != '\\':
+                                    break
+                                value_end += 1
+                            
+                            if value_end < len(raw_data):
+                                # Extract the activities string value
+                                activities_str = raw_data[value_start + 1:value_end]
+                                # Unescape the string
+                                activities_str = activities_str.replace('\\"', '"').replace('\\n', '\n').replace('\\\\', '\\')
+                                
+                                # Convert Ruby hash syntax to JSON
+                                # Replace "key"=>"value" with "key":"value"
+                                activities_fixed = activities_str
+                                
+                                # Handle double-quoted keys with double-quoted values: "key"=>"value"
+                                activities_fixed = re.sub(r'"([^"]+)"\s*=>\s*"([^"]*)"', r'"\1": "\2"', activities_fixed)
+                                # Handle double-quoted keys with empty string: "key"=>""
+                                activities_fixed = re.sub(r'"([^"]+)"\s*=>\s*""', r'"\1": ""', activities_fixed)
+                                # Handle any remaining => with double-quoted keys
+                                activities_fixed = re.sub(r'"([^"]+)"\s*=>\s*', r'"\1": ', activities_fixed)
+                                # Handle single-quoted keys
+                                activities_fixed = re.sub(r"'([^']+)'\s*=>\s*'([^']*)'", r'"\1": "\2"', activities_fixed)
+                                activities_fixed = re.sub(r"'([^']+)'\s*=>\s*", r'"\1": ', activities_fixed)
+                                
+                                # Replace single quotes with double quotes for remaining keys/values
+                                activities_fixed = re.sub(r"'([^']+)':", r'"\1":', activities_fixed)
+                                activities_fixed = re.sub(r":\s*'([^']+)'", r': "\1"', activities_fixed)
+                                
+                                # Try to parse the fixed activities to validate it's valid JSON
+                                try:
+                                    json.loads(activities_fixed)  # Validate it's valid JSON
+                                    # Replace the malformed activities in raw_data
+                                    # Remove the quotes around the activities value and use the fixed version
+                                    old_activities = raw_data[activities_start:value_end + 1]
+                                    new_activities = f'"activities": {activities_fixed}'
+                                    raw_data = raw_data[:activities_start] + new_activities + raw_data[value_end + 1:]
+                                    logger.info(f"🔍 Fixed activities field (length: {len(old_activities)} -> {len(new_activities)})")
+                                except json.JSONDecodeError as e:
+                                    logger.warning(f"⚠️ Could not fix activities field to valid JSON: {e}")
+                                    logger.debug(f"⚠️ Activities string preview: {activities_str[:200]}")
+                                    logger.debug(f"⚠️ Activities fixed preview: {activities_fixed[:200]}")
+                                    # Remove the activities field entirely to allow the rest to parse
+                                    raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[value_end + 1:]
+                                    logger.info(f"🔍 Removed malformed activities field, set to empty array")
                 
                 data = json.loads(raw_data)
                 logger.info(f"🔍 DEBUG: Manually parsed JSON data successfully")
