@@ -1342,18 +1342,18 @@ def reply_to_emails_with_accounts(accounts):
                 
                 # Add To recipients
                 to_emails = parse_email_list(latest_to)
-                for email in to_emails:
-                    if normalize_email(email) != jake_email_normalized:
-                        all_latest_recipients.add(email)
+                for to_email_addr in to_emails:
+                    if normalize_email(to_email_addr) != jake_email_normalized:
+                        all_latest_recipients.add(to_email_addr)
                 
                 # Add CC recipients
                 cc_emails = parse_email_list(latest_cc)
-                for email in cc_emails:
-                    if normalize_email(email) != jake_email_normalized:
-                        all_latest_recipients.add(email)
+                for cc_email in cc_emails:
+                    if normalize_email(cc_email) != jake_email_normalized:
+                        all_latest_recipients.add(cc_email)
                 
                 # Remove the primary sender (they go in To, not CC)
-                cc_recipients_list = [email for email in all_latest_recipients if normalize_email(email) != sender_email_normalized]
+                cc_recipients_list = [recipient_email for recipient_email in all_latest_recipients if normalize_email(recipient_email) != sender_email_normalized]
                 
                 if cc_recipients_list:
                     cc_recipients = ', '.join(sorted(cc_recipients_list))
