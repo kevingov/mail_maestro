@@ -1275,6 +1275,7 @@ def reply_to_emails_with_accounts(accounts):
                     msg_data = service.users().messages().get(userId='me', id=msg['id']).execute()
                     headers = msg_data['payload'].get('headers', [])
                     msg_sender = next((h['value'] for h in headers if h['name'] == 'From'), 'Unknown')
+                    msg_to = next((h['value'] for h in headers if h['name'] == 'To'), None)
                     msg_subject = next((h['value'] for h in headers if h['name'] == 'Subject'), 'No Subject')
                     msg_date = next((h['value'] for h in headers if h['name'] == 'Date'), '')
                     msg_body = extract_email_body(msg_data['payload'])
@@ -1284,6 +1285,7 @@ def reply_to_emails_with_accounts(accounts):
                     
                     conversation_parts.append({
                         'sender': msg_sender,
+                        'to': msg_to,
                         'subject': msg_subject,
                         'date': msg_date,
                         'body': msg_body,
@@ -1298,13 +1300,67 @@ def reply_to_emails_with_accounts(accounts):
             # Sort by internal date to get chronological order
             conversation_parts.sort(key=lambda x: x['internal_date'])
             
-            # Get CC recipients from the LATEST message (the one we're actually replying to)
-            # This ensures we reply to all CC'd recipients from the most recent email
+            # Get participants from the LATEST message only (To + CC)
+            # This ensures we only reply to people who were on the latest message
+            cc_recipients = None
+            jake_email = os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com').lower()
+            jake_email_normalized = normalize_email(jake_email)
+            sender_email_normalized = normalize_email(contact_email)
+            
+            def extract_email_from_header(header_value):
+                """Extract email address from header value (handles 'Name <email@domain.com>' format)."""
+                if not header_value:
+                    return None
+                if '<' in header_value and '>' in header_value:
+                    return header_value.split('<')[1].split('>')[0].strip().lower()
+                return header_value.strip().lower()
+            
+            def parse_email_list(header_value):
+                """Parse comma-separated email list and return list of clean email addresses."""
+                if not header_value:
+                    return []
+                if isinstance(header_value, str):
+                    email_list = [e.strip() for e in header_value.split(',') if e.strip()]
+                else:
+                    email_list = [e.strip() for e in header_value if e.strip()]
+                
+                clean_emails = []
+                for email_str in email_list:
+                    email_clean = extract_email_from_header(email_str)
+                    if email_clean:
+                        clean_emails.append(email_clean)
+                return clean_emails
+            
             if conversation_parts:
                 latest_message = conversation_parts[-1]  # Last message is the latest
-                if latest_message.get('cc'):
-                    cc_recipients = latest_message['cc']
-                    logger.info(f"📧 Found CC recipients from latest message: {cc_recipients}")
+                
+                # Get all recipients from latest message (To + CC)
+                latest_to = latest_message.get('to')
+                latest_cc = latest_message.get('cc')
+                
+                all_latest_recipients = set()
+                
+                # Add To recipients
+                to_emails = parse_email_list(latest_to)
+                for email in to_emails:
+                    if normalize_email(email) != jake_email_normalized:
+                        all_latest_recipients.add(email)
+                
+                # Add CC recipients
+                cc_emails = parse_email_list(latest_cc)
+                for email in cc_emails:
+                    if normalize_email(email) != jake_email_normalized:
+                        all_latest_recipients.add(email)
+                
+                # Remove the primary sender (they go in To, not CC)
+                cc_recipients_list = [email for email in all_latest_recipients if normalize_email(email) != sender_email_normalized]
+                
+                if cc_recipients_list:
+                    cc_recipients = ', '.join(sorted(cc_recipients_list))
+                    logger.info(f"📧 Found {len(cc_recipients_list)} participants from latest message to CC: {cc_recipients}")
+                else:
+                    cc_recipients = None
+                    logger.info(f"📧 No additional participants from latest message (only primary sender)")
             
             # Build conversation history string
             conversation_history_lines = []
@@ -1318,30 +1374,6 @@ def reply_to_emails_with_accounts(accounts):
             
             conversation_content = "\n".join(conversation_history_lines)
             logger.info(f"📧 Built conversation history with {len(conversation_parts)} messages for thread {thread_id}")
-            
-            # Only use CC recipients from the latest message
-            # Filter out the sender and Jake's email from CC
-            if cc_recipients:
-                # Parse CC recipients
-                if isinstance(cc_recipients, str):
-                    cc_list = [cc.strip() for cc in cc_recipients.split(',') if cc.strip()]
-                else:
-                    cc_list = [cc.strip() for cc in cc_recipients if cc.strip()]
-                
-                # Remove the sender's email from CC (we're replying to them, not CC'ing them)
-                sender_email_normalized = normalize_email(contact_email)
-                filtered_cc = [cc for cc in cc_list if normalize_email(cc) != sender_email_normalized]
-                
-                # Remove Jake's email from CC (we're sending from Jake, don't CC him)
-                jake_email = os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com').lower()
-                filtered_cc = [cc for cc in filtered_cc if normalize_email(cc) != normalize_email(jake_email)]
-                
-                if filtered_cc:
-                    cc_recipients = ', '.join(sorted(filtered_cc))
-                    logger.info(f"📧 Using CC recipients from latest message (filtered): {cc_recipients}")
-                else:
-                    cc_recipients = None
-                    logger.info(f"📧 No valid CC recipients after filtering (removed sender and Jake)")
             
         except Exception as e:
             logger.warning(f"⚠️ Could not build full conversation history, using single email: {e}")
