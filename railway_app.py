@@ -6101,37 +6101,75 @@ def workato_send_new_email():
                                     except Exception as simple_error:
                                         logger.debug(f"⚠️ Simple replacement also failed: {simple_error}")
                                         # Remove the activities field entirely to allow the rest to parse
-                                        # The issue is that value_end might not be correct if there are escaped quotes
-                                        # Let's try a different approach: find the end of the activities field value more carefully
-                                        # Look for the pattern: "activities": "..." where ... ends with a quote not preceded by backslash
-                                        # But we need to account for the fact that the value itself contains escaped quotes
+                                        # Use a more robust regex that matches the entire activities field including the quoted value
+                                        # The pattern needs to match: "activities": "..." where ... can contain escaped quotes
+                                        # We'll match from "activities" to the closing quote of the value
                                         
-                                        # Alternative: use regex to find and replace the entire activities field
-                                        activities_field_pattern = r'"activities"\s*:\s*"[^"]*(?:\\.[^"]*)*"'
-                                        activities_match = re.search(activities_field_pattern, raw_data[activities_start:], re.DOTALL)
+                                        # Try to find the end of the activities field value by looking for the pattern
+                                        # that matches: "activities": "..." followed by newline or closing brace
+                                        activities_field_regex = r'"activities"\s*:\s*"(?:[^"\\]|\\.)*"'
+                                        match = re.search(activities_field_regex, raw_data[activities_start:], re.DOTALL)
                                         
-                                        if activities_match:
+                                        if match:
                                             # Found the activities field using regex
-                                            field_end = activities_start + activities_match.end()
-                                            raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[field_end:]
+                                            field_start_in_match = match.start()
+                                            field_end_in_match = match.end()
+                                            # Get the actual position in raw_data
+                                            actual_field_end = activities_start + field_end_in_match
+                                            
+                                            # Check what comes after the field (look at more characters to be sure)
+                                            after_field_raw = raw_data[actual_field_end:actual_field_end+20]
+                                            after_field = after_field_raw.strip()
+                                            
+                                            # Replace the field
+                                            replacement = '"activities": []'
+                                            
+                                            # Determine what to keep after the replacement
+                                            # Look for newline, comma, or closing brace
+                                            if '\n' in after_field_raw:
+                                                # There's a newline, keep everything from the newline onwards
+                                                newline_pos = raw_data.find('\n', actual_field_end)
+                                                if newline_pos != -1:
+                                                    raw_data = raw_data[:activities_start] + replacement + raw_data[newline_pos:]
+                                                else:
+                                                    raw_data = raw_data[:activities_start] + replacement + raw_data[actual_field_end:]
+                                            elif after_field.startswith(','):
+                                                # There's a comma - this shouldn't happen if activities is the last field, but handle it
+                                                comma_pos = raw_data.find(',', actual_field_end)
+                                                if comma_pos != -1:
+                                                    # Skip the comma and any whitespace after it
+                                                    after_comma = raw_data[comma_pos+1:].lstrip()
+                                                    raw_data = raw_data[:activities_start] + replacement + '\n' + after_comma
+                                                else:
+                                                    raw_data = raw_data[:activities_start] + replacement + raw_data[actual_field_end:]
+                                            elif after_field.startswith('}'):
+                                                # Closing brace - this is correct for the last field
+                                                raw_data = raw_data[:activities_start] + replacement + raw_data[actual_field_end:]
+                                            else:
+                                                # Default: just replace the field
+                                                raw_data = raw_data[:activities_start] + replacement + raw_data[actual_field_end:]
+                                            
                                             logger.info(f"🔍 Removed malformed activities field using regex, set to empty array")
+                                            logger.debug(f"🔍 After replacement preview: ...{raw_data[max(0, activities_start-30):activities_start+80]}...")
+                                            logger.debug(f"🔍 Full JSON after replacement ends with: ...{raw_data[-100:]}")
                                         else:
-                                            # Fallback: use the original approach but be more careful
-                                            # Find the next newline or closing brace after value_end
+                                            # Fallback: try to find the end by looking for newline or closing brace
+                                            # Find the position after the closing quote
                                             next_newline = raw_data.find('\n', value_end + 1)
                                             next_brace = raw_data.find('}', value_end + 1)
+                                            
                                             if next_newline != -1 and (next_brace == -1 or next_newline < next_brace):
-                                                # Replace up to the newline
+                                                # There's a newline after, replace up to it
                                                 raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[next_newline:]
                                             elif next_brace != -1:
-                                                # Replace up to the closing brace
+                                                # There's a closing brace, replace up to it
                                                 raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[next_brace:]
                                             else:
-                                                # Just replace from activities_start to value_end
+                                                # Just replace from start to after the quote
                                                 raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[value_end + 1:]
-                                            logger.info(f"🔍 Removed malformed activities field, set to empty array")
-                                        
-                                        logger.debug(f"🔍 After replacement, raw_data preview: ...{raw_data[activities_start-50:activities_start+100]}...")
+                                            
+                                            logger.info(f"🔍 Removed malformed activities field (fallback), set to empty array")
+                                            logger.debug(f"🔍 After replacement preview: ...{raw_data[max(0, activities_start-30):activities_start+80]}...")
                 
                 # Try to parse the fixed JSON
                 try:
