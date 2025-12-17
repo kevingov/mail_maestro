@@ -803,7 +803,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
     
     # Default prompt if no custom template or formatting failed
     if not prompt_template:
-    prompt = f"""
+        prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
     
     Generate a **professional, Affirm-branded business email** to re-engage {merchant_name}, a merchant in the {merchant_industry_str} industry, who has completed technical integration with Affirm but has **not yet launched**. The goal is to encourage them to go live — without offering a meeting or call.
@@ -1378,7 +1378,7 @@ def reply_to_emails_with_accounts(accounts):
         except Exception as e:
             logger.warning(f"⚠️ Could not build full conversation history, using single email: {e}")
             # Fallback to single email if we can't get thread history
-        conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {email['body']}"
+            conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {email['body']}"
             cc_recipients = None  # Initialize if we couldn't get thread history
         
         # If we don't have conversation_content yet, set it
@@ -1773,8 +1773,8 @@ def get_emails_needing_replies_with_accounts(accounts):
                 for account_email, account_data in account_emails.items():
                     normalized_account = account_data.get('normalized_email', normalize_email(account_email))
                     if account_email in latest_sender or normalized_account == latest_sender_normalized:
-                is_from_merchant = True
-                break
+                        is_from_merchant = True
+                        break
         
         # Determine if we should reply:
         # 1. Latest message is from merchant, OR
@@ -1841,7 +1841,7 @@ def get_emails_needing_replies_with_accounts(accounts):
             emails_needing_replies.append(reply_email)
             if is_from_merchant:
                 logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from merchant, normalized: {latest_sender_normalized})")
-        else:
+            else:
                 logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from CC'd participant, normalized: {latest_sender_normalized})")
         else:
             if not should_reply:
@@ -5593,9 +5593,9 @@ def workato_reply_to_emails():
         # Format response with actual email and thread details
         email_details = []
         if 'responses' in result and result['responses']:
+            import re
             for response in result['responses']:
                 # Clean AI response for display
-                    import re
                 ai_response_text = response.get('ai_response', '')
                 if ai_response_text:
                     # Remove HTML tags
