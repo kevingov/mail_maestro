@@ -6194,11 +6194,14 @@ def workato_send_new_email():
                 # Try to parse the fixed JSON
                 try:
                     data = json.loads(raw_data)
+                    logger.info(f"🔍 DEBUG: Manually parsed JSON data successfully")
+                    logger.debug(f"🔍 Parsed data keys: {list(data.keys()) if data else 'None'}")
+                    # Data is successfully parsed, continue with normal processing
                 except json.JSONDecodeError as final_error:
                     logger.error(f"❌ Final JSON parse failed after activities fix: {final_error}")
                     logger.error(f"❌ Raw data around error (char {final_error.pos}): ...{raw_data[max(0, final_error.pos-50):final_error.pos+50]}...")
+                    # Re-raise to be caught by outer exception handler
                     raise
-                logger.info(f"🔍 DEBUG: Manually parsed JSON data successfully")
             except Exception as manual_parse_error:
                 logger.error(f"❌ JSON parsing error (both standard and manual failed): {json_error}")
                 logger.error(f"   Manual parse error: {manual_parse_error}")
@@ -6221,18 +6224,32 @@ def workato_send_new_email():
                         raise ValueError("Could not extract contact_email")
                 except Exception as fallback_error:
                     logger.error(f"❌ Fallback parsing also failed: {fallback_error}")
+                    return jsonify({
+                        "status": "error",
+                        "message": f"Invalid JSON format: {str(json_error)}. Please check your Workato request format.",
+                        "timestamp": datetime.datetime.now().isoformat()
+                    }), 400
+                # If fallback parsing succeeded, continue with the extracted data
+        
+        # Check if data was successfully parsed
+        # Note: 'data' should be set either by request.get_json() or by manual parsing
+        if 'data' not in locals():
+            logger.error(f"❌ Data variable not defined after parsing attempts")
             return jsonify({
                 "status": "error",
-                        "message": f"Invalid JSON format: {str(json_error)}. Please check your Workato request format.",
+                "message": "No JSON data provided or parsing failed",
                 "timestamp": datetime.datetime.now().isoformat()
             }), 400
         
         if not data:
+            logger.warning(f"⚠️ Data is empty or None after parsing. Data type: {type(data)}, Data value: {data}")
             return jsonify({
                 "status": "error",
                 "message": "No JSON data provided",
                 "timestamp": datetime.datetime.now().isoformat()
             }), 400
+        
+        logger.info(f"✅ Data successfully parsed. Keys: {list(data.keys()) if isinstance(data, dict) else 'N/A'}")
         
         logger.info(f"📧 Workato triggered send_new_email at {datetime.datetime.now().isoformat()}")
         logger.info(f"📊 Processing contact data from Workato")
