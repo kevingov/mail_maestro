@@ -6625,7 +6625,6 @@ def workato_check_non_campaign_emails():
     """
     try:
         import time
-        from datetime import datetime, timedelta
         
         data = request.get_json() if request.is_json else {}
         
@@ -6675,7 +6674,7 @@ def workato_check_non_campaign_emails():
         # Query for emails from the last 24 hours
         # Use Gmail search query: after:timestamp
         query = f'after:{twenty_four_hours_ago_ms // 1000}'
-        logger.info(f"🔍 Searching for emails in INBOX from last 24 hours (after {datetime.fromtimestamp(twenty_four_hours_ago_ms / 1000)})")
+        logger.info(f"🔍 Searching for emails in INBOX from last 24 hours (after {datetime.datetime.fromtimestamp(twenty_four_hours_ago_ms / 1000)})")
         
         results = service.users().messages().list(
             userId='me',
