@@ -832,7 +832,6 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
     - Industry: {merchant_industry_str}
     - Website: {merchant_website_str}
     - Sender: {sender_name}
-    - Status: Integrated with Affirm, not yet live
     - Account Description: {account_description_str}
     - Annual Revenue: {account_revenue_str}
     - Trailing 12M GMV: {account_gmv_str}
@@ -3574,7 +3573,6 @@ def get_prompts():
 - Industry: {merchant_industry_str}
 - Website: {merchant_website_str}
 - Sender: {sender_name}
-- Status: Integrated with Affirm, not yet live
 - Account Description: {account_description_str}
 - Annual Revenue: {account_revenue_str}
 - Trailing 12M GMV: {account_gmv_str}
