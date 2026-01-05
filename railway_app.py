@@ -598,11 +598,14 @@ def is_salesforce_case_notification(email_body, subject=None):
     
     return False
 
-def generate_ai_response(email_body, sender_name, recipient_name, conversation_history=None, prompt_template=None):
+def generate_ai_response(email_body, sender_name, recipient_name, conversation_history=None, prompt_template=None, merchanthelp_already_ccd=False):
     """
     Generates an AI response using the same detailed prompt as generate_message.
     Creates a professional, Affirm-branded email response with full conversation context.
     Can use a custom prompt_template if provided, otherwise reads from REPLY_EMAIL_PROMPT_TEMPLATE environment variable.
+    
+    Args:
+        merchanthelp_already_ccd: If True, the AI should NOT ask to include merchanthelp@affirm.com as they're already CC'd
     """
     
     # Build conversation context if provided
@@ -652,6 +655,16 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     
     # Default prompt if no custom template or formatting failed
     if not reply_email_prompt_template:
+        # Conditionally include rule about asking to include merchanthelp
+        if not merchanthelp_already_ccd:
+            merchanthelp_rule = """    7. **Ask if they want to include merchanthelp@affirm.com in this email thread** - Add a question like "Would you like me to include merchanthelp@affirm.com in this thread so they can help with your issue?"
+    8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - Only offer to CC merchanthelp@affirm.com in the thread. Never suggest emailing merchanthelp@affirm.com directly as an alternative.
+    9. **Keep under 150 words** and feel natural, not automated"""
+        else:
+            merchanthelp_rule = """    7. **DO NOT ask to include merchanthelp@affirm.com** - merchanthelp@affirm.com is already CC'd in this thread, so do NOT ask again.
+    8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - merchanthelp@affirm.com is already on this thread.
+    9. **Keep under 150 words** and feel natural, not automated"""
+        
         prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
 
@@ -667,9 +680,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     4. **ONLY GATHER INFORMATION - DO NOT PROVIDE SOLUTIONS** - Your role is to collect details, not to troubleshoot or provide step-by-step instructions
     5. **Ask for specific information** needed to help them (e.g., store URL, error messages, screenshots, theme name, etc.)
     6. **Do NOT include troubleshooting steps, workarounds, or solutions** - only ask questions to gather information
-    7. **Ask if they want to include merchanthelp@affirm.com in this email thread** - Add a question like "Would you like me to include merchanthelp@affirm.com in this thread so they can help with your issue?"
-    8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - Only offer to CC merchanthelp@affirm.com in the thread. Never suggest emailing merchanthelp@affirm.com directly as an alternative.
-    9. **Keep under 150 words** and feel natural, not automated
+{merchanthelp_rule}
     
 
     **OUTPUT FORMAT:**
@@ -1509,9 +1520,51 @@ def reply_to_emails_with_accounts(accounts):
                 cc_recipients = None
         
         try:
+            # Check if merchanthelp@affirm.com is already CC'd in the thread
+            merchanthelp_email = "merchanthelp@affirm.com"
+            merchanthelp_already_ccd = False
+            
+            if cc_recipients:
+                # Parse CC recipients to check if merchanthelp is already included
+                if isinstance(cc_recipients, str):
+                    cc_list = [cc.strip().lower() for cc in cc_recipients.split(',') if cc.strip()]
+                else:
+                    cc_list = [cc.strip().lower() for cc in cc_recipients if cc.strip()]
+                
+                if merchanthelp_email.lower() in cc_list:
+                    merchanthelp_already_ccd = True
+                    logger.info(f"📧 merchanthelp@affirm.com is already CC'd in this thread - will not ask again")
+            
+            # Also check conversation history for mentions of merchanthelp being CC'd
+            if not merchanthelp_already_ccd and conversation_content:
+                conversation_lower = conversation_content.lower()
+                # Check if merchanthelp was mentioned as being CC'd or included
+                if 'merchanthelp@affirm.com' in conversation_lower:
+                    # Look for patterns indicating they're already CC'd
+                    if any(phrase in conversation_lower for phrase in [
+                        'cc merchanthelp',
+                        'cc\'d merchanthelp',
+                        'cced merchanthelp',
+                        'include merchanthelp',
+                        'added merchanthelp',
+                        'merchanthelp is on',
+                        'merchanthelp on this thread',
+                        'merchanthelp in this thread'
+                    ]):
+                        merchanthelp_already_ccd = True
+                        logger.info(f"📧 merchanthelp@affirm.com appears to already be CC'd based on conversation history")
+            
             # Generate AI response using the full conversation history
+            # Pass information about whether merchanthelp is already CC'd
             logger.info(f"🤖 Generating AI response for thread {thread_id} from {contact_email}")
-            ai_response = generate_ai_response(email['body'], sender_name, contact_name, conversation_content)
+            ai_response = generate_ai_response(
+                email['body'], 
+                sender_name, 
+                contact_name, 
+                conversation_content,
+                prompt_template=None,
+                merchanthelp_already_ccd=merchanthelp_already_ccd
+            )
             logger.info(f"✅ AI response generated for thread {thread_id}")
             
             # Check if merchant wants to include merchanthelp@affirm.com in the thread
@@ -3812,7 +3865,7 @@ Keep the email under 130 words. Make it feel natural and human, not like marketi
 4. **ONLY GATHER INFORMATION - DO NOT PROVIDE SOLUTIONS** - Your role is to collect details, not to troubleshoot or provide step-by-step instructions
 5. **Ask for specific information** needed to help them (e.g., store URL, error messages, screenshots, theme name, etc.)
 6. **Do NOT include troubleshooting steps, workarounds, or solutions** - only ask questions to gather information
-7. **Ask if they want to include merchanthelp@affirm.com in this email thread** - Add a question like "Would you like me to include merchanthelp@affirm.com in this thread so they can help with your issue?"
+7. **Ask if they want to include merchanthelp@affirm.com in this email thread** - Add a question like "Would you like me to include merchanthelp@affirm.com in this thread so they can help with your issue?" BUT ONLY if merchanthelp@affirm.com is NOT already CC'd in the thread. If merchanthelp@affirm.com is already CC'd (check conversation history), do NOT ask again.
 8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - Only offer to CC merchanthelp@affirm.com in the thread. Never suggest emailing merchanthelp@affirm.com directly as an alternative.
 9. **Keep under 150 words** and feel natural, not automated
 
