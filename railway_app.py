@@ -664,8 +664,11 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     1. **Answer direct questions in the FIRST line** (e.g., "Are you a bot?" → "I'm an AI assistant helping with business development, but I'm here to provide real value and connect you with our human team.")
     2. **Be truthful** - don't make up information
     3. **Reference conversation history** to show you've read it
-    4. **Be conversational and helpful** - acknowledge concerns before solutions
-    5. **Keep under 150 words** and feel natural, not automated
+    4. **ONLY GATHER INFORMATION - DO NOT PROVIDE SOLUTIONS** - Your role is to collect details, not to troubleshoot or provide step-by-step instructions
+    5. **Ask for specific information** needed to help them (e.g., store URL, error messages, screenshots, theme name, etc.)
+    6. **Do NOT include troubleshooting steps, workarounds, or solutions** - only ask questions to gather information
+    7. **Direct them to merchantcare@affirm.com** for actual solutions and support
+    8. **Keep under 150 words** and feel natural, not automated
     
 
     **OUTPUT FORMAT:**
@@ -3718,8 +3721,11 @@ Keep the email under 130 words. Make it feel natural and human, not like marketi
 1. **Answer direct questions in the FIRST line** (e.g., "Are you a bot?" → "I'm an AI assistant helping with business development, but I'm here to provide real value and connect you with our human team.")
 2. **Be truthful** - don't make up information
 3. **Reference conversation history** to show you've read it
-4. **Be conversational and helpful** - acknowledge concerns before solutions
-5. **Keep under 150 words** and feel natural, not automated
+4. **ONLY GATHER INFORMATION - DO NOT PROVIDE SOLUTIONS** - Your role is to collect details, not to troubleshoot or provide step-by-step instructions
+5. **Ask for specific information** needed to help them (e.g., store URL, error messages, screenshots, theme name, etc.)
+6. **Do NOT include troubleshooting steps, workarounds, or solutions** - only ask questions to gather information
+7. **Direct them to merchantcare@affirm.com** for actual solutions and support
+8. **Keep under 150 words** and feel natural, not automated
 
 **OUTPUT FORMAT:**
 - **Subject Line:** [Concise subject]
