@@ -1255,7 +1255,7 @@ def reply_to_emails_with_accounts(accounts):
         
         # Sender information (matching send_new_email)
         sender_name = "Jake Morgan"
-        sender_title = "Business Development"
+        sender_title = "AI Business Development"
         
         # Build full conversation history from the thread
         try:
@@ -3619,7 +3619,7 @@ For all support, refer to customercare@affirm.com Only."""
 
 **CONTEXT:**
 - Sender: {sender_name}
-- Recipient: Jake Morgan (Business Development)
+- Recipient: Jake Morgan (AI Business Development)
 - Email Body: {email_body}
 
 **CRITICAL RULES:**
@@ -6341,7 +6341,7 @@ def workato_send_new_email():
         
         # Sender information
         sender_name = "Jake Morgan"
-        sender_title = "Business Development"
+        sender_title = "AI Business Development"
         
         if not contact_email:
             return jsonify({
