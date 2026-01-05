@@ -759,6 +759,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
             prompt_source = "custom_template"
             prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
             logger.info(f"📝 PROMPT USED: Custom template (versioned) | Hash: {prompt_hash} | Merchant: {merchant_name}")
+            logger.info(f"   Full Prompt Content:\n{'='*80}\n{prompt}\n{'='*80}")
         except KeyError as e:
             logger.warning(f"⚠️ Custom prompt template missing variable {e}, using default")
             prompt_template = None
@@ -805,6 +806,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
                 prompt_source = "database" if db_prompt_template else "env_variable"
                 prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
                 logger.info(f"📝 PROMPT USED: NEW_EMAIL_PROMPT_TEMPLATE ({prompt_source}) | Hash: {prompt_hash} | Merchant: {merchant_name}")
+                logger.info(f"   Full Prompt Content:\n{'='*80}\n{prompt}\n{'='*80}")
             except KeyError as e:
                 logger.warning(f"⚠️ NEW_EMAIL_PROMPT_TEMPLATE missing variable {e}, using default")
                 prompt_template = None
