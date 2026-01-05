@@ -672,7 +672,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     - **Subject Line:** [Concise subject]
     - **Email Body:** [Your response]
 
-    For all support, refer to customercare@affirm.com Only.
+    For all support, refer to merchantcare@affirm.com Only.
     """
 
     # Log the prompt being used (for default prompt)
@@ -3725,7 +3725,7 @@ Keep the email under 130 words. Make it feel natural and human, not like marketi
 - **Subject Line:** [Concise subject]
 - **Email Body:** [Your response]
 
-For all support, refer to customercare@affirm.com Only."""
+For all support, refer to merchantcare@affirm.com Only."""
 
         # Default prompt for non-campaign emails
         non_campaign_email_prompt_default = """{AFFIRM_VOICE_GUIDELINES}
