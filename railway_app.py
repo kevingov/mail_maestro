@@ -558,6 +558,46 @@ def has_been_replied_to(email_id, service):
         logger.error(f"Error checking reply status for email {email_id}: {e}")
         return False
 
+def is_salesforce_case_notification(email_body, subject=None):
+    """
+    Check if an email is an automated Salesforce case notification that should be ignored.
+    These emails typically contain:
+    - "A new case has been assigned to you"
+    - Salesforce URLs (sandbox.my.salesforce.com, my.salesforce.com, etc.)
+    - "From: via" with Salesforce domain patterns
+    """
+    if not email_body:
+        return False
+    
+    email_content_lower = email_body.lower()
+    subject_lower = (subject or "").lower()
+    
+    # Check for Salesforce case notification patterns
+    salesforce_patterns = [
+        "a new case has been assigned to you",
+        "case has been assigned",
+        "new case has been assigned",
+        "see the case record for more details",
+        "salesforce.com",
+        "from: via",
+        "via kkvlrq5k6b3did",  # Salesforce notification pattern
+        ".sandbox.my.salesforce.com",
+        ".my.salesforce.com",
+    ]
+    
+    # Check if any pattern matches
+    for pattern in salesforce_patterns:
+        if pattern in email_content_lower or pattern in subject_lower:
+            return True
+    
+    # Check for Salesforce URL patterns
+    import re
+    salesforce_url_pattern = r'https?://[^/]*\.(sandbox\.)?my\.salesforce\.com'
+    if re.search(salesforce_url_pattern, email_content_lower):
+        return True
+    
+    return False
+
 def generate_ai_response(email_body, sender_name, recipient_name, conversation_history=None, prompt_template=None):
     """
     Generates an AI response using the same detailed prompt as generate_message.
@@ -1304,6 +1344,13 @@ def reply_to_emails_with_accounts(accounts):
                 continue
             processed_thread_ids.add(thread_id)
         
+        # Skip Salesforce case notification emails
+        email_body = email.get('body', '')
+        email_subject = email.get('subject', '')
+        if is_salesforce_case_notification(email_body, email_subject):
+            logger.info(f"⏭️ Skipping Salesforce case notification email in thread {thread_id} - {email_subject}")
+            continue
+        
         # Extract contact information
         contact_name = email.get('contact_name', email['sender'].split("@")[0].capitalize())
         contact_email = email['sender']
@@ -1600,6 +1647,11 @@ def get_emails_needing_replies_with_accounts(accounts):
             # Get email body
             body = extract_email_body(message['payload'])
             
+            # Skip Salesforce case notification emails
+            if is_salesforce_case_notification(body, subject):
+                logger.info(f"⏭️ Skipping Salesforce case notification email from {sender} - {subject}")
+                continue
+            
             email_data = {
                 'id': msg_id,
                 'threadId': thread_id,
@@ -1754,6 +1806,13 @@ def get_emails_needing_replies_with_accounts(accounts):
         # Sort emails by date to get the latest one
         emails_in_thread.sort(key=lambda x: x.get('date', ''), reverse=True)
         latest_email = emails_in_thread[0]  # Most recent email in this thread
+        
+        # Skip Salesforce case notification emails
+        latest_body = latest_email.get('body', '')
+        latest_subject = latest_email.get('subject', '')
+        if is_salesforce_case_notification(latest_body, latest_subject):
+            logger.info(f"⏭️ Skipping Salesforce case notification email in thread {thread_id} - {latest_subject}")
+            continue
         
         # Get full message data to check To/CC headers
         try:
