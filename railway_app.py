@@ -1574,25 +1574,32 @@ def reply_to_emails_with_accounts(accounts):
                                 logger.info(f"✅ Merchant requested to include merchanthelp@affirm.com (short affirmative response)")
             
             # Add merchanthelp@affirm.com to CC if requested
+            # IMPORTANT: Preserve all existing CC recipients when adding merchanthelp@affirm.com
             if wants_merchantcare:
+                # Parse existing CC recipients to preserve them
+                existing_cc_list = []
                 if cc_recipients:
-                    # Parse existing CC recipients
                     if isinstance(cc_recipients, str):
-                        cc_list = [cc.strip() for cc in cc_recipients.split(',') if cc.strip()]
+                        existing_cc_list = [cc.strip() for cc in cc_recipients.split(',') if cc.strip()]
                     else:
-                        cc_list = [cc.strip() for cc in cc_recipients if cc.strip()]
-                    
-                    # Add merchantcare if not already in the list
-                    if merchantcare_email.lower() not in [cc.lower() for cc in cc_list]:
-                        cc_list.append(merchantcare_email)
-                        cc_recipients = ', '.join(cc_list)
-                        logger.info(f"📧 Added merchanthelp@affirm.com to CC recipients: {cc_recipients}")
-                    else:
-                        logger.info(f"📧 merchanthelp@affirm.com already in CC recipients")
+                        existing_cc_list = [cc.strip() for cc in cc_recipients if cc.strip()]
+                    logger.info(f"📧 Existing CC recipients before adding merchanthelp: {existing_cc_list}")
+                
+                # Add merchanthelp@affirm.com if not already in the list
+                if merchantcare_email.lower() not in [cc.lower() for cc in existing_cc_list]:
+                    existing_cc_list.append(merchantcare_email)
+                    logger.info(f"📧 Added merchanthelp@affirm.com to existing CC list")
                 else:
-                    # No existing CC recipients, create new list
+                    logger.info(f"📧 merchanthelp@affirm.com already in CC recipients")
+                
+                # Update cc_recipients with all recipients (existing + merchanthelp)
+                if existing_cc_list:
+                    cc_recipients = ', '.join(sorted(existing_cc_list))
+                    logger.info(f"📧 Final CC recipients (preserving all existing): {cc_recipients}")
+                else:
+                    # Fallback: should not happen, but just in case
                     cc_recipients = merchantcare_email
-                    logger.info(f"📧 Added merchanthelp@affirm.com as CC recipient")
+                    logger.info(f"📧 Added merchanthelp@affirm.com as CC recipient (no existing recipients)")
             
             # Send threaded reply (include CC recipients if found)
             logger.info(f"📧 Sending reply email to {contact_email} for thread {thread_id}")
