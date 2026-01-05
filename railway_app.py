@@ -3599,9 +3599,32 @@ Keep the email under 130 words. Make it feel natural and human, not like marketi
 
 For all support, refer to customercare@affirm.com Only."""
 
+        # Default prompt for non-campaign emails
+        non_campaign_email_prompt_default = """{AFFIRM_VOICE_GUIDELINES}
+
+**TASK:** Generate a professional, Affirm-branded email response to {sender_name} who reached out but is not part of an active campaign. Politely direct them to merchantcare@affirm.com for merchant support and inquiries.
+
+**CONTEXT:**
+- Sender: {sender_name}
+- Recipient: Jake Morgan (Business Development)
+- Email Body: {email_body}
+
+**CRITICAL RULES:**
+1. **Be polite and professional** - acknowledge their outreach
+2. **Direct them to merchantcare@affirm.com** - this is the main purpose
+3. **Be helpful** - explain that Merchant Care can assist with their questions
+4. **Keep it brief** - under 100 words
+5. **Maintain Affirm brand voice** - smart, approachable, efficient
+
+**OUTPUT FORMAT:**
+- **Email Body:** [Your response in HTML format]
+
+For all merchant support, refer to merchantcare@affirm.com only."""
+
         # Try to get from database first (from prompt_versions table with version_letter = 'DEFAULT')
         new_email_prompt = None
         reply_email_prompt = None
+        non_campaign_email_prompt = None
         voice_guidelines = None
         
         if DB_AVAILABLE:
@@ -3623,9 +3646,11 @@ For all support, refer to customercare@affirm.com Only."""
                             new_email_prompt = content
                         elif prompt_type == 'reply-email':
                             reply_email_prompt = content
+                        elif prompt_type == 'non-campaign-email':
+                            non_campaign_email_prompt = content
                     
                     conn.close()
-                    logger.info(f"📝 Loaded prompts from database: new_email={bool(new_email_prompt)}, reply_email={bool(reply_email_prompt)}")
+                    logger.info(f"📝 Loaded prompts from database: new_email={bool(new_email_prompt)}, reply_email={bool(reply_email_prompt)}, non_campaign_email={bool(non_campaign_email_prompt)}")
             except Exception as e:
                 logger.warning(f"Could not load prompts from database: {e}")
         
@@ -3634,12 +3659,15 @@ For all support, refer to customercare@affirm.com Only."""
             new_email_prompt = os.getenv('NEW_EMAIL_PROMPT_TEMPLATE', new_email_prompt_default)
         if not reply_email_prompt:
             reply_email_prompt = os.getenv('REPLY_EMAIL_PROMPT_TEMPLATE', reply_email_prompt_default)
+        if not non_campaign_email_prompt:
+            non_campaign_email_prompt = os.getenv('NON_CAMPAIGN_EMAIL_PROMPT_TEMPLATE', non_campaign_email_prompt_default)
         if not voice_guidelines:
             voice_guidelines = os.getenv('AFFIRM_VOICE_GUIDELINES', AFFIRM_VOICE_GUIDELINES)
         
         # Update environment variables to keep them in sync
         os.environ['NEW_EMAIL_PROMPT_TEMPLATE'] = new_email_prompt
         os.environ['REPLY_EMAIL_PROMPT_TEMPLATE'] = reply_email_prompt
+        os.environ['NON_CAMPAIGN_EMAIL_PROMPT_TEMPLATE'] = non_campaign_email_prompt
         os.environ['AFFIRM_VOICE_GUIDELINES'] = voice_guidelines
         
         return jsonify({
@@ -3647,7 +3675,8 @@ For all support, refer to customercare@affirm.com Only."""
             'prompts': {
                 'voice_guidelines': voice_guidelines,
                 'new_email_prompt': new_email_prompt,
-                'reply_email_prompt': reply_email_prompt
+                'reply_email_prompt': reply_email_prompt,
+                'non_campaign_email_prompt': non_campaign_email_prompt
             },
             'endpoints': {
                 'voice_guidelines': 'Used in all email prompts',
@@ -3691,7 +3720,8 @@ def update_prompt():
         # Map prompt_key to prompt_type and endpoint
         prompt_type_map = {
             'NEW_EMAIL_PROMPT_TEMPLATE': ('new-email', '/api/workato/send-new-email'),
-            'REPLY_EMAIL_PROMPT_TEMPLATE': ('reply-email', '/api/workato/reply-to-emails')
+            'REPLY_EMAIL_PROMPT_TEMPLATE': ('reply-email', '/api/workato/reply-to-emails'),
+            'NON_CAMPAIGN_EMAIL_PROMPT_TEMPLATE': ('non-campaign-email', '/api/workato/check-non-campaign-emails')
         }
         
         if prompt_key not in prompt_type_map:
@@ -3964,10 +3994,10 @@ def create_prompt_version():
                 'message': 'Missing required fields: version_name, prompt_type, prompt_content'
             }), 400
         
-        if prompt_type not in ['new-email', 'reply-email']:
+        if prompt_type not in ['new-email', 'reply-email', 'non-campaign-email']:
             return jsonify({
                 'status': 'error',
-                'message': 'prompt_type must be "new-email" or "reply-email"'
+                'message': 'prompt_type must be "new-email", "reply-email", or "non-campaign-email"'
             }), 400
         
         conn = get_db_connection()
@@ -4005,8 +4035,10 @@ def create_prompt_version():
         # Determine endpoint path
         if prompt_type == 'new-email':
             endpoint_path = f'/api/workato/send-new-email-version-{version_letter.lower()}'
-        else:  # reply-email
+        elif prompt_type == 'reply-email':
             endpoint_path = f'/api/workato/reply-to-emails-version-{version_letter.lower()}'
+        else:  # non-campaign-email (no versioned endpoints for this type)
+            endpoint_path = f'/api/workato/check-non-campaign-emails'
         
         # Insert version into database
         cursor.execute('''
@@ -6750,44 +6782,67 @@ def workato_check_non_campaign_emails():
                 # Extract email body for context
                 email_body = extract_email_body(message['payload'])
                 
-                # Generate auto-reply message directing to merchantcare@affirm.com
-                auto_reply_content = f"""<p>Thank you for reaching out to Affirm.</p>
-
-<p>For merchant support and inquiries, please contact our Merchant Care team directly at <a href="mailto:merchantcare@affirm.com">merchantcare@affirm.com</a>.</p>
-
-<p>They will be able to assist you with your questions and concerns.</p>
-
-<p>Best regards,<br>
-Jake Morgan<br>
-Business Development<br>
-Affirm</p>"""
+                # Get non-campaign email prompt from database or use default
+                non_campaign_prompt = None
+                if DB_AVAILABLE:
+                    try:
+                        conn = get_db_connection()
+                        if conn:
+                            cursor = conn.cursor()
+                            cursor.execute('''
+                                SELECT prompt_content
+                                FROM prompt_versions
+                                WHERE prompt_type = 'non-campaign-email' AND version_letter = 'DEFAULT'
+                            ''')
+                            row = cursor.fetchone()
+                            if row:
+                                non_campaign_prompt = row[0]
+                            conn.close()
+                    except Exception as e:
+                        logger.warning(f"Could not load non-campaign email prompt from database: {e}")
                 
-                # Send auto-reply
+                # Fall back to environment variable or default
+                if not non_campaign_prompt:
+                    non_campaign_prompt = os.getenv('NON_CAMPAIGN_EMAIL_PROMPT_TEMPLATE')
+                
+                # Generate AI response using the non-campaign email prompt
                 try:
                     sender_name = sender.split('<')[0].strip() if '<' in sender else sender_email_original.split('@')[0].capitalize()
                     if not sender_name or sender_name == sender_email_original:
                         sender_name = "there"
                     
+                    logger.info(f"🤖 Generating AI response for non-campaign email from {sender_email_original}")
+                    ai_response = generate_ai_response(
+                        email_body=email_body,
+                        sender_name=sender_name,
+                        recipient_name="Jake Morgan",
+                        conversation_history=None,
+                        prompt_template=non_campaign_prompt
+                    )
+                    logger.info(f"✅ AI response generated for non-campaign email from {sender_email_original}")
+                    
+                    # Send auto-reply with AI-generated content
                     email_result = send_threaded_email_reply(
                         to_email=sender_email_original,
                         subject=subject,
-                        reply_content=auto_reply_content,
+                        reply_content=ai_response,
                         original_message_id=msg_id,
                         sender_name="Jake Morgan",
                         cc_recipients=None
                     )
                     
                     if isinstance(email_result, dict) and email_result.get('status') == 'success':
-                        logger.info(f"✅ Sent auto-reply to non-campaign sender {sender_email_original} (thread {thread_id})")
+                        logger.info(f"✅ Sent AI-generated auto-reply to non-campaign sender {sender_email_original} (thread {thread_id})")
                         if thread_id:
                             processed_threads.add(thread_id)
                     else:
                         logger.warning(f"⚠️ Failed to send auto-reply to {sender_email_original}: {email_result}")
                         
                 except Exception as reply_error:
-                    logger.error(f"❌ Error sending auto-reply to {sender_email_original}: {reply_error}")
+                    logger.error(f"❌ Error generating or sending AI reply to {sender_email_original}: {reply_error}")
                     import traceback
                     logger.error(traceback.format_exc())
+                    # Continue processing other emails even if one fails
                 
             except Exception as e:
                 logger.error(f"❌ Error processing message {msg.get('id', 'unknown')}: {e}")
