@@ -667,8 +667,9 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     4. **ONLY GATHER INFORMATION - DO NOT PROVIDE SOLUTIONS** - Your role is to collect details, not to troubleshoot or provide step-by-step instructions
     5. **Ask for specific information** needed to help them (e.g., store URL, error messages, screenshots, theme name, etc.)
     6. **Do NOT include troubleshooting steps, workarounds, or solutions** - only ask questions to gather information
-    7. **Direct them to merchantcare@affirm.com** for actual solutions and support
-    8. **Keep under 150 words** and feel natural, not automated
+    7. **Ask if they want to include merchantcare@affirm.com in this email thread** - Add a question like "Would you like me to include merchantcare@affirm.com in this thread so they can help with your issue?"
+    8. **Direct them to merchantcare@affirm.com** for actual solutions and support
+    9. **Keep under 150 words** and feel natural, not automated
     
 
     **OUTPUT FORMAT:**
@@ -1512,6 +1513,86 @@ def reply_to_emails_with_accounts(accounts):
             logger.info(f"🤖 Generating AI response for thread {thread_id} from {contact_email}")
             ai_response = generate_ai_response(email['body'], sender_name, contact_name, conversation_content)
             logger.info(f"✅ AI response generated for thread {thread_id}")
+            
+            # Check if merchant wants to include merchantcare@affirm.com in the thread
+            # Look for affirmative responses in the latest email body
+            merchantcare_email = "merchantcare@affirm.com"
+            wants_merchantcare = False
+            
+            if email.get('body'):
+                email_body_lower = email['body'].lower()
+                # Check for affirmative responses about including merchantcare
+                affirmative_patterns = [
+                    'yes, include merchantcare',
+                    'yes include merchantcare',
+                    'yes, add merchantcare',
+                    'yes add merchantcare',
+                    'yes, cc merchantcare',
+                    'yes cc merchantcare',
+                    'yes, please include merchantcare',
+                    'yes please include merchantcare',
+                    'sure, include merchantcare',
+                    'sure include merchantcare',
+                    'yes, include them',
+                    'yes include them',
+                    'yes, add them',
+                    'yes add them',
+                    'yes, cc them',
+                    'yes cc them',
+                    'yes, please',
+                    'yes please',
+                    'yes.',
+                    'yes!',
+                    'yeah',
+                    'yep',
+                    'sure',
+                    'ok',
+                    'okay',
+                    'that would be helpful',
+                    'that would help',
+                    'please do',
+                    'go ahead'
+                ]
+                
+                # Check if any affirmative pattern is found
+                for pattern in affirmative_patterns:
+                    if pattern in email_body_lower:
+                        wants_merchantcare = True
+                        logger.info(f"✅ Merchant requested to include merchantcare@affirm.com (detected pattern: '{pattern}')")
+                        break
+                
+                # Also check if they're replying to a question about including merchantcare
+                # Look for context clues in conversation history
+                if not wants_merchantcare and conversation_content:
+                    conversation_lower = conversation_content.lower()
+                    # Check if previous message asked about including merchantcare
+                    if 'include merchantcare' in conversation_lower or 'include merchant care' in conversation_lower:
+                        # If the latest message is short and affirmative, likely a yes
+                        if len(email['body'].strip()) < 50:  # Short response likely means yes/no
+                            if any(word in email_body_lower for word in ['yes', 'yeah', 'yep', 'sure', 'ok', 'okay']):
+                                wants_merchantcare = True
+                                logger.info(f"✅ Merchant requested to include merchantcare@affirm.com (short affirmative response)")
+            
+            # Add merchantcare@affirm.com to CC if requested
+            if wants_merchantcare:
+                if cc_recipients:
+                    # Parse existing CC recipients
+                    if isinstance(cc_recipients, str):
+                        cc_list = [cc.strip() for cc in cc_recipients.split(',') if cc.strip()]
+                    else:
+                        cc_list = [cc.strip() for cc in cc_recipients if cc.strip()]
+                    
+                    # Add merchantcare if not already in the list
+                    if merchantcare_email.lower() not in [cc.lower() for cc in cc_list]:
+                        cc_list.append(merchantcare_email)
+                        cc_recipients = ', '.join(cc_list)
+                        logger.info(f"📧 Added merchantcare@affirm.com to CC recipients: {cc_recipients}")
+                    else:
+                        logger.info(f"📧 merchantcare@affirm.com already in CC recipients")
+                else:
+                    # No existing CC recipients, create new list
+                    cc_recipients = merchantcare_email
+                    logger.info(f"📧 Added merchantcare@affirm.com as CC recipient")
             
             # Send threaded reply (include CC recipients if found)
             logger.info(f"📧 Sending reply email to {contact_email} for thread {thread_id}")
@@ -3724,8 +3805,9 @@ Keep the email under 130 words. Make it feel natural and human, not like marketi
 4. **ONLY GATHER INFORMATION - DO NOT PROVIDE SOLUTIONS** - Your role is to collect details, not to troubleshoot or provide step-by-step instructions
 5. **Ask for specific information** needed to help them (e.g., store URL, error messages, screenshots, theme name, etc.)
 6. **Do NOT include troubleshooting steps, workarounds, or solutions** - only ask questions to gather information
-7. **Direct them to merchantcare@affirm.com** for actual solutions and support
-8. **Keep under 150 words** and feel natural, not automated
+7. **Ask if they want to include merchantcare@affirm.com in this email thread** - Add a question like "Would you like me to include merchantcare@affirm.com in this thread so they can help with your issue?"
+8. **Direct them to merchantcare@affirm.com** for actual solutions and support
+9. **Keep under 150 words** and feel natural, not automated
 
 **OUTPUT FORMAT:**
 - **Subject Line:** [Concise subject]
