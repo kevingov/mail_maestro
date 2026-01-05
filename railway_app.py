@@ -2627,6 +2627,10 @@ def prompts_ui():
                         <span class="dot"></span>
                         Reply Email Prompts
                     </div>
+                    <div class="prompt-type-item" onclick="selectPromptType('non-campaign-email', event)">
+                        <span class="dot"></span>
+                        Non-Campaign Email Prompts
+                    </div>
                     <div class="prompt-type-item" onclick="selectPromptType('voice-guidelines', event)">
                         <span class="dot"></span>
                         Voice Guidelines
@@ -3008,6 +3012,9 @@ def prompts_ui():
                         'reply-email': [
                             { id: 1, name: 'Default Version', preview: (promptsData_result.prompts.reply_email_prompt || '').substring(0, 100) || 'Default reply email prompt template...', status: 'active', endpoint: '/api/workato/reply-to-emails', key: 'REPLY_EMAIL_PROMPT_TEMPLATE', content: promptsData_result.prompts.reply_email_prompt || '', version_letter: null }
                         ],
+                        'non-campaign-email': [
+                            { id: 1, name: 'Default Version', preview: (promptsData_result.prompts.non_campaign_email_prompt || '').substring(0, 100) || 'Default non-campaign email prompt template...', status: 'active', endpoint: '/api/workato/check-non-campaign-emails', key: 'NON_CAMPAIGN_EMAIL_PROMPT_TEMPLATE', content: promptsData_result.prompts.non_campaign_email_prompt || '', version_letter: null }
+                        ],
                         'voice-guidelines': [
                             { id: 1, name: 'Default Guidelines', preview: (promptsData_result.prompts.voice_guidelines || '').substring(0, 100) || 'Default voice guidelines...', status: 'active', endpoint: 'Global', key: 'AFFIRM_VOICE_GUIDELINES', content: promptsData_result.prompts.voice_guidelines || '', version_letter: null }
                         ]
@@ -3023,7 +3030,7 @@ def prompts_ui():
                                 preview: (version.prompt_content || '').substring(0, 100) || 'No preview...',
                                 status: version.status || 'draft',
                                 endpoint: version.endpoint_path,
-                                key: `${version.prompt_type.toUpperCase()}_PROMPT_TEMPLATE_${version.version_letter}`,
+                                key: `${version.prompt_type.toUpperCase().replace('-', '_')}_PROMPT_TEMPLATE_${version.version_letter}`,
                                 content: version.prompt_content || '',
                                 version_letter: version.version_letter
                             };
@@ -3032,6 +3039,8 @@ def prompts_ui():
                                 promptsData['new-email'].push(versionData);
                             } else if (version.prompt_type === 'reply-email') {
                                 promptsData['reply-email'].push(versionData);
+                            } else if (version.prompt_type === 'non-campaign-email') {
+                                promptsData['non-campaign-email'].push(versionData);
                             }
                         });
                     }
@@ -3043,6 +3052,7 @@ def prompts_ui():
                     promptsData = {
                         'new-email': [],
                         'reply-email': [],
+                        'non-campaign-email': [],
                         'voice-guidelines': []
                     };
                 }
@@ -3052,6 +3062,7 @@ def prompts_ui():
                 promptsData = {
                     'new-email': [],
                     'reply-email': [],
+                    'non-campaign-email': [],
                     'voice-guidelines': []
                 };
             }
@@ -3376,7 +3387,7 @@ def prompts_ui():
             
             // Skip test for voice guidelines
             if (currentPromptType === 'voice-guidelines') {
-                alert('Cannot test voice guidelines. Please use a new-email or reply-email prompt.');
+                alert('Cannot test voice guidelines. Please use a new-email, reply-email, or non-campaign-email prompt.');
                 return;
             }
             
@@ -3389,10 +3400,10 @@ def prompts_ui():
             testPanel.style.display = 'block';
             
             // Determine prompt type
-            const promptType = currentPromptType === 'new-email' ? 'new-email' : 'reply-email';
+            const promptType = currentPromptType === 'new-email' ? 'new-email' : (currentPromptType === 'non-campaign-email' ? 'non-campaign-email' : 'reply-email');
             
-            // For reply-email, show input box and wait for user input
-            if (promptType === 'reply-email') {
+            // For reply-email and non-campaign-email, show input box and wait for user input
+            if (promptType === 'reply-email' || promptType === 'non-campaign-email') {
                 replyInputSection.style.display = 'block';
                 testContent.innerHTML = 'Enter a message above and click "Generate Reply" to test the prompt.';
                 replyInput.value = '';
@@ -3400,6 +3411,7 @@ def prompts_ui():
                 // Store prompt info for later use
                 testContent.dataset.promptId = promptId;
                 testContent.dataset.promptContent = prompt.content || '';
+                testContent.dataset.promptType = promptType;
             } else {
                 // For new-email, generate immediately
                 replyInputSection.style.display = 'none';
@@ -3447,6 +3459,7 @@ def prompts_ui():
             // Get stored prompt info
             const promptId = testContent.dataset.promptId;
             const promptContent = testContent.dataset.promptContent || '';
+            const promptType = testContent.dataset.promptType || 'reply-email';
             
             if (!promptId) {
                 alert('Prompt information not found. Please click "Test" again.');
@@ -3460,7 +3473,7 @@ def prompts_ui():
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        prompt_type: 'reply-email',
+                        prompt_type: promptType,
                         prompt_content: promptContent,
                         conversation_context: messageToReplyTo
                     })
@@ -4780,8 +4793,8 @@ def generate_sample_response():
                 'merchant_name': merchant_name
             })
             
-        elif prompt_type == 'reply-email':
-            # Generate reply email sample
+        elif prompt_type == 'reply-email' or prompt_type == 'non-campaign-email':
+            # Generate reply email sample (works for both reply-email and non-campaign-email)
             # Use a sample email body if no conversation context provided
             sample_email_body = conversation_context or f"Hi Jake,\n\nI'm interested in learning more about Affirm. Can you tell me more about how it works?\n\nThanks,\n{merchant_name}"
             
@@ -4797,7 +4810,7 @@ def generate_sample_response():
             email_body = ai_response
             
             responses.append({
-                'type': 'reply-email',
+                'type': prompt_type,
                 'subject': f"Re: Your Message",
                 'body': email_body,
                 'merchant_name': merchant_name
