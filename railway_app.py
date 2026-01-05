@@ -763,9 +763,30 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
             logger.warning(f"⚠️ Custom prompt template missing variable {e}, using default")
             prompt_template = None
     
-    # If no custom template provided, try to get from environment variable
+    # If no custom template provided, try to get from database first, then environment variable
     if not prompt_template:
-        env_prompt_template = os.getenv('NEW_EMAIL_PROMPT_TEMPLATE')
+        # First, try to get from database (most up-to-date)
+        db_prompt_template = None
+        if DB_AVAILABLE:
+            try:
+                conn = get_db_connection()
+                if conn:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        SELECT prompt_content
+                        FROM prompt_versions
+                        WHERE prompt_type = 'new-email' AND version_letter = 'DEFAULT'
+                    ''')
+                    row = cursor.fetchone()
+                    if row:
+                        db_prompt_template = row[0]
+                    conn.close()
+            except Exception as db_error:
+                logger.debug(f"Could not load prompt from database: {db_error}")
+        
+        # Use database prompt if available, otherwise fall back to environment variable
+        env_prompt_template = db_prompt_template or os.getenv('NEW_EMAIL_PROMPT_TEMPLATE')
+        
         if env_prompt_template:
             try:
                 prompt = env_prompt_template.format(
@@ -781,12 +802,14 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
                     account_employees_str=account_employees_str,
                     account_location_str=account_location_str
                 )
-                prompt_source = "env_variable"
+                prompt_source = "database" if db_prompt_template else "env_variable"
                 prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
-                logger.info(f"📝 PROMPT USED: NEW_EMAIL_PROMPT_TEMPLATE (env) | Hash: {prompt_hash} | Merchant: {merchant_name}")
+                logger.info(f"📝 PROMPT USED: NEW_EMAIL_PROMPT_TEMPLATE ({prompt_source}) | Hash: {prompt_hash} | Merchant: {merchant_name}")
             except KeyError as e:
                 logger.warning(f"⚠️ NEW_EMAIL_PROMPT_TEMPLATE missing variable {e}, using default")
                 prompt_template = None
+        else:
+            prompt_template = None
     
     # Default prompt if no custom template or formatting failed
     if not prompt_template:
