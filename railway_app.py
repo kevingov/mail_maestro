@@ -692,6 +692,49 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
                                    recipient_email="recipient@email.com", 
                                    sender_name=sender_name)
 
+def remove_existing_signature(email_content, sender_name):
+    """
+    Remove any existing signature from email content before adding standardized signature.
+    Looks for common signature patterns like "Thanks,", "Best regards,", "Sincerely," etc.
+    followed by the sender name. Handles both plain text and HTML formats.
+    """
+    import re
+    
+    # Normalize line breaks - convert <br> and <br/> to newlines for easier pattern matching
+    normalized_content = email_content.replace('<br>', '\n').replace('<br/>', '\n').replace('<br />', '\n')
+    
+    # Common signature closings (case-insensitive)
+    # Pattern: closing word (Thanks, Best regards, etc.) followed by sender name
+    signature_patterns = [
+        # Pattern: "Thanks,\nJake Morgan" or "Thanks, Jake Morgan"
+        r'(?i)(\n\s*(Thanks|Thank you),?\s*\n\s*' + re.escape(sender_name) + r'[^\n]*\s*$)',
+        # Pattern: "Best regards,\nJake Morgan" or "Best regards, Jake Morgan"
+        r'(?i)(\n\s*Best\s+regards,?\s*\n\s*' + re.escape(sender_name) + r'[^\n]*\s*$)',
+        # Pattern: "Sincerely,\nJake Morgan"
+        r'(?i)(\n\s*Sincerely,?\s*\n\s*' + re.escape(sender_name) + r'[^\n]*\s*$)',
+        # Pattern: "Regards,\nJake Morgan"
+        r'(?i)(\n\s*Regards,?\s*\n\s*' + re.escape(sender_name) + r'[^\n]*\s*$)',
+        # Pattern: "Best,\nJake Morgan"
+        r'(?i)(\n\s*Best,?\s*\n\s*' + re.escape(sender_name) + r'[^\n]*\s*$)',
+        # Pattern: Just the name at the end (if it's on its own line)
+        r'(?i)(\n\s*' + re.escape(sender_name) + r'\s*$)',
+        # Pattern: "Thanks, Jake Morgan" (on same line)
+        r'(?i)(\n\s*(Thanks|Thank you|Best regards|Sincerely|Regards|Best),?\s+' + re.escape(sender_name) + r'\s*$)',
+    ]
+    
+    cleaned_content = normalized_content
+    for pattern in signature_patterns:
+        cleaned_content = re.sub(pattern, '', cleaned_content, flags=re.MULTILINE | re.DOTALL)
+    
+    # Clean up any extra newlines at the end
+    cleaned_content = cleaned_content.rstrip()
+    
+    # Convert back to original format (if it had <br> tags, preserve them in the cleaned version)
+    # Since we're adding our signature with <br> tags, we'll keep it as plain text for now
+    # The format_pardot_email function will convert \n to <br>
+    
+    return cleaned_content
+
 def generate_message(merchant_name, last_activity, merchant_industry, merchant_website, sender_name, account_description="", account_revenue=0, account_employees=0, account_location="", contact_title="", account_gmv=0, prompt_template=None):
     """
     Creates an Affirm-branded outreach email using AI with detailed Salesforce data.
@@ -4430,9 +4473,12 @@ def handle_versioned_send_new_email(version_letter):
             prompt_template=prompt_content
         )
         
-        # Add email signature with AI Business Development title
+        # Remove any existing signature from AI-generated content
+        email_content_cleaned = remove_existing_signature(email_content, sender_name)
+        
+        # Add standardized email signature with AI Business Development title
         signature = f"\n\nBest regards,<br>{sender_name}<br>AI Business Development<br>Affirm"
-        email_content_with_signature = email_content + signature
+        email_content_with_signature = email_content_cleaned + signature
         
         # Format and send email
         formatted_email = format_pardot_email(
@@ -6390,9 +6436,12 @@ def workato_send_new_email():
             account_gmv=account_gmv
         )
         
-        # Add email signature with AI Business Development title
+        # Remove any existing signature from AI-generated content
+        email_content_cleaned = remove_existing_signature(email_content, sender_name)
+        
+        # Add standardized email signature with AI Business Development title
         signature = f"\n\nBest regards,<br>{sender_name}<br>AI Business Development<br>Affirm"
-        email_content_with_signature = email_content + signature
+        email_content_with_signature = email_content_cleaned + signature
         
         # Format email with HTML template
         formatted_email = format_pardot_email(
