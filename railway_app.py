@@ -758,13 +758,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
             
             prompt_source = "custom_template"
             prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
-            logger.info(f"📝 PROMPT USED FOR NEW EMAIL:")
-            logger.info(f"   Source: Custom prompt template (versioned endpoint)")
-            logger.info(f"   Original Prompt Length: {len(prompt_template)} characters")
-            logger.info(f"   Final Prompt Length: {len(prompt)} characters")
-            logger.info(f"   Prompt Hash: {prompt_hash}")
-            logger.info(f"   Merchant: {merchant_name}")
-            logger.info(f"   Full Prompt Content:\n{'='*80}\n{prompt}\n{'='*80}")
+            logger.info(f"📝 PROMPT USED: Custom template (versioned) | Hash: {prompt_hash} | Merchant: {merchant_name}")
         except KeyError as e:
             logger.warning(f"⚠️ Custom prompt template missing variable {e}, using default")
             prompt_template = None
@@ -789,14 +783,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
                 )
                 prompt_source = "env_variable"
                 prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
-                logger.info(f"📝 PROMPT USED FOR NEW EMAIL:")
-                logger.info(f"   Source: NEW_EMAIL_PROMPT_TEMPLATE environment variable")
-                logger.info(f"   Endpoint: /api/workato/send-new-email (Default)")
-                logger.info(f"   Prompt Type: new-email")
-                logger.info(f"   Prompt Hash: {prompt_hash}")
-                logger.info(f"   Prompt Length: {len(prompt)} characters")
-                logger.info(f"   Merchant: {merchant_name}")
-                logger.info(f"   Full Prompt Content:\n{'='*80}\n{prompt}\n{'='*80}")
+                logger.info(f"📝 PROMPT USED: NEW_EMAIL_PROMPT_TEMPLATE (env) | Hash: {prompt_hash} | Merchant: {merchant_name}")
             except KeyError as e:
                 logger.warning(f"⚠️ NEW_EMAIL_PROMPT_TEMPLATE missing variable {e}, using default")
                 prompt_template = None
@@ -853,8 +840,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
     # Log default prompt usage
     if prompt_source == "default":
         prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
-        logger.info(f"📝 PROMPT USED FOR NEW EMAIL:")
-        logger.info(f"   Source: Default prompt template (hardcoded)")
+        logger.info(f"📝 PROMPT USED: Default (hardcoded) | Hash: {prompt_hash} | Merchant: {merchant_name}")
         logger.info(f"   Endpoint: /api/workato/send-new-email (Default)")
         logger.info(f"   Prompt Type: new-email")
         logger.info(f"   Prompt Hash: {prompt_hash}")
@@ -869,8 +855,6 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
         
         client = OpenAI(api_key=api_key)
         
-        logger.info(f"🤖 Using OpenAI model: {OPENAI_MODEL}")
-        logger.info(f"🤖 Generating new email message...")
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[{"role": "user", "content": prompt}]
@@ -6020,18 +6004,11 @@ def check_if_email_already_sent(contact_email, activities=None):
 def workato_send_new_email():
     """Workato endpoint for sending new personalized emails - replicates send_new_email from 2025_hackathon.py."""
     try:
-        # Add debugging for request data
-        logger.info(f"🔍 DEBUG: Received request to send-new-email")
-        logger.info(f"🔍 DEBUG: Content-Type: {request.content_type}")
-        logger.info(f"🔍 DEBUG: Is JSON: {request.is_json}")
-        logger.info(f"🔍 DEBUG: Raw data: {request.get_data()}")
-        
         try:
             data = request.get_json()
-            logger.info(f"🔍 DEBUG: Parsed JSON data: {data}")
         except Exception as json_error:
             # Try to parse manually if standard JSON parsing fails
-            logger.warning(f"⚠️ Standard JSON parsing failed: {json_error}, attempting manual parse")
+            logger.debug(f"⚠️ Standard JSON parsing failed: {json_error}, attempting manual parse")
             try:
                 import json
                 import re
@@ -6130,7 +6107,7 @@ def workato_send_new_email():
                                     raw_data = raw_data[:activities_start] + new_activities + raw_data[value_end + 1:]
                                     logger.info(f"🔍 Fixed activities field (length: {len(old_activities)} -> {len(new_activities)})")
                                 except json.JSONDecodeError as e:
-                                    logger.warning(f"⚠️ Could not fix activities field to valid JSON: {e}")
+                                    logger.debug(f"⚠️ Could not fix activities field to valid JSON: {e}")
                                     logger.debug(f"⚠️ Activities string preview: {activities_str[:300]}")
                                     logger.debug(f"⚠️ Activities fixed preview: {activities_fixed[:300]}")
                                     
@@ -6179,24 +6156,24 @@ def workato_send_new_email():
                                                 if after_newline.startswith('}'):
                                                     # Perfect - activities is the last field, replace up to the newline
                                                     raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[next_newline:]
-                                                    logger.info(f"🔍 Removed malformed activities field by finding newline before closing brace, set to empty array")
+                                                    logger.debug(f"🔍 Removed malformed activities field by finding newline before closing brace, set to empty array")
                                                 else:
                                                     # There might be more content, but let's still replace up to the newline
                                                     # This should work since activities is typically the last field
                                                     raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[next_newline:]
-                                                    logger.info(f"🔍 Removed malformed activities field by finding newline, set to empty array")
+                                                    logger.debug(f"🔍 Removed malformed activities field by finding newline, set to empty array")
                                             else:
                                                 # No newline found, try to find closing brace
                                                 next_brace = raw_data.find('}', search_start)
                                                 if next_brace != -1:
                                                     raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[next_brace:]
-                                                    logger.info(f"🔍 Removed malformed activities field by finding closing brace, set to empty array")
+                                                    logger.debug(f"🔍 Removed malformed activities field by finding closing brace, set to empty array")
                                                 else:
                                                     # Ultimate fallback: just find next newline from activities_start
                                                     next_newline_fallback = raw_data.find('\n', activities_start)
                                                     if next_newline_fallback != -1:
                                                         raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[next_newline_fallback:]
-                                                        logger.info(f"🔍 Removed malformed activities field using fallback newline search, set to empty array")
+                                                        logger.debug(f"🔍 Removed malformed activities field using fallback newline search, set to empty array")
                                             
                                             logger.debug(f"🔍 After replacement preview: ...{raw_data[max(0, activities_start-30):activities_start+80]}...")
                                             logger.debug(f"🔍 Full JSON after replacement ends with: ...{raw_data[-100:]}")
@@ -6213,7 +6190,7 @@ def workato_send_new_email():
                                                 if cleanup_newline != -1:
                                                     # Replace everything from activities_start to the newline
                                                     raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[cleanup_newline:]
-                                                    logger.info(f"🔍 Cleaned up leftover activities data after replacement")
+                                                    logger.debug(f"🔍 Cleaned up leftover activities data after replacement")
                                                     logger.debug(f"🔍 After cleanup preview: ...{raw_data[max(0, activities_start-30):activities_start+80]}...")
                                         
                                         # Additional fallback: if the character-by-character scan didn't work correctly,
@@ -6233,14 +6210,13 @@ def workato_send_new_email():
                                                     if next_newline != -1:
                                                         # Replace everything from activities_start to the newline
                                                         raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[next_newline:]
-                                                        logger.info(f"🔍 Fixed activities field replacement - removed leftover data")
+                                                        logger.debug(f"🔍 Fixed activities field replacement - removed leftover data")
                                                         logger.debug(f"🔍 After fix preview: ...{raw_data[max(0, activities_start-30):activities_start+80]}...")
                 
                 # Try to parse the fixed JSON
                 try:
                     data = json.loads(raw_data)
-                    logger.info(f"🔍 DEBUG: Manually parsed JSON data successfully")
-                    logger.debug(f"🔍 Parsed data keys: {list(data.keys()) if data else 'None'}")
+                    logger.debug(f"🔍 Manually parsed JSON data successfully")
                     # Data is successfully parsed, continue with normal processing
                 except json.JSONDecodeError as final_error:
                     logger.error(f"❌ Final JSON parse failed after activities fix: {final_error}")
@@ -6294,10 +6270,7 @@ def workato_send_new_email():
                 "timestamp": datetime.datetime.now().isoformat()
             }), 400
         
-        logger.info(f"✅ Data successfully parsed. Keys: {list(data.keys()) if isinstance(data, dict) else 'N/A'}")
-        
-        logger.info(f"📧 Workato triggered send_new_email at {datetime.datetime.now().isoformat()}")
-        logger.info(f"📊 Processing contact data from Workato")
+        # Data successfully parsed, continue processing
         
         # Extract contact information from Workato request
         contact_name = data.get('contact_name', '')
