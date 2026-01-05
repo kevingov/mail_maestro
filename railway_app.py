@@ -668,7 +668,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     5. **Ask for specific information** needed to help them (e.g., store URL, error messages, screenshots, theme name, etc.)
     6. **Do NOT include troubleshooting steps, workarounds, or solutions** - only ask questions to gather information
     7. **Ask if they want to include merchantcare@affirm.com in this email thread** - Add a question like "Would you like me to include merchantcare@affirm.com in this thread so they can help with your issue?"
-    8. **Direct them to merchantcare@affirm.com** for actual solutions and support
+    8. **DO NOT suggest emailing merchantcare@affirm.com directly** - If you're already offering to CC merchantcare@affirm.com in the thread, do NOT also suggest they email merchantcare@affirm.com directly. Only mention one option.
     9. **Keep under 150 words** and feel natural, not automated
     
 
@@ -3806,7 +3806,7 @@ Keep the email under 130 words. Make it feel natural and human, not like marketi
 5. **Ask for specific information** needed to help them (e.g., store URL, error messages, screenshots, theme name, etc.)
 6. **Do NOT include troubleshooting steps, workarounds, or solutions** - only ask questions to gather information
 7. **Ask if they want to include merchantcare@affirm.com in this email thread** - Add a question like "Would you like me to include merchantcare@affirm.com in this thread so they can help with your issue?"
-8. **Direct them to merchantcare@affirm.com** for actual solutions and support
+8. **DO NOT suggest emailing merchantcare@affirm.com directly** - If you're already offering to CC merchantcare@affirm.com in the thread, do NOT also suggest they email merchantcare@affirm.com directly. Only mention one option.
 9. **Keep under 150 words** and feel natural, not automated
 
 **OUTPUT FORMAT:**
