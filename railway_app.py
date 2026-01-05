@@ -847,7 +847,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
 
     **Include in the Email:**
     - **Subject Line**: Under 50 characters, straightforward and relevant
-    - **Opening Line**: Greet the merchant by name and acknowledge that integration is complete
+    - **Opening Line**: Greet the merchant by name and acknowledge that integration is almost complete
     - **Body**: 
         - Reiterate the value of Affirm to their specific industry or customer base
         - Reference their business context (size, industry, etc.) if relevant
@@ -3589,7 +3589,7 @@ def get_prompts():
 
 **Include in the Email:**
 - **Subject Line**: Under 50 characters, straightforward and relevant
-- **Opening Line**: Greet the merchant by name and acknowledge that integration is complete
+- **Opening Line**: Greet the merchant by name and acknowledge that integration is almost complete
 - **Body**: 
     - Reiterate the value of Affirm to their specific industry or customer base
     - Reference their business context (size, industry, etc.) if relevant
