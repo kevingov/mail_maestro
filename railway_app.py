@@ -818,7 +818,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
         prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
     
-    Generate a **professional, Affirm-branded business email** to re-engage {merchant_name}, a merchant in the {merchant_industry_str} industry, who has completed technical integration with Affirm but has **not yet launched**. The goal is to encourage them to go live — without offering a meeting or call.
+    Generate a **professional, Affirm-branded business email** to re-engage {merchant_name}, a merchant in the {merchant_industry_str} industry, who has not completed the integration with Affirm and has **not yet launched**. The goal is to encourage them to complete the integration — without offering a meeting or call.
 
     **Context:**
     - Contact Name: {merchant_name}
@@ -847,7 +847,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
 
     **Include in the Email:**
     - **Subject Line**: Under 50 characters, straightforward and relevant
-    - **Opening Line**: Greet the merchant by name and acknowledge that integration is almost complete
+    - **Opening Line**: Greet the merchant by name and acknowledge that integration needs to be completed
     - **Body**: 
         - Reiterate the value of Affirm to their specific industry or customer base
         - Reference their business context (size, industry, etc.) if relevant
@@ -3560,7 +3560,7 @@ def get_prompts():
     """Get all current prompts (from database first, then environment variables, then defaults)."""
     try:
         # Default prompt templates (extracted from code)
-        new_email_prompt_default = """Generate a **professional, Affirm-branded business email** to re-engage {merchant_name}, a merchant in the {merchant_industry_str} industry, who has completed technical integration with Affirm but has **not yet launched**. The goal is to encourage them to go live — without offering a meeting or call.
+        new_email_prompt_default = """Generate a **professional, Affirm-branded business email** to re-engage {merchant_name}, a merchant in the {merchant_industry_str} industry, who has not yet completed the integration with Affirm and has **not yet launched**. The goal is to encourage them to complete the integration — without offering a meeting or call.
 
 **Context:**
 - Contact Name: {merchant_name}
@@ -3589,7 +3589,7 @@ def get_prompts():
 
 **Include in the Email:**
 - **Subject Line**: Under 50 characters, straightforward and relevant
-- **Opening Line**: Greet the merchant by name and acknowledge that integration is almost complete
+- **Opening Line**: Greet the merchant by name and acknowledge that integration needs to be completed
 - **Body**: 
     - Reiterate the value of Affirm to their specific industry or customer base
     - Reference their business context (size, industry, etc.) if relevant
