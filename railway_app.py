@@ -765,22 +765,28 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
             prompt_template = None
     
     # If no custom template provided, try to get from database first, then environment variable
+    # IMPORTANT: Only use DEFAULT version, never versioned prompts (A, B, C, etc.)
     if not prompt_template:
-        # First, try to get from database (most up-to-date)
+        # First, try to get from database (most up-to-date) - ONLY DEFAULT VERSION
         db_prompt_template = None
         if DB_AVAILABLE:
             try:
                 conn = get_db_connection()
                 if conn:
                     cursor = conn.cursor()
+                    # Explicitly only get DEFAULT version - never use versioned prompts (A, B, C, etc.)
                     cursor.execute('''
                         SELECT prompt_content
                         FROM prompt_versions
-                        WHERE prompt_type = 'new-email' AND version_letter = 'DEFAULT'
+                        WHERE prompt_type = 'new-email' 
+                        AND version_letter = 'DEFAULT'
                     ''')
                     row = cursor.fetchone()
                     if row:
                         db_prompt_template = row[0]
+                        logger.debug(f"✅ Loaded DEFAULT prompt from database for new-email")
+                    else:
+                        logger.debug(f"⚠️ No DEFAULT prompt found in database for new-email")
                     conn.close()
             except Exception as db_error:
                 logger.debug(f"Could not load prompt from database: {db_error}")
