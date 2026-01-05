@@ -667,8 +667,8 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     4. **ONLY GATHER INFORMATION - DO NOT PROVIDE SOLUTIONS** - Your role is to collect details, not to troubleshoot or provide step-by-step instructions
     5. **Ask for specific information** needed to help them (e.g., store URL, error messages, screenshots, theme name, etc.)
     6. **Do NOT include troubleshooting steps, workarounds, or solutions** - only ask questions to gather information
-    7. **Ask if they want to include merchantcare@affirm.com in this email thread** - Add a question like "Would you like me to include merchantcare@affirm.com in this thread so they can help with your issue?"
-    8. **DO NOT suggest emailing merchantcare@affirm.com directly** - Only offer to CC merchantcare@affirm.com in the thread. Never suggest emailing merchantcare@affirm.com directly as an alternative.
+    7. **Ask if they want to include merchanthelp@affirm.com in this email thread** - Add a question like "Would you like me to include merchanthelp@affirm.com in this thread so they can help with your issue?"
+    8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - Only offer to CC merchanthelp@affirm.com in the thread. Never suggest emailing merchanthelp@affirm.com directly as an alternative.
     9. **Keep under 150 words** and feel natural, not automated
     
 
@@ -676,7 +676,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     - **Subject Line:** [Concise subject]
     - **Email Body:** [Your response]
 
-    For all support, refer to merchantcare@affirm.com Only.
+    For all support, refer to merchanthelp@affirm.com Only.
     """
 
     # Log the prompt being used (for default prompt)
@@ -1514,9 +1514,9 @@ def reply_to_emails_with_accounts(accounts):
             ai_response = generate_ai_response(email['body'], sender_name, contact_name, conversation_content)
             logger.info(f"✅ AI response generated for thread {thread_id}")
             
-            # Check if merchant wants to include merchantcare@affirm.com in the thread
+            # Check if merchant wants to include merchanthelp@affirm.com in the thread
             # Look for affirmative responses in the latest email body
-            merchantcare_email = "merchantcare@affirm.com"
+            merchantcare_email = "merchanthelp@affirm.com"
             wants_merchantcare = False
             
             if email.get('body'):
@@ -1558,7 +1558,7 @@ def reply_to_emails_with_accounts(accounts):
                 for pattern in affirmative_patterns:
                     if pattern in email_body_lower:
                         wants_merchantcare = True
-                        logger.info(f"✅ Merchant requested to include merchantcare@affirm.com (detected pattern: '{pattern}')")
+                        logger.info(f"✅ Merchant requested to include merchanthelp@affirm.com (detected pattern: '{pattern}')")
                         break
                 
                 # Also check if they're replying to a question about including merchantcare
@@ -1571,9 +1571,9 @@ def reply_to_emails_with_accounts(accounts):
                         if len(email['body'].strip()) < 50:  # Short response likely means yes/no
                             if any(word in email_body_lower for word in ['yes', 'yeah', 'yep', 'sure', 'ok', 'okay']):
                                 wants_merchantcare = True
-                                logger.info(f"✅ Merchant requested to include merchantcare@affirm.com (short affirmative response)")
+                                logger.info(f"✅ Merchant requested to include merchanthelp@affirm.com (short affirmative response)")
             
-            # Add merchantcare@affirm.com to CC if requested
+            # Add merchanthelp@affirm.com to CC if requested
             if wants_merchantcare:
                 if cc_recipients:
                     # Parse existing CC recipients
@@ -1586,13 +1586,13 @@ def reply_to_emails_with_accounts(accounts):
                     if merchantcare_email.lower() not in [cc.lower() for cc in cc_list]:
                         cc_list.append(merchantcare_email)
                         cc_recipients = ', '.join(cc_list)
-                        logger.info(f"📧 Added merchantcare@affirm.com to CC recipients: {cc_recipients}")
+                        logger.info(f"📧 Added merchanthelp@affirm.com to CC recipients: {cc_recipients}")
                     else:
-                        logger.info(f"📧 merchantcare@affirm.com already in CC recipients")
+                        logger.info(f"📧 merchanthelp@affirm.com already in CC recipients")
                 else:
                     # No existing CC recipients, create new list
                     cc_recipients = merchantcare_email
-                    logger.info(f"📧 Added merchantcare@affirm.com as CC recipient")
+                    logger.info(f"📧 Added merchanthelp@affirm.com as CC recipient")
             
             # Send threaded reply (include CC recipients if found)
             logger.info(f"📧 Sending reply email to {contact_email} for thread {thread_id}")
@@ -3805,20 +3805,20 @@ Keep the email under 130 words. Make it feel natural and human, not like marketi
 4. **ONLY GATHER INFORMATION - DO NOT PROVIDE SOLUTIONS** - Your role is to collect details, not to troubleshoot or provide step-by-step instructions
 5. **Ask for specific information** needed to help them (e.g., store URL, error messages, screenshots, theme name, etc.)
 6. **Do NOT include troubleshooting steps, workarounds, or solutions** - only ask questions to gather information
-7. **Ask if they want to include merchantcare@affirm.com in this email thread** - Add a question like "Would you like me to include merchantcare@affirm.com in this thread so they can help with your issue?"
-8. **DO NOT suggest emailing merchantcare@affirm.com directly** - Only offer to CC merchantcare@affirm.com in the thread. Never suggest emailing merchantcare@affirm.com directly as an alternative.
+7. **Ask if they want to include merchanthelp@affirm.com in this email thread** - Add a question like "Would you like me to include merchanthelp@affirm.com in this thread so they can help with your issue?"
+8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - Only offer to CC merchanthelp@affirm.com in the thread. Never suggest emailing merchanthelp@affirm.com directly as an alternative.
 9. **Keep under 150 words** and feel natural, not automated
 
 **OUTPUT FORMAT:**
 - **Subject Line:** [Concise subject]
 - **Email Body:** [Your response]
 
-For all support, refer to merchantcare@affirm.com Only."""
+For all support, refer to merchanthelp@affirm.com Only."""
 
         # Default prompt for non-campaign emails
         non_campaign_email_prompt_default = """{AFFIRM_VOICE_GUIDELINES}
 
-**TASK:** Generate a professional, Affirm-branded email response to {sender_name} who reached out but is not part of an active campaign. Politely direct them to merchantcare@affirm.com for merchant support and inquiries.
+**TASK:** Generate a professional, Affirm-branded email response to {sender_name} who reached out but is not part of an active campaign. Politely direct them to merchanthelp@affirm.com for merchant support and inquiries.
 
 **CONTEXT:**
 - Sender: {sender_name}
@@ -3827,7 +3827,7 @@ For all support, refer to merchantcare@affirm.com Only."""
 
 **CRITICAL RULES:**
 1. **Be polite and professional** - acknowledge their outreach
-2. **Direct them to merchantcare@affirm.com** - this is the main purpose
+2. **Direct them to merchanthelp@affirm.com** - this is the main purpose
 3. **Be helpful** - explain that Merchant Care can assist with their questions
 4. **Keep it brief** - under 100 words
 5. **Maintain Affirm brand voice** - smart, approachable, efficient
@@ -3835,7 +3835,7 @@ For all support, refer to merchantcare@affirm.com Only."""
 **OUTPUT FORMAT:**
 - **Email Body:** [Your response in HTML format]
 
-For all merchant support, refer to merchantcare@affirm.com only."""
+For all merchant support, refer to merchanthelp@affirm.com only."""
 
         # Try to get from database first (from prompt_versions table with version_letter = 'DEFAULT')
         new_email_prompt = None
@@ -6859,7 +6859,7 @@ def write_to_google_sheets(records):
 def workato_check_non_campaign_emails():
     """
     Check emails from the last 24 hours and auto-reply to senders not in the campaign contact list.
-    The provided contacts list represents campaign members. Non-campaign senders are directed to merchantcare@affirm.com.
+    The provided contacts list represents campaign members. Non-campaign senders are directed to merchanthelp@affirm.com.
     
     Expected input format:
     {
