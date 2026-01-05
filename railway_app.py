@@ -7131,6 +7131,10 @@ def workato_check_non_campaign_emails():
                     )
                     logger.info(f"✅ AI response generated for non-campaign email from {sender_email_original}")
                     
+                    # Automatically CC merchanthelp@affirm.com on first response to non-campaign merchants
+                    merchanthelp_email = "merchanthelp@affirm.com"
+                    logger.info(f"📧 Automatically CC'ing merchanthelp@affirm.com on first response to non-campaign sender {sender_email_original}")
+                    
                     # Send auto-reply with AI-generated content
                     email_result = send_threaded_email_reply(
                         to_email=sender_email_original,
@@ -7138,7 +7142,7 @@ def workato_check_non_campaign_emails():
                         reply_content=ai_response,
                         original_message_id=msg_id,
                         sender_name="Jake Morgan",
-                        cc_recipients=None
+                        cc_recipients=merchanthelp_email
                     )
                     
                     if isinstance(email_result, dict) and email_result.get('status') == 'success':
