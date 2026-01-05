@@ -6762,12 +6762,43 @@ def workato_check_non_campaign_emails():
                 if is_campaign_member or is_from_us:
                     continue
                 
-                # Check if we've already replied to this thread
+                # For non-campaign emails, check if the latest message in the thread is from them (not us)
+                # Only respond if the latest message is from the non-campaign sender
                 if thread_id:
-                    if has_been_replied_to(msg_id, service):
-                        logger.info(f"⏭️ Skipping thread {thread_id} from {sender_email_original} - already replied")
-                        processed_threads.add(thread_id)
-                        continue
+                    try:
+                        # Get all messages in the thread to find the latest one
+                        thread_data = service.users().threads().get(userId='me', id=thread_id).execute()
+                        thread_messages = thread_data.get('messages', [])
+                        
+                        if thread_messages:
+                            # Get the latest message in the thread
+                            latest_thread_msg_id = thread_messages[-1]['id']
+                            latest_thread_msg = service.users().messages().get(userId='me', id=latest_thread_msg_id).execute()
+                            latest_thread_labels = latest_thread_msg.get('labelIds', [])
+                            latest_thread_headers = latest_thread_msg['payload'].get('headers', [])
+                            latest_thread_sender = next((h['value'] for h in latest_thread_headers if h['name'] == 'From'), '')
+                            
+                            # Check if latest message is from us (Jake Morgan)
+                            jake_email = os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com').lower()
+                            latest_is_from_us = (
+                                'SENT' in latest_thread_labels or
+                                'jake.morgan@affirm.com' in latest_thread_sender.lower() or
+                                jake_email in latest_thread_sender.lower()
+                            )
+                            
+                            if latest_is_from_us:
+                                logger.info(f"⏭️ Skipping thread {thread_id} from {sender_email_original} - latest message is from us (Jake Morgan)")
+                                processed_threads.add(thread_id)
+                                continue
+                            else:
+                                logger.info(f"✅ Latest message in thread {thread_id} is from {sender_email_original} - will respond")
+                        else:
+                            # No thread messages found, use the current message
+                            logger.info(f"⚠️ Thread {thread_id} has no messages, using current message")
+                    except Exception as thread_check_error:
+                        logger.warning(f"⚠️ Error checking thread {thread_id} for latest message: {thread_check_error}")
+                        # If we can't check the thread, proceed with the current message
+                        logger.info(f"Proceeding with current message {msg_id} from {sender_email_original}")
                 
                 # This is a non-campaign sender - add to list and send auto-reply
                 non_campaign_emails.append({
