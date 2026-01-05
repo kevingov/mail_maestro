@@ -4477,7 +4477,7 @@ def handle_versioned_send_new_email(version_letter):
         email_content_cleaned = remove_existing_signature(email_content, sender_name)
         
         # Add standardized email signature with AI Business Development title
-        signature = f"\n\nBest regards,<br>{sender_name}<br>AI Business Development<br>Affirm"
+        signature = f"\n\nBest regards,<br>{sender_name}<br>Affirm - AI Business Development"
         email_content_with_signature = email_content_cleaned + signature
         
         # Format and send email
@@ -6440,7 +6440,7 @@ def workato_send_new_email():
         email_content_cleaned = remove_existing_signature(email_content, sender_name)
         
         # Add standardized email signature with AI Business Development title
-        signature = f"\n\nBest regards,<br>{sender_name}<br>AI Business Development<br>Affirm"
+        signature = f"\n\nBest regards,<br>{sender_name}<br>Affirm - AI Business Development"
         email_content_with_signature = email_content_cleaned + signature
         
         # Format email with HTML template
