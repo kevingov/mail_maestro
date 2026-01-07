@@ -824,7 +824,7 @@ Summary:"""
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[{"role": "user", "content": summary_prompt}],
-            max_tokens=150  # Keep summary short
+            max_completion_tokens=150  # Keep summary short
         )
         
         if response and response.choices:
@@ -1781,7 +1781,15 @@ def reply_to_emails_with_accounts(accounts):
             tracking_info = f" | Tracking ID: {email_result.get('tracking_id', 'N/A')}" if isinstance(email_result, dict) else ""
             
             # Check if email was actually sent successfully
-            if isinstance(email_result, dict) and email_result.get('status') == 'success':
+            # The status can be "Reply sent to {email}" or "success", and we also check for tracking_id
+            is_success = False
+            if isinstance(email_result, dict):
+                status_str = str(email_result.get('status', '')).lower()
+                has_tracking_id = email_result.get('tracking_id') is not None
+                # Email is successful if status contains "reply sent" or "success", or if there's a tracking_id
+                is_success = ('reply sent' in status_str or 'success' in status_str) or has_tracking_id
+            
+            if is_success:
                 logger.info(f"✅ Successfully sent reply to thread {thread_id} from {contact_email}")
             else:
                 logger.warning(f"⚠️ Reply email result for thread {thread_id}: {email_result}")
@@ -1802,7 +1810,13 @@ def reply_to_emails_with_accounts(accounts):
         #     logger.error(f"❌ Error marking email as read: {e}")
 
         # Determine if email was successfully sent
-        was_sent = isinstance(email_result, dict) and email_result.get('status') == 'success'
+        # The status can be "Reply sent to {email}" or "success", and we also check for tracking_id
+        was_sent = False
+        if isinstance(email_result, dict):
+            status_str = str(email_result.get('status', '')).lower()
+            has_tracking_id = email_result.get('tracking_id') is not None
+            # Email is successful if status contains "reply sent" or "success", or if there's a tracking_id
+            was_sent = ('reply sent' in status_str or 'success' in status_str) or has_tracking_id
 
         # Generate AI summary of the original message
         original_message_body = email.get('body', '')
@@ -6064,7 +6078,7 @@ def debug_openai():
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[{"role": "user", "content": "Say 'Hello World'"}],
-            max_tokens=10
+            max_completion_tokens=10
         )
         
         return jsonify({
