@@ -779,6 +779,73 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
                                    recipient_email="recipient@email.com", 
                                    sender_name=sender_name)
 
+def generate_ai_summary_of_message(message_body, max_length=500):
+    """
+    Generate an AI summary of a message.
+    
+    Args:
+        message_body: The original message body to summarize
+        max_length: Maximum length of the truncated message (default 500)
+    
+    Returns:
+        Dictionary with:
+        - truncated_message: First max_length characters of the message
+        - ai_summary: AI-generated summary of the message
+    """
+    try:
+        # Strip HTML tags from the message body
+        if message_body and ('<' in message_body and '>' in message_body):
+            message_body = strip_html_tags(message_body)
+        
+        # Truncate to first max_length characters
+        truncated_message = message_body[:max_length] if message_body else ""
+        if len(message_body) > max_length:
+            truncated_message += "..."
+        
+        # Generate AI summary
+        api_key = os.environ.get('OPENAI_API_KEY')
+        if not api_key:
+            logger.warning("⚠️ OPENAI_API_KEY not set, skipping AI summary generation")
+            return {
+                "truncated_message": truncated_message,
+                "ai_summary": "AI summary unavailable (API key not configured)"
+            }
+        
+        client = OpenAI(api_key=api_key)
+        
+        summary_prompt = f"""Please provide a concise summary of the following email message. Focus on the main points, questions, or requests. Keep it brief (2-3 sentences maximum).
+
+Email message:
+{message_body}
+
+Summary:"""
+        
+        logger.info(f"🤖 Generating AI summary for message (length: {len(message_body)} chars)")
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": summary_prompt}],
+            max_tokens=150  # Keep summary short
+        )
+        
+        if response and response.choices:
+            ai_summary = response.choices[0].message.content.strip()
+            logger.info(f"✅ AI summary generated: {ai_summary[:100]}...")
+        else:
+            ai_summary = "Summary unavailable"
+            logger.warning("⚠️ Failed to generate AI summary")
+        
+        return {
+            "truncated_message": truncated_message,
+            "ai_summary": ai_summary
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error generating AI summary: {e}")
+        return {
+            "truncated_message": message_body[:max_length] if message_body else "",
+            "ai_summary": f"Error generating summary: {str(e)}"
+        }
+
 def remove_existing_signature(email_content, sender_name):
     """
     Remove any existing signature from email content before adding standardized signature.
@@ -1737,6 +1804,16 @@ def reply_to_emails_with_accounts(accounts):
         # Determine if email was successfully sent
         was_sent = isinstance(email_result, dict) and email_result.get('status') == 'success'
 
+        # Generate AI summary of the original message
+        original_message_body = email.get('body', '')
+        ai_summary_data = generate_ai_summary_of_message(original_message_body, max_length=500)
+        
+        # Format the AI summary as a structured object for Workato
+        ai_summary_original_message = {
+            "truncated_message": ai_summary_data['truncated_message'],
+            "ai_summary": ai_summary_data['ai_summary']
+        }
+
         responses.append({
             "sender": contact_email,
             "contact_name": contact_name,
@@ -1746,6 +1823,7 @@ def reply_to_emails_with_accounts(accounts):
             "subject": email['subject'],
             "original_message": conversation_content,
             "ai_response": ai_response,
+            "ai_summary_original_message": ai_summary_original_message,
             "email_status": email_status + tracking_info,
             "tracking_id": email_result.get('tracking_id') if isinstance(email_result, dict) else None,
             "tracking_url": email_result.get('tracking_url') if isinstance(email_result, dict) else None,
@@ -6081,6 +6159,7 @@ def workato_reply_to_emails():
                     "subject": response.get('subject', ''),
                     "original_message": response.get('original_message', ''),
                     "ai_response": clean_response,
+                    "ai_summary_original_message": response.get('ai_summary_original_message', ''),
                     "email_status": response.get('email_status', ''),
                     "reply_tracking_id": tracking_id,  # Tracking ID of the reply email that was sent
                     "reply_tracking_url": tracking_url,  # Tracking URL for the reply email
