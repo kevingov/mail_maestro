@@ -6150,16 +6150,29 @@ def workato_reply_to_emails():
         if 'responses' in result and result['responses']:
             import re
             for response in result['responses']:
-                # Clean AI response for display
+                # Clean AI response for display - preserve formatting but remove HTML
                 ai_response_text = response.get('ai_response', '')
                 if ai_response_text:
-                    # Remove HTML tags
-                    clean_response = re.sub(r'<[^>]+>', '', ai_response_text)
-                    # Remove line breaks and extra whitespace
-                    clean_response = clean_response.replace('\n', ' ').replace('\r', ' ').strip()
-                    clean_response = re.sub(r'\s+', ' ', clean_response)
+                    # Convert HTML line breaks to newlines
+                    clean_response = ai_response_text.replace('<br>', '\n').replace('<br/>', '\n').replace('<br />', '\n')
+                    clean_response = clean_response.replace('</p>', '\n\n').replace('<p>', '')
+                    clean_response = clean_response.replace('</div>', '\n').replace('<div>', '')
+                    # Remove remaining HTML tags
+                    clean_response = re.sub(r'<[^>]+>', '', clean_response)
+                    # Clean up extra whitespace but preserve intentional line breaks
+                    clean_response = re.sub(r'\n\s*\n\s*\n+', '\n\n', clean_response)  # Multiple newlines to double
+                    clean_response = clean_response.strip()
                 else:
                     clean_response = ''
+                
+                # Format AI summary as a readable string
+                ai_summary_data = response.get('ai_summary_original_message', {})
+                if isinstance(ai_summary_data, dict):
+                    truncated = ai_summary_data.get('truncated_message', '')
+                    summary = ai_summary_data.get('ai_summary', '')
+                    formatted_summary = f"{truncated}\n\n--- AI Summary ---\n{summary}"
+                else:
+                    formatted_summary = str(ai_summary_data) if ai_summary_data else ''
                 
                 # Build email detail object
                 # Extract tracking_id - this is the tracking ID of the reply email that was sent
@@ -6173,7 +6186,7 @@ def workato_reply_to_emails():
                     "subject": response.get('subject', ''),
                     "original_message": response.get('original_message', ''),
                     "ai_response": clean_response,
-                    "ai_summary_original_message": response.get('ai_summary_original_message', ''),
+                    "ai_summary_original_message": formatted_summary,
                     "email_status": response.get('email_status', ''),
                     "reply_tracking_id": tracking_id,  # Tracking ID of the reply email that was sent
                     "reply_tracking_url": tracking_url,  # Tracking URL for the reply email
