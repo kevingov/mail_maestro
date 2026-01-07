@@ -1795,14 +1795,27 @@ def get_emails_needing_replies_with_accounts(accounts):
     logger.info(f"Processing {len(account_emails)} email addresses from Workato")
     logger.info(f"Normalized email lookup: {list(normalized_account_emails.keys())}")
 
-    # Fetch ALL emails from inbox (not just unread)
-    results = service.users().messages().list(userId='me', labelIds=['INBOX'], maxResults=100).execute()
+    # Calculate timestamp for 24 hours ago
+    import time
+    current_time_ms = int(time.time() * 1000)
+    twenty_four_hours_ago_ms = current_time_ms - (24 * 60 * 60 * 1000)
+    
+    # Fetch emails from inbox from the last 24 hours only
+    query = f'after:{twenty_four_hours_ago_ms // 1000}'
+    logger.info(f"🔍 Searching for emails in INBOX from last 24 hours (after {datetime.datetime.fromtimestamp(twenty_four_hours_ago_ms / 1000)})")
+    
+    results = service.users().messages().list(
+        userId='me',
+        labelIds=['INBOX'],
+        q=query,  # Apply the 24-hour filter here
+        maxResults=100
+    ).execute()
     messages = results.get('messages', [])
     if not messages:
-        logger.warning("No emails found in inbox!")
+        logger.warning("No emails found in inbox from last 24 hours!")
         return []
 
-    logger.info(f"Found {len(messages)} total emails in inbox")
+    logger.info(f"Found {len(messages)} total emails in inbox from last 24 hours")
 
     emails = []
     for msg in messages:
@@ -1841,6 +1854,9 @@ def get_emails_needing_replies_with_accounts(accounts):
                 logger.info(f"⏭️ Skipping Salesforce case notification email from {sender} - {subject}")
                 continue
             
+            # Get internalDate for proper chronological sorting
+            internal_date = message.get('internalDate', 0)
+            
             email_data = {
                 'id': msg_id,
                 'threadId': thread_id,
@@ -1848,6 +1864,7 @@ def get_emails_needing_replies_with_accounts(accounts):
                 'subject': subject,
                 'body': body,
                 'date': date,
+                'internal_date': int(internal_date) if internal_date else 0,
                 'message_id': message_id,
                 'contact_name': account_info['contact_name'],
                 'account_id': account_info['account_id'],
@@ -1962,12 +1979,16 @@ def get_emails_needing_replies_with_accounts(accounts):
                 if thread_id not in all_thread_emails:
                     all_thread_emails[thread_id] = []
                 
+                # Get internalDate for proper chronological sorting
+                internal_date = message.get('internalDate', 0)
+                
                 all_thread_emails[thread_id].append({
                     'id': msg_id,
                     'threadId': thread_id,
                     'sender': sender,
                     'subject': subject,
                     'date': date,
+                    'internal_date': int(internal_date) if internal_date else 0,
                     'body': extract_email_body(message['payload']),
                     'is_from_account': is_from_account,
                     'account_info': account_info,
@@ -1992,9 +2013,15 @@ def get_emails_needing_replies_with_accounts(accounts):
     # 1. Last message is from merchant (not from us), OR
     # 2. Last message is from a CC'd participant and a Workato account is involved in the thread
     for thread_id, emails_in_thread in thread_emails.items():
-        # Sort emails by date to get the latest one
-        emails_in_thread.sort(key=lambda x: x.get('date', ''), reverse=True)
-        latest_email = emails_in_thread[0]  # Most recent email in this thread
+        # Sort emails by internalDate (chronological order) to get the actual latest one
+        emails_in_thread.sort(key=lambda x: x.get('internal_date', 0))
+        latest_email = emails_in_thread[-1]  # Most recent email in this thread (by internalDate)
+        
+        # Only process threads where the latest message is from the last 24 hours
+        latest_internal_date = latest_email.get('internal_date', 0)
+        if latest_internal_date < twenty_four_hours_ago_ms:
+            logger.info(f"⏭️ Skipping thread {thread_id} - latest message is older than 24 hours (internal_date: {latest_internal_date}, 24h ago: {twenty_four_hours_ago_ms})")
+            continue
         
         # Skip Salesforce case notification emails
         latest_body = latest_email.get('body', '')
@@ -2003,7 +2030,8 @@ def get_emails_needing_replies_with_accounts(accounts):
             logger.info(f"⏭️ Skipping Salesforce case notification email in thread {thread_id} - {latest_subject}")
             continue
         
-        # Get full message data to check To/CC headers
+        # Get full message data to check To/CC headers and sender
+        latest_msg_data = None
         try:
             latest_msg_data = service.users().messages().get(userId='me', id=latest_email['id']).execute()
             latest_headers = latest_msg_data['payload'].get('headers', [])
@@ -2013,16 +2041,32 @@ def get_emails_needing_replies_with_accounts(accounts):
             logger.warning(f"⚠️ Error getting headers for latest message in thread {thread_id}: {e}")
             latest_to = ''
             latest_cc = ''
+            latest_msg_data = None
         
         # Check if any Workato account is involved in this thread (in any message's To/CC)
         thread_has_account_recipient = thread_id in thread_ids_with_account_recipients
         
-        # Check if latest sender was CC'd in a previous message (if thread has account recipient)
-        latest_sender = latest_email.get('sender', '').lower()
-        latest_sender_normalized = latest_email.get('normalized_sender') or normalize_email(latest_sender)
+        # Extract sender from the latest message headers (more reliable than stored data)
+        latest_sender_header = ''
+        try:
+            if latest_msg_data is None:
+                latest_msg_data = service.users().messages().get(userId='me', id=latest_email['id']).execute()
+            latest_headers = latest_msg_data['payload'].get('headers', [])
+            latest_sender_header = next((h['value'] for h in latest_headers if h['name'] == 'From'), latest_email.get('sender', ''))
+        except Exception as e:
+            logger.debug(f"Could not extract From header for latest message: {e}")
+            latest_sender_header = latest_email.get('sender', '')
+        
+        # Normalize the sender email
+        latest_sender = latest_sender_header.lower()
+        latest_sender_normalized = normalize_email(latest_sender_header)
         latest_sender_original = latest_sender
         if '<' in latest_sender_original and '>' in latest_sender_original:
-            latest_sender_original = latest_sender_original.split('<')[1].split('>')[0]
+            latest_sender_original = latest_sender_original.split('<')[1].split('>')[0].strip().lower()
+        elif '@' in latest_sender_original:
+            latest_sender_original = latest_sender_original.strip().lower()
+        
+        logger.info(f"📧 Thread {thread_id}: Latest sender extracted - original: '{latest_sender_original}', normalized: '{latest_sender_normalized}', header: '{latest_sender_header[:50]}'")
         
         # Check if latest sender was CC'd in any previous message in this thread
         latest_sender_was_ccd = False
@@ -2068,24 +2112,36 @@ def get_emails_needing_replies_with_accounts(accounts):
         
         # Check if latest sender is one of our Workato accounts (merchant)
         # Check both exact match and normalized match
+        logger.info(f"🔍 Checking if sender is merchant - account_emails keys: {list(account_emails.keys())[:5]}..., normalized_account_emails keys: {list(normalized_account_emails.keys())[:5]}...")
+        
         if latest_sender_normalized in normalized_account_emails:
             is_from_merchant = True
+            logger.info(f"✅ Matched merchant by normalized email: {latest_sender_normalized}")
+        elif latest_sender_original in account_emails:
+            is_from_merchant = True
+            logger.info(f"✅ Matched merchant by original email: {latest_sender_original}")
         else:
-            # Also check if any part of the sender string matches
-            if latest_sender_original in account_emails:
-                is_from_merchant = True
-            else:
-                for account_email, account_data in account_emails.items():
-                    normalized_account = account_data.get('normalized_email', normalize_email(account_email))
-                    if account_email in latest_sender or normalized_account == latest_sender_normalized:
-                        is_from_merchant = True
-                        break
+            # Also check if any part of the sender string matches (for aliases)
+            for account_email, account_data in account_emails.items():
+                normalized_account = account_data.get('normalized_email', normalize_email(account_email))
+                # Check if the account email or normalized account matches
+                if (account_email.lower() == latest_sender_original or 
+                    normalized_account == latest_sender_normalized or
+                    account_email.lower() in latest_sender_header.lower() or
+                    normalized_account in latest_sender_normalized):
+                    is_from_merchant = True
+                    logger.info(f"✅ Matched merchant by alias/partial match: account={account_email}, normalized={normalized_account}, sender={latest_sender_original}")
+                    break
+        
+        if not is_from_merchant:
+            logger.info(f"❌ Sender '{latest_sender_original}' (normalized: '{latest_sender_normalized}') is NOT a merchant account")
         
         # Check if latest message is from us (in SENT folder) - if so, skip entirely
         # We should never reply to our own messages, regardless of the 27-hour rule
         latest_message_is_from_us = False
         try:
-            latest_msg_data = service.users().messages().get(userId='me', id=latest_email['id']).execute()
+            if latest_msg_data is None:
+                latest_msg_data = service.users().messages().get(userId='me', id=latest_email['id']).execute()
             latest_msg_labels = latest_msg_data.get('labelIds', [])
             if 'SENT' in latest_msg_labels:
                 latest_message_is_from_us = True
