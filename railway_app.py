@@ -370,6 +370,34 @@ def normalize_email(email):
     
     return email
 
+def strip_html_tags(html_content):
+    """Strip HTML tags and convert to plain text, preserving line breaks."""
+    import re
+    if not html_content:
+        return ""
+    
+    # Remove script and style tags and their content
+    html_content = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+    html_content = re.sub(r'<style[^>]*>.*?</style>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+    
+    # Convert common HTML elements to text equivalents
+    html_content = html_content.replace('<br>', '\n').replace('<br/>', '\n').replace('<br />', '\n')
+    html_content = html_content.replace('</p>', '\n\n').replace('<p>', '')
+    html_content = html_content.replace('</div>', '\n').replace('<div>', '')
+    
+    # Remove all remaining HTML tags
+    html_content = re.sub(r'<[^>]+>', '', html_content)
+    
+    # Decode HTML entities
+    import html
+    html_content = html.unescape(html_content)
+    
+    # Clean up extra whitespace
+    html_content = re.sub(r'\n\s*\n\s*\n+', '\n\n', html_content)  # Multiple newlines to double
+    html_content = html_content.strip()
+    
+    return html_content
+
 def extract_email_body(payload):
     """Extract the body of an email, handling both plain text and HTML."""
     body = ""
@@ -394,6 +422,10 @@ def extract_email_body(payload):
         body_data = payload.get('body', {}).get('data')
         if body_data:
             body = base64.urlsafe_b64decode(body_data).decode("utf-8")
+
+    # If we got HTML, strip tags and convert to plain text
+    if body and ('<' in body and '>' in body):
+        body = strip_html_tags(body)
 
     return body
 
@@ -1484,11 +1516,16 @@ def reply_to_emails_with_accounts(accounts):
             # Build conversation history string
             conversation_history_lines = []
             for i, msg_part in enumerate(conversation_parts, 1):
+                # Strip HTML from body if present to keep conversation history clean
+                body_text = msg_part['body']
+                if body_text and ('<' in body_text and '>' in body_text):
+                    body_text = strip_html_tags(body_text)
+                
                 conversation_history_lines.append(f"--- Message {i} ---")
                 conversation_history_lines.append(f"From: {msg_part['sender']}")
                 conversation_history_lines.append(f"Date: {msg_part['date']}")
                 conversation_history_lines.append(f"Subject: {msg_part['subject']}")
-                conversation_history_lines.append(f"Body:\n{msg_part['body']}")
+                conversation_history_lines.append(f"Body:\n{body_text}")
                 conversation_history_lines.append("")
             
             conversation_content = "\n".join(conversation_history_lines)
@@ -1497,12 +1534,20 @@ def reply_to_emails_with_accounts(accounts):
         except Exception as e:
             logger.warning(f"⚠️ Could not build full conversation history, using single email: {e}")
             # Fallback to single email if we can't get thread history
-            conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {email['body']}"
+            # Strip HTML from body if present
+            body_text = email.get('body', '')
+            if body_text and ('<' in body_text and '>' in body_text):
+                body_text = strip_html_tags(body_text)
+            conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {body_text}"
             cc_recipients = None  # Initialize if we couldn't get thread history
         
         # If we don't have conversation_content yet, set it
         if 'conversation_content' not in locals():
-            conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {email['body']}"
+            # Strip HTML from body if present
+            body_text = email.get('body', '')
+            if body_text and ('<' in body_text and '>' in body_text):
+                body_text = strip_html_tags(body_text)
+            conversation_content = f"📧 EMAIL TO RESPOND TO:\nSubject: {email['subject']}\nFrom: {email['sender']}\nBody: {body_text}"
         
         # If we don't have cc_recipients yet, try to get it from the original email
         if not cc_recipients:
@@ -2036,16 +2081,30 @@ def get_emails_needing_replies_with_accounts(accounts):
                         is_from_merchant = True
                         break
         
+        # Check if latest message is from us (in SENT folder) - if so, skip entirely
+        # We should never reply to our own messages, regardless of the 27-hour rule
+        latest_message_is_from_us = False
+        try:
+            latest_msg_data = service.users().messages().get(userId='me', id=latest_email['id']).execute()
+            latest_msg_labels = latest_msg_data.get('labelIds', [])
+            if 'SENT' in latest_msg_labels:
+                latest_message_is_from_us = True
+                logger.info(f"⏭️ Skipping thread {thread_id} - latest message is in SENT folder (from us), will not reply to our own message")
+        except Exception as e:
+            logger.debug(f"Could not check message labels for {latest_email['id']}: {e}")
+        
         # Determine if we should reply:
         # 1. Latest message is from merchant, OR
         # 2. Latest message is from someone who was CC'd AND thread has a Workato account as recipient
-        should_reply = is_from_merchant or (latest_sender_was_ccd and thread_has_account_recipient)
+        # BUT NOT if the latest message is from us
+        should_reply = (is_from_merchant or (latest_sender_was_ccd and thread_has_account_recipient)) and not latest_message_is_from_us
         
         # Only reply if:
         # 1. Latest message is from merchant OR from a CC'd participant (and thread has account recipient)
-        # 2. Thread hasn't been replied to yet
+        # 2. Latest message is NOT from us (not in SENT folder)
+        # 3. Thread hasn't been replied to yet
         has_been_replied = has_been_replied_to(latest_email['id'], service)
-        logger.info(f"🔍 Thread {thread_id} decision: is_from_merchant={is_from_merchant}, latest_sender_was_ccd={latest_sender_was_ccd}, thread_has_account_recipient={thread_has_account_recipient}, should_reply={should_reply}, has_been_replied={has_been_replied}, latest_sender={latest_sender_normalized}")
+        logger.info(f"🔍 Thread {thread_id} decision: is_from_merchant={is_from_merchant}, latest_sender_was_ccd={latest_sender_was_ccd}, thread_has_account_recipient={thread_has_account_recipient}, latest_message_is_from_us={latest_message_is_from_us}, should_reply={should_reply}, has_been_replied={has_been_replied}, latest_sender={latest_sender_normalized}")
         
         if should_reply and not has_been_replied:
             # If latest sender is not a merchant, we need to find the account_info from the thread
@@ -2086,15 +2145,46 @@ def get_emails_needing_replies_with_accounts(accounts):
                 logger.warning(f"⚠️ Thread {thread_id} needs reply but missing account_info, skipping")
                 continue
             
+            # Extract email address from latest message - try multiple sources
+            # If sender is empty (common for SENT messages), try to get from To header
+            reply_to_email = None
+            sender_field = latest_email.get('sender', '')
+            
+            # Try to extract from sender field first
+            if sender_field:
+                if '<' in sender_field and '>' in sender_field:
+                    reply_to_email = sender_field.split('<')[1].split('>')[0].strip()
+                elif '@' in sender_field:
+                    reply_to_email = sender_field.strip()
+            
+            # If still no email, try to get from To header of the latest message
+            if not reply_to_email or '@' not in reply_to_email:
+                try:
+                    latest_msg_data = service.users().messages().get(userId='me', id=latest_email['id']).execute()
+                    latest_headers = latest_msg_data['payload'].get('headers', [])
+                    to_header = next((h['value'] for h in latest_headers if h['name'] == 'To'), '')
+                    if to_header:
+                        if '<' in to_header and '>' in to_header:
+                            reply_to_email = to_header.split('<')[1].split('>')[0].strip()
+                        elif '@' in to_header:
+                            reply_to_email = to_header.strip()
+                except Exception as e:
+                    logger.debug(f"Could not extract To header for {latest_email['id']}: {e}")
+            
+            # If still no email, skip this thread
+            if not reply_to_email or '@' not in reply_to_email:
+                logger.warning(f"⚠️ Could not extract valid email address for thread {thread_id}, skipping. Sender field: '{sender_field}'")
+                continue
+            
             # Add account info to email for reply processing
             reply_email = {
                 'id': latest_email['id'],
                 'threadId': thread_id,
-                'sender': latest_email['sender'],
+                'sender': reply_to_email if not sender_field else sender_field,  # Use extracted email or original sender
                 'subject': latest_email['subject'],
                 'body': latest_email.get('body', ''),
                 'date': latest_email.get('date', ''),
-                'contact_name': account_info.get('contact_name', latest_email.get('sender', '').split('@')[0].capitalize()),
+                'contact_name': account_info.get('contact_name', reply_to_email.split('@')[0].capitalize()),
                 'account_id': account_info.get('account_id'),
                 'contact_id': account_info.get('contact_id')
             }
