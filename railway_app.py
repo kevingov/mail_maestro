@@ -1527,16 +1527,27 @@ def reply_to_emails_with_accounts(accounts):
             jake_email_normalized = normalize_email(jake_email)
             sender_email_normalized = normalize_email(contact_email)
             
-            def extract_email_from_header(header_value):
+            def extract_email_from_header(header_value, preserve_case=False):
                 """Extract email address from header value (handles 'Name <email@domain.com>' format)."""
                 if not header_value:
                     return None
                 if '<' in header_value and '>' in header_value:
-                    return header_value.split('<')[1].split('>')[0].strip().lower()
-                return header_value.strip().lower()
+                    email = header_value.split('<')[1].split('>')[0].strip()
+                else:
+                    email = header_value.strip()
+                # Return lowercase for comparison, but we'll preserve original format in the list
+                return email.lower() if not preserve_case else email
             
-            def parse_email_list(header_value):
-                """Parse comma-separated email list and return list of clean email addresses."""
+            def parse_email_list(header_value, preserve_original=False):
+                """Parse comma-separated email list and return list of clean email addresses.
+                
+                Args:
+                    header_value: The header value to parse
+                    preserve_original: If True, preserve original email format; if False, return lowercase
+                
+                Returns:
+                    List of email addresses (lowercase if preserve_original=False, original format if True)
+                """
                 if not header_value:
                     return []
                 if isinstance(header_value, str):
@@ -1546,7 +1557,14 @@ def reply_to_emails_with_accounts(accounts):
                 
                 clean_emails = []
                 for email_str in email_list:
-                    email_clean = extract_email_from_header(email_str)
+                    if preserve_original:
+                        # Extract email but keep original format
+                        if '<' in email_str and '>' in email_str:
+                            email_clean = email_str.split('<')[1].split('>')[0].strip()
+                        else:
+                            email_clean = email_str.strip()
+                    else:
+                        email_clean = extract_email_from_header(email_str)
                     if email_clean:
                         clean_emails.append(email_clean)
                 return clean_emails
@@ -1574,8 +1592,8 @@ def reply_to_emails_with_accounts(accounts):
                 
                 all_latest_recipients = set()
                 
-                # Add To recipients (excluding Jake)
-                to_emails = parse_email_list(latest_to)
+                # Add To recipients (excluding Jake) - preserve original format
+                to_emails = parse_email_list(latest_to, preserve_original=True)
                 logger.info(f"📧 Parsed To emails: {to_emails}")
                 for to_email_addr in to_emails:
                     to_normalized = normalize_email(to_email_addr)
@@ -1583,8 +1601,8 @@ def reply_to_emails_with_accounts(accounts):
                         all_latest_recipients.add(to_email_addr)
                         logger.info(f"📧 Added To recipient to CC list: {to_email_addr}")
                 
-                # Add CC recipients (excluding Jake)
-                cc_emails = parse_email_list(latest_cc)
+                # Add CC recipients (excluding Jake) - preserve original format
+                cc_emails = parse_email_list(latest_cc, preserve_original=True)
                 logger.info(f"📧 Parsed CC emails: {cc_emails}")
                 for cc_email in cc_emails:
                     cc_normalized = normalize_email(cc_email)
@@ -1596,14 +1614,20 @@ def reply_to_emails_with_accounts(accounts):
                 
                 # Remove the sender of the latest message (they go in To, not CC)
                 # But keep ALL other recipients in CC
+                # IMPORTANT: Only exclude if it's an EXACT match (case-insensitive) to preserve aliases
+                # Aliases like kevin.gov+1153@affirm.com are different emails than kevin.gov@affirm.com
                 cc_recipients_list = []
                 for recipient_email in all_latest_recipients:
-                    recipient_normalized = normalize_email(recipient_email)
-                    # Don't include the latest message sender in CC (they're in To), but include everyone else
-                    # Use latest_sender_normalized instead of sender_email_normalized to ensure we're using the correct sender
-                    if recipient_normalized != latest_sender_normalized:
+                    recipient_lower = recipient_email.lower()
+                    latest_sender_lower = latest_sender_email.lower()
+                    
+                    # Only exclude if it's an exact match (case-insensitive)
+                    # This preserves aliases (e.g., kevin.gov+1153@affirm.com vs kevin.gov@affirm.com)
+                    is_sender = recipient_lower == latest_sender_lower
+                    
+                    if not is_sender:
                         cc_recipients_list.append(recipient_email)
-                        logger.info(f"📧 Keeping recipient in CC: {recipient_email} (normalized: {recipient_normalized}, latest sender: {latest_sender_normalized})")
+                        logger.info(f"📧 Keeping recipient in CC: {recipient_email} (latest sender: {latest_sender_email})")
                     else:
                         logger.info(f"📧 Excluding latest message sender from CC: {recipient_email} (goes in To field)")
                 
