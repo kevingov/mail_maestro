@@ -693,9 +693,11 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - Only offer to CC merchanthelp@affirm.com in the thread. Never suggest emailing merchanthelp@affirm.com directly as an alternative.
     9. **Keep under 150 words** and feel natural, not automated"""
         else:
-            merchanthelp_rule = """    7. **DO NOT ask to include merchanthelp@affirm.com** - merchanthelp@affirm.com is already CC'd in this thread, so do NOT ask again.
-    8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - merchanthelp@affirm.com is already on this thread.
-    9. **Keep under 150 words** and feel natural, not automated"""
+            merchanthelp_rule = """    7. **CRITICAL: merchanthelp@affirm.com is ALREADY CC'd on this email thread** - Do NOT mention adding them, including them, or asking about them. Act as if they are already part of the conversation and will see your response.
+    8. **DO NOT say "I'll include merchanthelp@affirm.com"** - They are already included, so do NOT mention including them.
+    9. **DO NOT ask "should I cc merchanthelp@affirm.com"** - They are already CC'd, so do NOT ask about CC'ing them.
+    10. **DO NOT suggest emailing merchanthelp@affirm.com directly** - merchanthelp@affirm.com is already on this thread.
+    11. **Keep under 150 words** and feel natural, not automated"""
         
         prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
@@ -1636,6 +1638,7 @@ def reply_to_emails_with_accounts(accounts):
             merchanthelp_email = "merchanthelp@affirm.com"
             merchanthelp_already_ccd = False
             
+            # First, check if merchanthelp is in the current CC recipients list
             if cc_recipients:
                 # Parse CC recipients to check if merchanthelp is already included
                 if isinstance(cc_recipients, str):
@@ -1645,14 +1648,30 @@ def reply_to_emails_with_accounts(accounts):
                 
                 if merchanthelp_email.lower() in cc_list:
                     merchanthelp_already_ccd = True
-                    logger.info(f"📧 merchanthelp@affirm.com is already CC'd in this thread - will not ask again")
+                    logger.info(f"📧 merchanthelp@affirm.com is already CC'd in current recipients - will not ask again")
             
-            # Also check conversation history for mentions of merchanthelp being CC'd
+            # Also check ALL messages in conversation history for merchanthelp in CC
+            if not merchanthelp_already_ccd and conversation_parts:
+                for msg_part in conversation_parts:
+                    msg_cc = msg_part.get('cc')
+                    if msg_cc:
+                        # Parse CC from this message
+                        if isinstance(msg_cc, str):
+                            msg_cc_list = [cc.strip().lower() for cc in msg_cc.split(',') if cc.strip()]
+                        else:
+                            msg_cc_list = [cc.strip().lower() for cc in msg_cc if cc.strip()]
+                        
+                        if merchanthelp_email.lower() in msg_cc_list:
+                            merchanthelp_already_ccd = True
+                            logger.info(f"📧 merchanthelp@affirm.com found in CC of message from {msg_part.get('sender', 'unknown')} - will not ask again")
+                            break
+            
+            # Also check conversation history text for mentions of merchanthelp being CC'd
             if not merchanthelp_already_ccd and conversation_content:
                 conversation_lower = conversation_content.lower()
                 # Check if merchanthelp was mentioned as being CC'd or included
                 if 'merchanthelp@affirm.com' in conversation_lower:
-                    # Look for patterns indicating they're already CC'd
+                    # Look for patterns indicating they're already CC'd or included
                     if any(phrase in conversation_lower for phrase in [
                         'cc merchanthelp',
                         'cc\'d merchanthelp',
@@ -1661,10 +1680,15 @@ def reply_to_emails_with_accounts(accounts):
                         'added merchanthelp',
                         'merchanthelp is on',
                         'merchanthelp on this thread',
-                        'merchanthelp in this thread'
+                        'merchanthelp in this thread',
+                        'i\'ll include merchanthelp',
+                        'i will include merchanthelp',
+                        'including merchanthelp',
+                        'merchanthelp has been',
+                        'merchanthelp was added'
                     ]):
                         merchanthelp_already_ccd = True
-                        logger.info(f"📧 merchanthelp@affirm.com appears to already be CC'd based on conversation history")
+                        logger.info(f"📧 merchanthelp@affirm.com appears to already be CC'd based on conversation history text")
             
             # Generate AI response using the full conversation history
             # Pass information about whether merchanthelp is already CC'd
