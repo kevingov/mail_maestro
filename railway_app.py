@@ -1690,22 +1690,8 @@ def reply_to_emails_with_accounts(accounts):
                         merchanthelp_already_ccd = True
                         logger.info(f"📧 merchanthelp@affirm.com appears to already be CC'd based on conversation history text")
             
-            # Generate AI response using the full conversation history
-            # Pass information about whether merchanthelp is already CC'd
-            logger.info(f"🤖 Generating AI response for thread {thread_id} from {contact_email}")
-            ai_response = generate_ai_response(
-                email['body'], 
-                sender_name, 
-                contact_name, 
-                conversation_content,
-                prompt_template=None,
-                merchanthelp_already_ccd=merchanthelp_already_ccd
-            )
-            logger.info(f"✅ AI response generated for thread {thread_id}")
-            
             # Check if merchant wants to include merchanthelp@affirm.com in the thread
-            # IMPORTANT: Only add merchanthelp to CC if they explicitly said "yes" in a PREVIOUS email
-            # The AI response should ASK FIRST, then we add them to CC in the NEXT reply if they said yes
+            # IMPORTANT: Check this BEFORE generating AI response so the AI knows not to ask if they already said yes
             merchantcare_email = "merchanthelp@affirm.com"
             wants_merchantcare = False
             
@@ -1765,11 +1751,30 @@ def reply_to_emails_with_accounts(accounts):
                                 wants_merchantcare = True
                                 logger.info(f"✅ Merchant requested to include merchanthelp@affirm.com (short affirmative response to previous question)")
             
-            # Add merchanthelp@affirm.com to CC ONLY if:
-            # 1. Merchant explicitly said "yes" in their email (wants_merchantcare = True)
-            # 2. They are NOT already CC'd (merchanthelp_already_ccd = False)
-            # IMPORTANT: Preserve all existing CC recipients when adding merchanthelp@affirm.com
+            # If merchant said "yes" to including merchanthelp, mark them as already CC'd for AI response
+            # This prevents the AI from asking again when we're about to add them
+            will_add_merchanthelp = False
             if wants_merchantcare and not merchanthelp_already_ccd:
+                merchanthelp_already_ccd = True  # Tell AI they're already/will be CC'd
+                will_add_merchanthelp = True  # Flag to add them to CC after generating response
+                logger.info(f"📧 Merchant said yes to including merchanthelp - will add to CC and AI should not ask again")
+            
+            # Generate AI response using the full conversation history
+            # Pass information about whether merchanthelp is already CC'd (or will be CC'd)
+            logger.info(f"🤖 Generating AI response for thread {thread_id} from {contact_email}")
+            ai_response = generate_ai_response(
+                email['body'], 
+                sender_name, 
+                contact_name, 
+                conversation_content,
+                prompt_template=None,
+                merchanthelp_already_ccd=merchanthelp_already_ccd
+            )
+            logger.info(f"✅ AI response generated for thread {thread_id}")
+            
+            # Add merchanthelp@affirm.com to CC if merchant said yes
+            # IMPORTANT: Preserve all existing CC recipients when adding merchanthelp@affirm.com
+            if will_add_merchanthelp:
                 # Parse existing CC recipients to preserve them
                 existing_cc_list = []
                 if cc_recipients:
