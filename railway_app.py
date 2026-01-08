@@ -1554,6 +1554,17 @@ def reply_to_emails_with_accounts(accounts):
             if conversation_parts:
                 latest_message = conversation_parts[-1]  # Last message is the latest
                 
+                # Get the sender of the latest message (this is who we're replying to)
+                latest_sender = latest_message.get('sender', '')
+                # Extract email from "Name <email@example.com>" format
+                latest_sender_email = latest_sender
+                if '<' in latest_sender and '>' in latest_sender:
+                    latest_sender_email = latest_sender.split('<')[1].split('>')[0].strip()
+                elif '@' in latest_sender:
+                    latest_sender_email = latest_sender.strip()
+                latest_sender_normalized = normalize_email(latest_sender_email) if latest_sender_email else ''
+                logger.info(f"📧 Latest message sender: {latest_sender} -> email: {latest_sender_email} (normalized: {latest_sender_normalized})")
+                
                 # Get all recipients from latest message (To + CC)
                 latest_to = latest_message.get('to')
                 latest_cc = latest_message.get('cc')
@@ -1583,17 +1594,18 @@ def reply_to_emails_with_accounts(accounts):
                 
                 logger.info(f"📧 All recipients from latest message (before filtering sender): {all_latest_recipients}")
                 
-                # Remove the primary sender (they go in To, not CC)
+                # Remove the sender of the latest message (they go in To, not CC)
                 # But keep ALL other recipients in CC
                 cc_recipients_list = []
                 for recipient_email in all_latest_recipients:
                     recipient_normalized = normalize_email(recipient_email)
-                    # Don't include the sender in CC (they're in To), but include everyone else
-                    if recipient_normalized != sender_email_normalized:
+                    # Don't include the latest message sender in CC (they're in To), but include everyone else
+                    # Use latest_sender_normalized instead of sender_email_normalized to ensure we're using the correct sender
+                    if recipient_normalized != latest_sender_normalized:
                         cc_recipients_list.append(recipient_email)
-                        logger.info(f"📧 Keeping recipient in CC: {recipient_email} (normalized: {recipient_normalized}, sender: {sender_email_normalized})")
+                        logger.info(f"📧 Keeping recipient in CC: {recipient_email} (normalized: {recipient_normalized}, latest sender: {latest_sender_normalized})")
                     else:
-                        logger.info(f"📧 Excluding sender from CC: {recipient_email} (goes in To field)")
+                        logger.info(f"📧 Excluding latest message sender from CC: {recipient_email} (goes in To field)")
                 
                 if cc_recipients_list:
                     cc_recipients = ', '.join(sorted(cc_recipients_list))
