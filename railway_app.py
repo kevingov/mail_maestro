@@ -1558,22 +1558,42 @@ def reply_to_emails_with_accounts(accounts):
                 latest_to = latest_message.get('to')
                 latest_cc = latest_message.get('cc')
                 
+                logger.info(f"📧 Latest message To: {latest_to}")
+                logger.info(f"📧 Latest message CC: {latest_cc}")
+                
                 all_latest_recipients = set()
                 
-                # Add To recipients
+                # Add To recipients (excluding Jake)
                 to_emails = parse_email_list(latest_to)
+                logger.info(f"📧 Parsed To emails: {to_emails}")
                 for to_email_addr in to_emails:
-                    if normalize_email(to_email_addr) != jake_email_normalized:
+                    to_normalized = normalize_email(to_email_addr)
+                    if to_normalized != jake_email_normalized:
                         all_latest_recipients.add(to_email_addr)
+                        logger.info(f"📧 Added To recipient to CC list: {to_email_addr}")
                 
-                # Add CC recipients
+                # Add CC recipients (excluding Jake)
                 cc_emails = parse_email_list(latest_cc)
+                logger.info(f"📧 Parsed CC emails: {cc_emails}")
                 for cc_email in cc_emails:
-                    if normalize_email(cc_email) != jake_email_normalized:
+                    cc_normalized = normalize_email(cc_email)
+                    if cc_normalized != jake_email_normalized:
                         all_latest_recipients.add(cc_email)
+                        logger.info(f"📧 Added CC recipient: {cc_email}")
+                
+                logger.info(f"📧 All recipients from latest message (before filtering sender): {all_latest_recipients}")
                 
                 # Remove the primary sender (they go in To, not CC)
-                cc_recipients_list = [recipient_email for recipient_email in all_latest_recipients if normalize_email(recipient_email) != sender_email_normalized]
+                # But keep ALL other recipients in CC
+                cc_recipients_list = []
+                for recipient_email in all_latest_recipients:
+                    recipient_normalized = normalize_email(recipient_email)
+                    # Don't include the sender in CC (they're in To), but include everyone else
+                    if recipient_normalized != sender_email_normalized:
+                        cc_recipients_list.append(recipient_email)
+                        logger.info(f"📧 Keeping recipient in CC: {recipient_email} (normalized: {recipient_normalized}, sender: {sender_email_normalized})")
+                    else:
+                        logger.info(f"📧 Excluding sender from CC: {recipient_email} (goes in To field)")
                 
                 if cc_recipients_list:
                     cc_recipients = ', '.join(sorted(cc_recipients_list))
@@ -1625,10 +1645,43 @@ def reply_to_emails_with_accounts(accounts):
                 service = build('gmail', 'v1', credentials=creds)
                 original_msg_data = service.users().messages().get(userId='me', id=email['id']).execute()
                 original_headers = original_msg_data['payload'].get('headers', [])
+                original_to = next((h['value'] for h in original_headers if h['name'] == 'To'), None)
                 original_cc = next((h['value'] for h in original_headers if h['name'] == 'Cc'), None)
-                if original_cc:
-                    cc_recipients = original_cc
-                    logger.info(f"📧 Found CC recipients from original email: {cc_recipients}")
+                
+                logger.info(f"📧 Fallback: Original email To: {original_to}")
+                logger.info(f"📧 Fallback: Original email CC: {original_cc}")
+                
+                # Get all recipients from original email (To + CC) and preserve them
+                if original_to or original_cc:
+                    jake_email = os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com').lower()
+                    jake_email_normalized = normalize_email(jake_email)
+                    sender_email_normalized = normalize_email(contact_email)
+                    
+                    all_original_recipients = set()
+                    
+                    # Add To recipients (excluding Jake)
+                    if original_to:
+                        to_emails = parse_email_list(original_to)
+                        for to_email_addr in to_emails:
+                            if normalize_email(to_email_addr) != jake_email_normalized:
+                                all_original_recipients.add(to_email_addr)
+                    
+                    # Add CC recipients (excluding Jake)
+                    if original_cc:
+                        cc_emails = parse_email_list(original_cc)
+                        for cc_email in cc_emails:
+                            if normalize_email(cc_email) != jake_email_normalized:
+                                all_original_recipients.add(cc_email)
+                    
+                    # Remove the primary sender (they go in To, not CC)
+                    cc_recipients_list = [recipient_email for recipient_email in all_original_recipients if normalize_email(recipient_email) != sender_email_normalized]
+                    
+                    if cc_recipients_list:
+                        cc_recipients = ', '.join(sorted(cc_recipients_list))
+                        logger.info(f"📧 Found {len(cc_recipients_list)} participants from original email to CC: {cc_recipients}")
+                    else:
+                        cc_recipients = None
+                        logger.info(f"📧 No additional participants from original email")
             except Exception as e:
                 logger.debug(f"Could not extract CC from original email: {e}")
                 cc_recipients = None
@@ -1801,6 +1854,16 @@ def reply_to_emails_with_accounts(accounts):
                     logger.info(f"📧 Added merchanthelp@affirm.com as CC recipient (no existing recipients)")
             
             # Send threaded reply (include CC recipients if found)
+            # Log final CC recipients to ensure all are preserved
+            if cc_recipients:
+                if isinstance(cc_recipients, str):
+                    final_cc_list = [cc.strip() for cc in cc_recipients.split(',') if cc.strip()]
+                else:
+                    final_cc_list = [cc.strip() for cc in cc_recipients if cc.strip()]
+                logger.info(f"📧 FINAL CC recipients being sent ({len(final_cc_list)} total): {', '.join(final_cc_list)}")
+            else:
+                logger.info(f"📧 No CC recipients for this reply")
+            
             logger.info(f"📧 Sending reply email to {contact_email} for thread {thread_id}")
             email_result = send_threaded_email_reply(
                 to_email=contact_email,
