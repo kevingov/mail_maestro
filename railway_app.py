@@ -689,7 +689,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     if not reply_email_prompt_template:
         # Conditionally include rule about asking to include merchanthelp
         if not merchanthelp_already_ccd:
-            merchanthelp_rule = """    7. **Ask if they want to include merchanthelp@affirm.com in this email thread** - Add a question like "Would you like me to include merchanthelp@affirm.com in this thread so they can help with your issue?"
+            merchanthelp_rule = """    7. **ASK (do not state) if they want to include merchanthelp@affirm.com** - You must ASK a question like "Would you like me to include merchanthelp@affirm.com in this thread?" or "Should I CC merchanthelp@affirm.com so they can help?" DO NOT say "I'll include merchanthelp" or "I will add merchanthelp" - you must ASK FIRST and wait for their response before including them.
     8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - Only offer to CC merchanthelp@affirm.com in the thread. Never suggest emailing merchanthelp@affirm.com directly as an alternative.
     9. **Keep under 150 words** and feel natural, not automated"""
         else:
@@ -1704,11 +1704,14 @@ def reply_to_emails_with_accounts(accounts):
             logger.info(f"✅ AI response generated for thread {thread_id}")
             
             # Check if merchant wants to include merchanthelp@affirm.com in the thread
-            # Look for affirmative responses in the latest email body
+            # IMPORTANT: Only add merchanthelp to CC if they explicitly said "yes" in a PREVIOUS email
+            # The AI response should ASK FIRST, then we add them to CC in the NEXT reply if they said yes
             merchantcare_email = "merchanthelp@affirm.com"
             wants_merchantcare = False
             
-            if email.get('body'):
+            # Only check for "yes" if merchanthelp is NOT already CC'd
+            # If they're already CC'd, we don't need to check (and shouldn't add them again)
+            if not merchanthelp_already_ccd and email.get('body'):
                 email_body_lower = email['body'].lower()
                 # Check for affirmative responses about including merchantcare
                 affirmative_patterns = [
@@ -1755,16 +1758,18 @@ def reply_to_emails_with_accounts(accounts):
                 if not wants_merchantcare and conversation_content:
                     conversation_lower = conversation_content.lower()
                     # Check if previous message asked about including merchantcare
-                    if 'include merchantcare' in conversation_lower or 'include merchant care' in conversation_lower:
+                    if 'include merchantcare' in conversation_lower or 'include merchant care' in conversation_lower or 'cc merchanthelp' in conversation_lower:
                         # If the latest message is short and affirmative, likely a yes
                         if len(email['body'].strip()) < 50:  # Short response likely means yes/no
                             if any(word in email_body_lower for word in ['yes', 'yeah', 'yep', 'sure', 'ok', 'okay']):
                                 wants_merchantcare = True
-                                logger.info(f"✅ Merchant requested to include merchanthelp@affirm.com (short affirmative response)")
+                                logger.info(f"✅ Merchant requested to include merchanthelp@affirm.com (short affirmative response to previous question)")
             
-            # Add merchanthelp@affirm.com to CC if requested
+            # Add merchanthelp@affirm.com to CC ONLY if:
+            # 1. Merchant explicitly said "yes" in their email (wants_merchantcare = True)
+            # 2. They are NOT already CC'd (merchanthelp_already_ccd = False)
             # IMPORTANT: Preserve all existing CC recipients when adding merchanthelp@affirm.com
-            if wants_merchantcare:
+            if wants_merchantcare and not merchanthelp_already_ccd:
                 # Parse existing CC recipients to preserve them
                 existing_cc_list = []
                 if cc_recipients:
