@@ -2375,18 +2375,48 @@ def get_emails_needing_replies_with_accounts(accounts):
         except Exception as e:
             logger.debug(f"Could not check message labels for {latest_email['id']}: {e}")
         
+        # Check if merchanthelp@affirm.com has already responded in this thread
+        merchanthelp_email = "merchanthelp@affirm.com"
+        merchanthelp_has_responded = False
+        try:
+            for email_in_thread in emails_in_thread:
+                try:
+                    msg_data = service.users().messages().get(userId='me', id=email_in_thread['id']).execute()
+                    headers = msg_data['payload'].get('headers', [])
+                    from_header = next((h['value'] for h in headers if h['name'] == 'From'), '')
+                    
+                    # Check if sender is merchanthelp@affirm.com (case-insensitive, handle "Name <email>" format)
+                    from_email = from_header.lower()
+                    if merchanthelp_email.lower() in from_email:
+                        # Extract email from "Name <email>" format if present
+                        if '<' in from_email and '>' in from_email:
+                            extracted_email = from_email.split('<')[1].split('>')[0].strip()
+                        else:
+                            extracted_email = from_email.strip()
+                        
+                        if merchanthelp_email.lower() in extracted_email or extracted_email == merchanthelp_email.lower():
+                            merchanthelp_has_responded = True
+                            logger.info(f"⏭️ Skipping thread {thread_id} - merchanthelp@affirm.com has already responded in this thread (message from: {from_header})")
+                            break
+                except Exception as e:
+                    logger.debug(f"Error checking sender in thread message {email_in_thread.get('id')}: {e}")
+                    continue
+        except Exception as e:
+            logger.debug(f"Error checking for merchanthelp response in thread {thread_id}: {e}")
+        
         # Determine if we should reply:
         # 1. Latest message is from merchant, OR
         # 2. Latest message is from someone who was CC'd AND thread has a Workato account as recipient
         # BUT NOT if the latest message is from us
-        should_reply = (is_from_merchant or (latest_sender_was_ccd and thread_has_account_recipient)) and not latest_message_is_from_us
+        # AND NOT if merchanthelp@affirm.com has already responded
+        should_reply = (is_from_merchant or (latest_sender_was_ccd and thread_has_account_recipient)) and not latest_message_is_from_us and not merchanthelp_has_responded
         
         # Only reply if:
         # 1. Latest message is from merchant OR from a CC'd participant (and thread has account recipient)
         # 2. Latest message is NOT from us (not in SENT folder)
         # 3. Thread hasn't been replied to yet
         has_been_replied = has_been_replied_to(latest_email['id'], service)
-        logger.info(f"🔍 Thread {thread_id} decision: is_from_merchant={is_from_merchant}, latest_sender_was_ccd={latest_sender_was_ccd}, thread_has_account_recipient={thread_has_account_recipient}, latest_message_is_from_us={latest_message_is_from_us}, should_reply={should_reply}, has_been_replied={has_been_replied}, latest_sender={latest_sender_normalized}")
+        logger.info(f"🔍 Thread {thread_id} decision: is_from_merchant={is_from_merchant}, latest_sender_was_ccd={latest_sender_was_ccd}, thread_has_account_recipient={thread_has_account_recipient}, latest_message_is_from_us={latest_message_is_from_us}, merchanthelp_has_responded={merchanthelp_has_responded}, should_reply={should_reply}, has_been_replied={has_been_replied}, latest_sender={latest_sender_normalized}")
         
         if should_reply and not has_been_replied:
             # If latest sender is not a merchant, we need to find the account_info from the thread
