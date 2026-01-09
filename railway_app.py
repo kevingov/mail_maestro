@@ -698,8 +698,8 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     9. **DO NOT ask "should I cc merchanthelp@affirm.com"** - They are already CC'd, so do NOT ask about CC'ing them.
     10. **DO NOT suggest emailing merchanthelp@affirm.com directly** - merchanthelp@affirm.com is already on this thread.
     11. **Keep under 150 words** and feel natural, not automated"""
-        
-        prompt = f"""
+
+    prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
 
     **TASK:** Generate a professional Affirm-branded email response to {recipient_name} from {sender_name}.
@@ -932,8 +932,8 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
                 # This looks like a simple instruction, not a full prompt template
                 # Wrap it in a proper prompt structure
                 prompt = f"""
-{AFFIRM_VOICE_GUIDELINES}
-
+    {AFFIRM_VOICE_GUIDELINES}
+    
 **TASK:** {formatted_prompt}
 
 **CONTEXT:**
@@ -2357,7 +2357,7 @@ def get_emails_needing_replies_with_accounts(accounts):
                     normalized_account in latest_sender_normalized):
                     is_from_merchant = True
                     logger.info(f"✅ Matched merchant by alias/partial match: account={account_email}, normalized={normalized_account}, sender={latest_sender_original}")
-                    break
+                break
         
         if not is_from_merchant:
             logger.info(f"❌ Sender '{latest_sender_original}' (normalized: '{latest_sender_normalized}') is NOT a merchant account")
@@ -2375,8 +2375,8 @@ def get_emails_needing_replies_with_accounts(accounts):
         except Exception as e:
             logger.debug(f"Could not check message labels for {latest_email['id']}: {e}")
         
-        # Check if merchanthelp@affirm.com has already responded in this thread
-        merchanthelp_email = "merchanthelp@affirm.com"
+        # Check if merchanthelp@affirm.com or merchanthelp@affirm.zendesk.com has already responded in this thread
+        merchanthelp_emails = ["merchanthelp@affirm.com", "merchanthelp@affirm.zendesk.com"]
         merchanthelp_has_responded = False
         try:
             for email_in_thread in emails_in_thread:
@@ -2385,19 +2385,24 @@ def get_emails_needing_replies_with_accounts(accounts):
                     headers = msg_data['payload'].get('headers', [])
                     from_header = next((h['value'] for h in headers if h['name'] == 'From'), '')
                     
-                    # Check if sender is merchanthelp@affirm.com (case-insensitive, handle "Name <email>" format)
+                    # Check if sender is merchanthelp (case-insensitive, handle "Name <email>" format)
                     from_email = from_header.lower()
-                    if merchanthelp_email.lower() in from_email:
-                        # Extract email from "Name <email>" format if present
-                        if '<' in from_email and '>' in from_email:
-                            extracted_email = from_email.split('<')[1].split('>')[0].strip()
-                        else:
-                            extracted_email = from_email.strip()
-                        
+                    
+                    # Extract email from "Name <email>" format if present
+                    if '<' in from_email and '>' in from_email:
+                        extracted_email = from_email.split('<')[1].split('>')[0].strip()
+                    else:
+                        extracted_email = from_email.strip()
+                    
+                    # Check if extracted email matches any merchanthelp email address
+                    for merchanthelp_email in merchanthelp_emails:
                         if merchanthelp_email.lower() in extracted_email or extracted_email == merchanthelp_email.lower():
                             merchanthelp_has_responded = True
-                            logger.info(f"⏭️ Skipping thread {thread_id} - merchanthelp@affirm.com has already responded in this thread (message from: {from_header})")
+                            logger.info(f"⏭️ Skipping thread {thread_id} - {merchanthelp_email} has already responded in this thread (message from: {from_header})")
                             break
+                    
+                    if merchanthelp_has_responded:
+                        break
                 except Exception as e:
                     logger.debug(f"Error checking sender in thread message {email_in_thread.get('id')}: {e}")
                     continue
@@ -6950,8 +6955,8 @@ def workato_send_new_email():
                         raise ValueError("Could not extract contact_email")
                 except Exception as fallback_error:
                     logger.error(f"❌ Fallback parsing also failed: {fallback_error}")
-                    return jsonify({
-                        "status": "error",
+            return jsonify({
+                "status": "error",
                         "message": f"Invalid JSON format: {str(json_error)}. Please check your Workato request format.",
                         "timestamp": datetime.datetime.now().isoformat()
                     }), 400
