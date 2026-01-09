@@ -714,6 +714,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     4. **ONLY GATHER INFORMATION - DO NOT PROVIDE SOLUTIONS** - Your role is to collect details, not to troubleshoot or provide step-by-step instructions
     5. **Ask for specific information** needed to help them (e.g., store URL, error messages, screenshots, theme name, etc.)
     6. **Do NOT include troubleshooting steps, workarounds, or solutions** - only ask questions to gather information
+    7. **Once they respond to your questions** - After the merchant provides the requested information, tell them that merchanthelp@affirm.com will help from here. For example: "Thanks for providing those details. merchanthelp@affirm.com will help you from here."
 {merchanthelp_rule}
     
 
@@ -4236,9 +4237,10 @@ Keep the email under 130 words. Make it feel natural and human, not like marketi
 4. **ONLY GATHER INFORMATION - DO NOT PROVIDE SOLUTIONS** - Your role is to collect details, not to troubleshoot or provide step-by-step instructions
 5. **Ask for specific information** needed to help them (e.g., store URL, error messages, screenshots, theme name, etc.)
 6. **Do NOT include troubleshooting steps, workarounds, or solutions** - only ask questions to gather information
-7. **Ask if they want to include merchanthelp@affirm.com in this email thread** - Add a question like "Would you like me to include merchanthelp@affirm.com in this thread so they can help with your issue?" BUT ONLY if merchanthelp@affirm.com is NOT already CC'd in the thread. If merchanthelp@affirm.com is already CC'd (check conversation history), do NOT ask again.
-8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - Only offer to CC merchanthelp@affirm.com in the thread. Never suggest emailing merchanthelp@affirm.com directly as an alternative.
-9. **Keep under 150 words** and feel natural, not automated
+7. **Once they respond to your questions** - After the merchant provides the requested information, tell them that merchanthelp@affirm.com will help from here. For example: "Thanks for providing those details. merchanthelp@affirm.com will help you from here."
+8. **Ask if they want to include merchanthelp@affirm.com in this email thread** - Add a question like "Would you like me to include merchanthelp@affirm.com in this thread so they can help with your issue?" BUT ONLY if merchanthelp@affirm.com is NOT already CC'd in the thread. If merchanthelp@affirm.com is already CC'd (check conversation history), do NOT ask again.
+9. **DO NOT suggest emailing merchanthelp@affirm.com directly** - Only offer to CC merchanthelp@affirm.com in the thread. Never suggest emailing merchanthelp@affirm.com directly as an alternative.
+10. **Keep under 150 words** and feel natural, not automated
 
 **OUTPUT FORMAT:**
 - **Subject Line:** [Concise subject]
