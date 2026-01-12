@@ -931,7 +931,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
             if len(formatted_prompt.strip()) < 100 and '{' not in prompt_template:
                 # This looks like a simple instruction, not a full prompt template
                 # Wrap it in a proper prompt structure
-                prompt = f"""
+    prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
     
 **TASK:** {formatted_prompt}
@@ -2341,7 +2341,7 @@ def get_emails_needing_replies_with_accounts(accounts):
         logger.info(f"🔍 Checking if sender is merchant - account_emails keys: {list(account_emails.keys())[:5]}..., normalized_account_emails keys: {list(normalized_account_emails.keys())[:5]}...")
         
         if latest_sender_normalized in normalized_account_emails:
-            is_from_merchant = True
+                is_from_merchant = True
             logger.info(f"✅ Matched merchant by normalized email: {latest_sender_normalized}")
         elif latest_sender_original in account_emails:
             is_from_merchant = True
@@ -2508,7 +2508,7 @@ def get_emails_needing_replies_with_accounts(accounts):
             emails_needing_replies.append(reply_email)
             if is_from_merchant:
                 logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from merchant, normalized: {latest_sender_normalized})")
-            else:
+        else:
                 logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from CC'd participant, normalized: {latest_sender_normalized})")
         else:
             if not should_reply:
@@ -6318,7 +6318,7 @@ def workato_reply_to_emails():
         # Format response with actual email and thread details
         email_details = []
         if 'responses' in result and result['responses']:
-            import re
+                    import re
             for response in result['responses']:
                 # Clean AI response for display - preserve formatting but remove HTML
                 ai_response_text = response.get('ai_response', '')
@@ -6724,9 +6724,9 @@ def workato_send_new_email():
                 import re
                 raw_data = request.get_data(as_text=True)
                 
-                logger.info(f"🔍 DEBUG: Received request to send-new-email")
-                logger.info(f"🔍 DEBUG: Content-Type: {request.content_type}")
-                logger.info(f"🔍 DEBUG: Is JSON: {request.is_json}")
+        logger.info(f"🔍 DEBUG: Received request to send-new-email")
+        logger.info(f"🔍 DEBUG: Content-Type: {request.content_type}")
+        logger.info(f"🔍 DEBUG: Is JSON: {request.is_json}")
                 logger.info(f"🔍 DEBUG: Raw data length: {len(raw_data)} characters")
                 logger.info(f"🔍 DEBUG: Raw data preview: {raw_data[:1000]}")
                 
@@ -6749,25 +6749,70 @@ def workato_send_new_email():
                             
                             if quote_start < len(raw_data) and raw_data[quote_start] == '"':
                                 logger.info(f"🔍 Found opening quote at position {quote_start}")
-                                # Now find the closing quote - scan character by character handling escapes
-                                quote_end = quote_start + 1
-                                escaped = False
-                                scan_count = 0
-                                max_scan = 10000  # Limit scanning to prevent infinite loops
                                 
-                                while quote_end < len(raw_data) and scan_count < max_scan:
-                                    char = raw_data[quote_end]
-                                    if char == '\\' and not escaped:
-                                        escaped = True
-                                    elif char == '"' and not escaped:
-                                        logger.info(f"🔍 Found closing quote at position {quote_end} (scanned {scan_count} chars)")
-                                        break
-                                    else:
-                                        escaped = False
-                                    quote_end += 1
-                                    scan_count += 1
+                                # The activities value is a string that contains a Ruby hash array
+                                # It starts with "[{" and ends with "}]"
+                                # We need to find the quote that comes after "}]"
+                                # Look for the pattern "}]" followed by a quote (which closes the string value)
                                 
-                                if quote_end < len(raw_data):
+                                # First, try to find the pattern "}]" followed by a quote
+                                # This is more reliable than trying to match quotes with escapes
+                                pattern_start = quote_start + 1
+                                pattern_found = False
+                                quote_end = -1
+                                
+                                # Look for "}]" pattern - this indicates the end of the activities array
+                                # We need to find the LAST occurrence of "}]" followed by a quote (not the first one)
+                                last_pattern_pos = -1
+                                last_quote_pos = -1
+                                
+                                while pattern_start < len(raw_data) - 2:
+                                    if raw_data[pattern_start:pattern_start+2] == '}]':
+                                        # Found "}]", now check if the next non-whitespace char is a quote
+                                        check_pos = pattern_start + 2
+                                        while check_pos < len(raw_data) and raw_data[check_pos] in ' \t\n\r':
+                                            check_pos += 1
+                                        if check_pos < len(raw_data) and raw_data[check_pos] == '"':
+                                            # This is a candidate - keep track of the last one we find
+                                            last_pattern_pos = pattern_start
+                                            last_quote_pos = check_pos
+                                    pattern_start += 1
+                                
+                                if last_quote_pos > quote_start:
+                                    quote_end = last_quote_pos
+                                    pattern_found = True
+                                    chars_scanned = last_pattern_pos - quote_start
+                                    logger.info(f"🔍 Found closing quote at position {quote_end} (after last '}}]' pattern, scanned {chars_scanned} chars)")
+                                
+                                if not pattern_found:
+                                    # Fallback: scan character by character, but be smarter about it
+                                    # The activities value is typically very long, so we need to scan far
+                                    quote_end = quote_start + 1
+                                    escaped = False
+                                    scan_count = 0
+                                    max_scan = 10000  # Limit scanning to prevent infinite loops
+                                    
+                                    # Look for a quote that's followed by newline or closing brace
+                                    while quote_end < len(raw_data) - 1 and scan_count < max_scan:
+                                        char = raw_data[quote_end]
+                                        if char == '\\' and not escaped:
+                                            escaped = True
+                                        elif char == '"' and not escaped:
+                                            # Check if this quote is followed by newline or closing brace
+                                            next_char_pos = quote_end + 1
+                                            while next_char_pos < len(raw_data) and raw_data[next_char_pos] in ' \t':
+                                                next_char_pos += 1
+                                            if next_char_pos < len(raw_data):
+                                                next_char = raw_data[next_char_pos]
+                                                if next_char == '\n' or next_char == '}':
+                                                    logger.info(f"🔍 Found closing quote at position {quote_end} (followed by {next_char}, scanned {scan_count} chars)")
+                                                    break
+                                        else:
+                                            escaped = False
+                                        quote_end += 1
+                                        scan_count += 1
+                                
+                                if quote_end > quote_start and quote_end < len(raw_data):
                                     # Replace from activities_idx to quote_end+1 (including closing quote)
                                     raw_data = raw_data[:activities_idx] + '"activities": []' + raw_data[quote_end+1:]
                                     logger.info(f"🔍 Replaced activities field from position {activities_idx} to {quote_end+1}")
@@ -6785,7 +6830,7 @@ def workato_send_new_email():
                                         logger.info(f"🔍 Replaced activities field using closing brace at position {next_brace}")
                                     else:
                                         # Last resort: just append closing
-                                        raw_data = raw_data[:activities_idx] + '"activities": []\n}'
+                                        raw_data = raw_data[:activities_idx] + '"activities": []\n}}'
                                         logger.info(f"🔍 Replaced activities field using fallback (end of data)")
                             else:
                                 logger.warning(f"⚠️ Could not find opening quote after colon at position {colon_pos}")
