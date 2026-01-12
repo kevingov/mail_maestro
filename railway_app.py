@@ -6727,33 +6727,72 @@ def workato_send_new_email():
                 logger.info(f"🔍 DEBUG: Received request to send-new-email")
                 logger.info(f"🔍 DEBUG: Content-Type: {request.content_type}")
                 logger.info(f"🔍 DEBUG: Is JSON: {request.is_json}")
-                logger.info(f"🔍 DEBUG: Raw data: {raw_data[:500]}")
+                logger.info(f"🔍 DEBUG: Raw data length: {len(raw_data)} characters")
+                logger.info(f"🔍 DEBUG: Raw data preview: {raw_data[:1000]}")
                 
                 # First, try a simple approach: if activities field contains =>, just replace the entire field value
                 # This handles the case where activities is a string with Ruby hash syntax
-                if '"activities":' in raw_data and '"=>' in raw_data:
-                    # Find activities field and replace everything from "activities": to the next newline with "activities": []
-                    activities_match = re.search(r'"activities"\s*:\s*"[^"]*"=>', raw_data)
-                    if activities_match:
-                        activities_start = activities_match.start()
-                        # Find the next newline after activities
-                        next_newline = raw_data.find('\n', activities_start)
-                        if next_newline != -1:
-                            # Check if closing brace is after newline
-                            after_newline = raw_data[next_newline+1:next_newline+10].strip()
-                            if after_newline.startswith('}'):
-                                raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[next_newline:]
-                                logger.info(f"🔍 Fixed activities field using simple regex replacement (found newline before closing brace)")
+                if '"activities":' in raw_data:
+                    activities_idx = raw_data.find('"activities":')
+                    logger.info(f"🔍 Found activities field at position {activities_idx}")
+                    
+                    # Check if it contains Ruby hash syntax
+                    if '"=>' in raw_data[activities_idx:activities_idx+500]:
+                        logger.info(f"🔍 Activities field contains Ruby hash syntax (=>), will replace")
+                        # Find the colon after "activities"
+                        colon_pos = raw_data.find(':', activities_idx)
+                        if colon_pos != -1:
+                            # Find the opening quote (skip whitespace)
+                            quote_start = colon_pos + 1
+                            while quote_start < len(raw_data) and raw_data[quote_start] in ' \t':
+                                quote_start += 1
+                            
+                            if quote_start < len(raw_data) and raw_data[quote_start] == '"':
+                                logger.info(f"🔍 Found opening quote at position {quote_start}")
+                                # Now find the closing quote - scan character by character handling escapes
+                                quote_end = quote_start + 1
+                                escaped = False
+                                scan_count = 0
+                                max_scan = 10000  # Limit scanning to prevent infinite loops
+                                
+                                while quote_end < len(raw_data) and scan_count < max_scan:
+                                    char = raw_data[quote_end]
+                                    if char == '\\' and not escaped:
+                                        escaped = True
+                                    elif char == '"' and not escaped:
+                                        logger.info(f"🔍 Found closing quote at position {quote_end} (scanned {scan_count} chars)")
+                                        break
+                                    else:
+                                        escaped = False
+                                    quote_end += 1
+                                    scan_count += 1
+                                
+                                if quote_end < len(raw_data):
+                                    # Replace from activities_idx to quote_end+1 (including closing quote)
+                                    raw_data = raw_data[:activities_idx] + '"activities": []' + raw_data[quote_end+1:]
+                                    logger.info(f"🔍 Replaced activities field from position {activities_idx} to {quote_end+1}")
+                                else:
+                                    # Didn't find closing quote, try finding newline or closing brace instead
+                                    logger.warning(f"⚠️ Could not find closing quote, trying newline/brace approach")
+                                    next_newline = raw_data.find('\n', activities_idx)
+                                    next_brace = raw_data.find('}', activities_idx)
+                                    
+                                    if next_newline != -1 and (next_brace == -1 or next_newline < next_brace):
+                                        raw_data = raw_data[:activities_idx] + '"activities": []' + raw_data[next_newline:]
+                                        logger.info(f"🔍 Replaced activities field using newline at position {next_newline}")
+                                    elif next_brace != -1:
+                                        raw_data = raw_data[:activities_idx] + '"activities": []' + raw_data[next_brace:]
+                                        logger.info(f"🔍 Replaced activities field using closing brace at position {next_brace}")
+                                    else:
+                                        # Last resort: just append closing
+                                        raw_data = raw_data[:activities_idx] + '"activities": []\n}'
+                                        logger.info(f"🔍 Replaced activities field using fallback (end of data)")
                             else:
-                                # Still replace to newline
-                                raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[next_newline:]
-                                logger.info(f"🔍 Fixed activities field using simple regex replacement (found newline)")
+                                logger.warning(f"⚠️ Could not find opening quote after colon at position {colon_pos}")
                         else:
-                            # No newline, find closing brace
-                            next_brace = raw_data.find('}', activities_start)
-                            if next_brace != -1:
-                                raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[next_brace:]
-                                logger.info(f"🔍 Fixed activities field using simple regex replacement (found closing brace)")
+                            logger.warning(f"⚠️ Could not find colon after activities field")
+                    else:
+                        logger.info(f"🔍 Activities field does not contain Ruby hash syntax, will try standard parsing")
                 
                 # Try to fix common issues with activities field containing Ruby hash syntax
                 # Pattern: "activities": "[{"id"=>"...", ...}]"
