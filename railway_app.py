@@ -7058,6 +7058,7 @@ def workato_send_new_email():
                 try:
                     data = json.loads(raw_data)
                     logger.info(f"✅ Successfully parsed JSON after activities field replacement")
+                    logger.info(f"✅ Data keys: {list(data.keys()) if isinstance(data, dict) else 'N/A'}")
                     logger.debug(f"🔍 Manually parsed JSON data successfully")
                     # Data is successfully parsed, continue with normal processing
                 except json.JSONDecodeError as final_error:
@@ -7137,8 +7138,8 @@ def workato_send_new_email():
                         raise ValueError("Could not extract contact_email")
                 except Exception as fallback_error:
                     logger.error(f"❌ Fallback parsing also failed: {fallback_error}")
-            return jsonify({
-                "status": "error",
+                    return jsonify({
+                        "status": "error",
                         "message": f"Invalid JSON format: {str(json_error)}. Please check your Workato request format.",
                         "timestamp": datetime.datetime.now().isoformat()
                     }), 400
@@ -7146,22 +7147,26 @@ def workato_send_new_email():
         
         # Check if data was successfully parsed
         # Note: 'data' should be set either by request.get_json() or by manual parsing
+        logger.info(f"🔍 Checking if data variable exists after parsing...")
         if 'data' not in locals():
-            logger.error(f"❌ Data variable not defined after parsing attempts")
+            logger.error(f"❌ Data variable not defined after parsing attempts - returning 400")
             return jsonify({
                 "status": "error",
                 "message": "No JSON data provided or parsing failed",
                 "timestamp": datetime.datetime.now().isoformat()
             }), 400
         
+        logger.info(f"✅ Data variable exists, type: {type(data)}, checking if it's empty...")
         if not data:
-            logger.warning(f"⚠️ Data is empty or None after parsing. Data type: {type(data)}, Data value: {data}")
+            logger.warning(f"⚠️ Data is empty or None after parsing. Data type: {type(data)}, Data value: {data} - returning 400")
             return jsonify({
                 "status": "error",
                 "message": "No JSON data provided",
                 "timestamp": datetime.datetime.now().isoformat()
             }), 400
         
+        logger.info(f"✅ Data successfully parsed and validated, continuing with email processing...")
+        logger.info(f"✅ Data contains: contact_email={data.get('contact_email')}, contact_name={data.get('contact_name')}, account_name={data.get('account_name')}")
         # Data successfully parsed, continue processing
         
         # Extract contact information from Workato request
