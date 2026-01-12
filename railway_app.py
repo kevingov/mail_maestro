@@ -931,7 +931,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
             if len(formatted_prompt.strip()) < 100 and '{' not in prompt_template:
                 # This looks like a simple instruction, not a full prompt template
                 # Wrap it in a proper prompt structure
-    prompt = f"""
+                prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
     
 **TASK:** {formatted_prompt}
@@ -2341,7 +2341,7 @@ def get_emails_needing_replies_with_accounts(accounts):
         logger.info(f"🔍 Checking if sender is merchant - account_emails keys: {list(account_emails.keys())[:5]}..., normalized_account_emails keys: {list(normalized_account_emails.keys())[:5]}...")
         
         if latest_sender_normalized in normalized_account_emails:
-                is_from_merchant = True
+            is_from_merchant = True
             logger.info(f"✅ Matched merchant by normalized email: {latest_sender_normalized}")
         elif latest_sender_original in account_emails:
             is_from_merchant = True
@@ -2508,7 +2508,7 @@ def get_emails_needing_replies_with_accounts(accounts):
             emails_needing_replies.append(reply_email)
             if is_from_merchant:
                 logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from merchant, normalized: {latest_sender_normalized})")
-        else:
+            else:
                 logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from CC'd participant, normalized: {latest_sender_normalized})")
         else:
             if not should_reply:
@@ -6318,7 +6318,7 @@ def workato_reply_to_emails():
         # Format response with actual email and thread details
         email_details = []
         if 'responses' in result and result['responses']:
-                    import re
+            import re
             for response in result['responses']:
                 # Clean AI response for display - preserve formatting but remove HTML
                 ai_response_text = response.get('ai_response', '')
