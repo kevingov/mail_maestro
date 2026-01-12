@@ -2341,7 +2341,7 @@ def get_emails_needing_replies_with_accounts(accounts):
         logger.info(f"🔍 Checking if sender is merchant - account_emails keys: {list(account_emails.keys())[:5]}..., normalized_account_emails keys: {list(normalized_account_emails.keys())[:5]}...")
         
         if latest_sender_normalized in normalized_account_emails:
-                is_from_merchant = True
+            is_from_merchant = True
             logger.info(f"✅ Matched merchant by normalized email: {latest_sender_normalized}")
         elif latest_sender_original in account_emails:
             is_from_merchant = True
