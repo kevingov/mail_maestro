@@ -6813,9 +6813,25 @@ def workato_send_new_email():
                                         scan_count += 1
                                 
                                 if quote_end > quote_start and quote_end < len(raw_data):
+                                    # Check what comes after the closing quote
+                                    after_quote = raw_data[quote_end+1:quote_end+20]
+                                    logger.info(f"🔍 Content after closing quote: {repr(after_quote)}")
+                                    
                                     # Replace from activities_idx to quote_end+1 (including closing quote)
-                                    raw_data = raw_data[:activities_idx] + '"activities": []' + raw_data[quote_end+1:]
+                                    # Make sure we preserve proper JSON structure (comma before if needed, newline/brace after)
+                                    before_activities = raw_data[:activities_idx].rstrip()
+                                    after_quote_content = raw_data[quote_end+1:].lstrip()
+                                    
+                                    # Ensure there's a comma before activities if it's not the first field
+                                    if before_activities and not before_activities.rstrip().endswith('{'):
+                                        if not before_activities.rstrip().endswith(','):
+                                            before_activities += ','
+                                    
+                                    # Build the replacement
+                                    raw_data = before_activities + '\n "activities": []' + after_quote_content
                                     logger.info(f"🔍 Replaced activities field from position {activities_idx} to {quote_end+1}")
+                                    logger.info(f"🔍 Raw data after replacement (first 300 chars): {raw_data[:300]}")
+                                    logger.info(f"🔍 Raw data after replacement (last 300 chars): {raw_data[-300:]}")
                                 else:
                                     # Didn't find closing quote, try finding newline or closing brace instead
                                     logger.warning(f"⚠️ Could not find closing quote, trying newline/brace approach")
@@ -7041,11 +7057,15 @@ def workato_send_new_email():
                 # Try to parse the fixed JSON
                 try:
                     data = json.loads(raw_data)
+                    logger.info(f"✅ Successfully parsed JSON after activities field replacement")
                     logger.debug(f"🔍 Manually parsed JSON data successfully")
                     # Data is successfully parsed, continue with normal processing
                 except json.JSONDecodeError as final_error:
                     logger.error(f"❌ Final JSON parse failed after activities fix: {final_error}")
-                    logger.error(f"❌ Raw data around error (char {final_error.pos}): ...{raw_data[max(0, final_error.pos-50):final_error.pos+50]}...")
+                    logger.error(f"❌ Error position: {final_error.pos}")
+                    logger.error(f"❌ Raw data around error (char {final_error.pos}): ...{raw_data[max(0, final_error.pos-100):final_error.pos+100]}...")
+                    logger.error(f"❌ Raw data length: {len(raw_data)}")
+                    logger.error(f"❌ Raw data ends with: ...{raw_data[-200:]}")
                     # Re-raise to be caught by outer exception handler
                     raise
             except Exception as manual_parse_error:
