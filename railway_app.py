@@ -6318,7 +6318,7 @@ def workato_reply_to_emails():
         # Format response with actual email and thread details
         email_details = []
         if 'responses' in result and result['responses']:
-                    import re
+            import re
             for response in result['responses']:
                 # Clean AI response for display - preserve formatting but remove HTML
                 ai_response_text = response.get('ai_response', '')
