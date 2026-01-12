@@ -6724,9 +6724,9 @@ def workato_send_new_email():
                 import re
                 raw_data = request.get_data(as_text=True)
                 
-        logger.info(f"🔍 DEBUG: Received request to send-new-email")
-        logger.info(f"🔍 DEBUG: Content-Type: {request.content_type}")
-        logger.info(f"🔍 DEBUG: Is JSON: {request.is_json}")
+                logger.info(f"🔍 DEBUG: Received request to send-new-email")
+                logger.info(f"🔍 DEBUG: Content-Type: {request.content_type}")
+                logger.info(f"🔍 DEBUG: Is JSON: {request.is_json}")
                 logger.info(f"🔍 DEBUG: Raw data length: {len(raw_data)} characters")
                 logger.info(f"🔍 DEBUG: Raw data preview: {raw_data[:1000]}")
                 
