@@ -6724,6 +6724,37 @@ def workato_send_new_email():
                 import re
                 raw_data = request.get_data(as_text=True)
                 
+                logger.info(f"🔍 DEBUG: Received request to send-new-email")
+                logger.info(f"🔍 DEBUG: Content-Type: {request.content_type}")
+                logger.info(f"🔍 DEBUG: Is JSON: {request.is_json}")
+                logger.info(f"🔍 DEBUG: Raw data: {raw_data[:500]}")
+                
+                # First, try a simple approach: if activities field contains =>, just replace the entire field value
+                # This handles the case where activities is a string with Ruby hash syntax
+                if '"activities":' in raw_data and '"=>' in raw_data:
+                    # Find activities field and replace everything from "activities": to the next newline with "activities": []
+                    activities_match = re.search(r'"activities"\s*:\s*"[^"]*"=>', raw_data)
+                    if activities_match:
+                        activities_start = activities_match.start()
+                        # Find the next newline after activities
+                        next_newline = raw_data.find('\n', activities_start)
+                        if next_newline != -1:
+                            # Check if closing brace is after newline
+                            after_newline = raw_data[next_newline+1:next_newline+10].strip()
+                            if after_newline.startswith('}'):
+                                raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[next_newline:]
+                                logger.info(f"🔍 Fixed activities field using simple regex replacement (found newline before closing brace)")
+                            else:
+                                # Still replace to newline
+                                raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[next_newline:]
+                                logger.info(f"🔍 Fixed activities field using simple regex replacement (found newline)")
+                        else:
+                            # No newline, find closing brace
+                            next_brace = raw_data.find('}', activities_start)
+                            if next_brace != -1:
+                                raw_data = raw_data[:activities_start] + '"activities": []' + raw_data[next_brace:]
+                                logger.info(f"🔍 Fixed activities field using simple regex replacement (found closing brace)")
+                
                 # Try to fix common issues with activities field containing Ruby hash syntax
                 # Pattern: "activities": "[{"id"=>"...", ...}]"
                 # The activities field is a string containing Ruby hash syntax that needs to be converted to JSON
@@ -6943,43 +6974,41 @@ def workato_send_new_email():
                 try:
                     import re
                     # Find the activities field - it's typically the last field before the closing brace
-                    # Pattern: "activities": "..." where ... can be a very long string with nested quotes
-                    # We'll find "activities": and then scan forward to find the closing quote and newline
+                    # Since the activities value is a string with complex content, we'll use a simpler approach:
+                    # Find "activities": and replace everything until the next newline (since it's the last field)
                     if '"activities":' in raw_data_preview:
                         activities_idx = raw_data_preview.find('"activities":')
-                        # Find the colon after "activities"
-                        colon_idx = raw_data_preview.find(':', activities_idx)
-                        if colon_idx != -1:
-                            # Find the opening quote of the value (skip whitespace)
-                            quote_start = colon_idx + 1
-                            while quote_start < len(raw_data_preview) and raw_data_preview[quote_start] in ' \t':
-                                quote_start += 1
-                            
-                            if quote_start < len(raw_data_preview) and raw_data_preview[quote_start] == '"':
-                                # Found opening quote, now find the matching closing quote
-                                # We need to handle escaped quotes properly
-                                quote_end = quote_start + 1
-                                escaped = False
-                                while quote_end < len(raw_data_preview):
-                                    char = raw_data_preview[quote_end]
-                                    if char == '\\' and not escaped:
-                                        escaped = True
-                                    elif char == '"' and not escaped:
-                                        # Found the closing quote
-                                        break
-                                    else:
-                                        escaped = False
-                                    quote_end += 1
-                                
-                                # Replace from activities_idx to quote_end+1 (including the closing quote)
-                                raw_data_preview = raw_data_preview[:activities_idx] + '"activities": []' + raw_data_preview[quote_end+1:]
-                                logger.info(f"🔍 Removed malformed activities field using quote matching, set to empty array")
+                        # Find the next newline after activities (it's typically the last field)
+                        next_newline = raw_data_preview.find('\n', activities_idx)
+                        if next_newline == -1:
+                            # No newline found, look for closing brace
+                            next_brace = raw_data_preview.find('}', activities_idx)
+                            if next_brace != -1:
+                                # Replace from activities to just before the closing brace
+                                raw_data_preview = raw_data_preview[:activities_idx] + '"activities": []' + raw_data_preview[next_brace:]
+                                logger.info(f"🔍 Removed malformed activities field (found closing brace), set to empty array")
+                            else:
+                                # No closing brace either, just replace from activities to end
+                                raw_data_preview = raw_data_preview[:activities_idx] + '"activities": []\n}'
+                                logger.info(f"🔍 Removed malformed activities field (end of data), set to empty array")
+                        else:
+                            # Check if there's a closing brace right after the newline (activities is last field)
+                            after_newline = raw_data_preview[next_newline+1:next_newline+10].strip()
+                            if after_newline.startswith('}'):
+                                # Replace from activities to newline
+                                raw_data_preview = raw_data_preview[:activities_idx] + '"activities": []' + raw_data_preview[next_newline:]
+                                logger.info(f"🔍 Removed malformed activities field (found newline before closing brace), set to empty array")
+                            else:
+                                # There might be more content, but let's still try replacing to newline
+                                raw_data_preview = raw_data_preview[:activities_idx] + '"activities": []' + raw_data_preview[next_newline:]
+                                logger.info(f"🔍 Removed malformed activities field (found newline), set to empty array")
                     
                     # Try parsing again
                     data = json.loads(raw_data_preview)
                     logger.info(f"🔍 Successfully parsed JSON after aggressive activities field removal")
                 except Exception as final_error:
                     logger.error(f"❌ Even aggressive activities removal failed: {final_error}")
+                    logger.error(f"   Raw data after attempted fix: {raw_data_preview[:500] if 'raw_data_preview' in locals() else 'N/A'}")
                     # Return error response
                     return jsonify({
                         'status': 'error',
