@@ -772,6 +772,12 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
 
         if response and response.choices:
             response_text = response.choices[0].message.content.strip()
+            
+            # Clean up markdown code blocks if present (remove ```html, ```, etc.)
+            response_text = re.sub(r'^```html\s*\n?', '', response_text, flags=re.MULTILINE)
+            response_text = re.sub(r'^```\s*\n?', '', response_text, flags=re.MULTILINE)
+            response_text = re.sub(r'\n?```\s*$', '', response_text, flags=re.MULTILINE)
+            response_text = response_text.strip()
 
             # Extract Subject Line and Email Body using regex (same as generate_message)
             subject_line_match = re.search(r"\*\*Subject Line:\*\*\s*(.*)", response_text)
@@ -779,6 +785,12 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
 
             subject_line = subject_line_match.group(1).strip() if subject_line_match else f"Re: Your Message"
             email_body = email_body_match.group(1).strip() if email_body_match else f"Hi {recipient_name},\n\nThank you for your message. I'll be happy to help you with any questions about Affirm.\n\nBest regards,\n{sender_name}"
+            
+            # Clean up any remaining markdown code blocks from email_body
+            email_body = re.sub(r'^```html\s*\n?', '', email_body, flags=re.MULTILINE)
+            email_body = re.sub(r'^```\s*\n?', '', email_body, flags=re.MULTILINE)
+            email_body = re.sub(r'\n?```\s*$', '', email_body, flags=re.MULTILINE)
+            email_body = email_body.strip()
 
             return format_pardot_email(first_name=recipient_name, 
                                        email_content=email_body, 
@@ -4385,7 +4397,7 @@ For all support, refer to merchanthelp@affirm.com Only."""
         # Default prompt for non-campaign emails
         non_campaign_email_prompt_default = """{AFFIRM_VOICE_GUIDELINES}
 
-**TASK:** Generate a professional, Affirm-branded email response to {sender_name} who reached out but is not part of an active campaign. Tell them that merchanthelp@affirm.com has been CC'd on this thread to help assist.
+**TASK:** Generate a professional, Affirm-branded email response to {sender_name} who reached out but is not part of an active campaign. Tell them that merchanthelp@affirm.com has been CC'd on this thread to help assist, and ask for details about their issue.
 
 **CONTEXT:**
 - Sender: {sender_name}
@@ -4396,10 +4408,15 @@ For all support, refer to merchanthelp@affirm.com Only."""
 **CRITICAL RULES:**
 1. **Be polite and professional** - acknowledge their outreach
 2. **Tell them merchanthelp@affirm.com has been CC'd** - State that "I've CC'd merchanthelp@affirm.com on this thread to help assist with your inquiry" or similar phrasing
-3. **Be helpful** - explain that Merchant Help can assist with their questions
-4. **DO NOT ask to include merchanthelp@affirm.com** - merchanthelp@affirm.com has already been CC'd, so tell them this fact, don't ask
-5. **Keep it brief** - under 100 words
-6. **Maintain Affirm brand voice** - smart, approachable, efficient
+3. **Ask for specific information about their issue** - Similar to reply-to-email prompts, ask questions to gather details needed to help them. For example:
+   - What specific issue are they experiencing? (e.g., checkout flow breaking, integration problems, etc.)
+   - What platform are they using? (e.g., Shopify, WooCommerce, etc.)
+   - What error messages are they seeing? (if applicable)
+   - Any other relevant details that would help merchanthelp@affirm.com assist them
+4. **ONLY GATHER INFORMATION - DO NOT PROVIDE SOLUTIONS** - Your role is to collect details, not to troubleshoot or provide step-by-step instructions
+5. **DO NOT ask to include merchanthelp@affirm.com** - merchanthelp@affirm.com has already been CC'd, so tell them this fact, don't ask
+6. **Keep it brief** - under 150 words
+7. **Maintain Affirm brand voice** - smart, approachable, efficient
 
 **OUTPUT FORMAT:**
 - **Email Body:** [Your response in HTML format]
