@@ -7797,6 +7797,7 @@ def workato_check_non_campaign_emails():
                 
                 # Get non-campaign email prompt from database or use default
                 non_campaign_prompt = None
+                prompt_source = "default"
                 if DB_AVAILABLE:
                     try:
                         conn = get_db_connection()
@@ -7810,6 +7811,7 @@ def workato_check_non_campaign_emails():
                             row = cursor.fetchone()
                             if row:
                                 non_campaign_prompt = row[0]
+                                prompt_source = "database"
                             conn.close()
                     except Exception as e:
                         logger.warning(f"Could not load non-campaign email prompt from database: {e}")
@@ -7817,6 +7819,42 @@ def workato_check_non_campaign_emails():
                 # Fall back to environment variable or default
                 if not non_campaign_prompt:
                     non_campaign_prompt = os.getenv('NON_CAMPAIGN_EMAIL_PROMPT_TEMPLATE')
+                    if non_campaign_prompt:
+                        prompt_source = "environment_variable"
+                    else:
+                        # Use the hardcoded default (same as defined in startup)
+                        non_campaign_prompt = f"""{AFFIRM_VOICE_GUIDELINES}
+
+**TASK:** Generate a professional, Affirm-branded email response to {{sender_name}} who reached out but is not part of an active campaign. Tell them that merchanthelp@affirm.com has been CC'd on this thread to help assist.
+
+**CONTEXT:**
+- Sender: {{sender_name}}
+- Recipient: Jake Morgan (AI Business Development)
+- Email Body: {{email_body}}
+- **IMPORTANT: merchanthelp@affirm.com has been CC'd on this email thread** - Tell them that merchanthelp@affirm.com has been CC'd to help assist, do NOT ask if they want to include merchanthelp@affirm.com
+
+**CRITICAL RULES:**
+1. **Be polite and professional** - acknowledge their outreach
+2. **Tell them merchanthelp@affirm.com has been CC'd** - State that "I've CC'd merchanthelp@affirm.com on this thread to help assist with your inquiry" or similar phrasing
+3. **Be helpful** - explain that Merchant Help can assist with their questions
+4. **DO NOT ask to include merchanthelp@affirm.com** - merchanthelp@affirm.com has already been CC'd, so tell them this fact, don't ask
+5. **Keep it brief** - under 100 words
+6. **Maintain Affirm brand voice** - smart, approachable, efficient
+
+**OUTPUT FORMAT:**
+- **Email Body:** [Your response in HTML format]
+
+For all merchant support, refer to merchanthelp@affirm.com only."""
+                        prompt_source = "hardcoded_default"
+                
+                logger.info(f"📝 Using non-campaign email prompt from: {prompt_source}")
+                logger.info(f"📝 Prompt preview (first 300 chars): {non_campaign_prompt[:300]}...")
+                
+                # Check if the prompt still contains the old "ask to CC" language
+                if non_campaign_prompt and ('ask if they want to include merchanthelp' in non_campaign_prompt.lower() or 
+                                            'would you like me to include merchanthelp' in non_campaign_prompt.lower()):
+                    logger.warning(f"⚠️ WARNING: Non-campaign prompt appears to still contain 'ask to CC' language. Prompt source: {prompt_source}")
+                    logger.warning(f"⚠️ Consider updating the prompt in the database to use the new 'tell them merchanthelp has been CC'd' language.")
                 
                 # Generate AI response using the non-campaign email prompt
                 try:
