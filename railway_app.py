@@ -4369,19 +4369,19 @@ For all support, refer to merchanthelp@affirm.com Only."""
         # Default prompt for non-campaign emails
         non_campaign_email_prompt_default = """{AFFIRM_VOICE_GUIDELINES}
 
-**TASK:** Generate a professional, Affirm-branded email response to {sender_name} who reached out but is not part of an active campaign. Politely direct them to merchanthelp@affirm.com for merchant support and inquiries.
+**TASK:** Generate a professional, Affirm-branded email response to {sender_name} who reached out but is not part of an active campaign. Tell them that merchanthelp@affirm.com has been CC'd on this thread to help assist.
 
 **CONTEXT:**
 - Sender: {sender_name}
 - Recipient: Jake Morgan (AI Business Development)
 - Email Body: {email_body}
-- **IMPORTANT: merchanthelp@affirm.com is already CC'd on this email thread** - do NOT ask if they want to include merchanthelp@affirm.com
+- **IMPORTANT: merchanthelp@affirm.com has been CC'd on this email thread** - Tell them that merchanthelp@affirm.com has been CC'd to help assist, do NOT ask if they want to include merchanthelp@affirm.com
 
 **CRITICAL RULES:**
 1. **Be polite and professional** - acknowledge their outreach
-2. **Direct them to merchanthelp@affirm.com** - this is the main purpose
+2. **Tell them merchanthelp@affirm.com has been CC'd** - State that "I've CC'd merchanthelp@affirm.com on this thread to help assist with your inquiry" or similar phrasing
 3. **Be helpful** - explain that Merchant Help can assist with their questions
-4. **DO NOT ask to include merchanthelp@affirm.com** - merchanthelp@affirm.com is already CC'd on this thread, so do NOT ask if they want to include them
+4. **DO NOT ask to include merchanthelp@affirm.com** - merchanthelp@affirm.com has already been CC'd, so tell them this fact, don't ask
 5. **Keep it brief** - under 100 words
 6. **Maintain Affirm brand voice** - smart, approachable, efficient
 
@@ -7731,8 +7731,17 @@ def workato_check_non_campaign_emails():
                     normalize_email(jake_email) == sender_email
                 )
                 
-                # Skip if campaign member or from us
-                if is_campaign_member or is_from_us:
+                # Skip emails from merchanthelp@affirm.zendesk.com
+                is_from_merchanthelp_zendesk = (
+                    'merchanthelp@affirm.zendesk.com' in sender_email_original or
+                    'merchanthelp@affirm.zendesk.com' in sender_email or
+                    'merchanthelp@affirm.zendesk.com' in sender.lower()
+                )
+                
+                # Skip if campaign member, from us, or from merchanthelp zendesk
+                if is_campaign_member or is_from_us or is_from_merchanthelp_zendesk:
+                    if is_from_merchanthelp_zendesk:
+                        logger.info(f"⏭️ Skipping email from merchanthelp@affirm.zendesk.com: {sender_email_original}")
                     continue
                 
                 # For non-campaign emails, check if the latest message in the thread is from them (not us)
