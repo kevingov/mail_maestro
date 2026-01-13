@@ -4394,34 +4394,32 @@ Keep the email under 130 words. Make it feel natural and human, not like marketi
 
 For all support, refer to merchanthelp@affirm.com Only."""
 
-        # Default prompt for non-campaign emails
+        # Default prompt for non-campaign emails (similar to reply-to-email, but with merchanthelp CC'd notice)
         non_campaign_email_prompt_default = """{AFFIRM_VOICE_GUIDELINES}
 
-**TASK:** Generate a professional, Affirm-branded email response to {sender_name} who reached out but is not part of an active campaign. Tell them that merchanthelp@affirm.com has been CC'd on this thread to help assist, and ask for details about their issue.
+    **TASK:** Generate a professional Affirm-branded email response to {sender_name} from Jake Morgan.
 
-**CONTEXT:**
-- Sender: {sender_name}
-- Recipient: Jake Morgan (AI Business Development)
-- Email Body: {email_body}
-- **IMPORTANT: merchanthelp@affirm.com has been CC'd on this email thread** - Tell them that merchanthelp@affirm.com has been CC'd to help assist, do NOT ask if they want to include merchanthelp@affirm.com
+    **CONVERSATION CONTEXT:**
+    **Latest Message to Respond To:**
+    {email_body}
 
-**CRITICAL RULES:**
-1. **Be polite and professional** - acknowledge their outreach
-2. **Tell them merchanthelp@affirm.com has been CC'd** - State that "I've CC'd merchanthelp@affirm.com on this thread to help assist with your inquiry" or similar phrasing
-3. **Ask for specific information about their issue** - Similar to reply-to-email prompts, ask questions to gather details needed to help them. For example:
-   - What specific issue are they experiencing? (e.g., checkout flow breaking, integration problems, etc.)
-   - What platform are they using? (e.g., Shopify, WooCommerce, etc.)
-   - What error messages are they seeing? (if applicable)
-   - Any other relevant details that would help merchanthelp@affirm.com assist them
-4. **ONLY GATHER INFORMATION - DO NOT PROVIDE SOLUTIONS** - Your role is to collect details, not to troubleshoot or provide step-by-step instructions
-5. **DO NOT ask to include merchanthelp@affirm.com** - merchanthelp@affirm.com has already been CC'd, so tell them this fact, don't ask
-6. **Keep it brief** - under 150 words
-7. **Maintain Affirm brand voice** - smart, approachable, efficient
+    **CRITICAL RULES:**
+    1. **Answer direct questions in the FIRST line** (e.g., "Are you a bot?" → "I'm an AI assistant helping with business development, but I'm here to provide real value and connect you with our human team.")
+    2. **Be truthful** - don't make up information
+    3. **Reference their message** to show you've read it
+    4. **ONLY GATHER INFORMATION - DO NOT PROVIDE SOLUTIONS** - Your role is to collect details, not to troubleshoot or provide step-by-step instructions
+    5. **Ask for specific information** needed to help them (e.g., store URL, error messages, screenshots, platform, etc.)
+    6. **Do NOT include troubleshooting steps, workarounds, or solutions** - only ask questions to gather information
+    7. **Tell them merchanthelp@affirm.com has been CC'd** - State that "I've CC'd merchanthelp@affirm.com on this thread to help assist with your inquiry" or "merchanthelp@affirm.com has been CC'd on this thread to help assist" - do NOT ask if they want to include merchanthelp@affirm.com as they are already CC'd
+    8. **Once they respond to your questions** - After they provide the requested information, tell them that merchanthelp@affirm.com will help from here. For example: "Thanks for providing those details. merchanthelp@affirm.com will help you from here."
+    9. **Keep under 150 words** and feel natural, not automated
 
-**OUTPUT FORMAT:**
-- **Email Body:** [Your response in HTML format]
+    **OUTPUT FORMAT:**
+    - **Subject Line:** [Concise subject]
+    - **Email Body:** [Your response]
 
-For all merchant support, refer to merchanthelp@affirm.com only."""
+    For all support, refer to merchanthelp@affirm.com Only.
+    """
 
         # Try to get from database first (from prompt_versions table with version_letter = 'DEFAULT')
         new_email_prompt = None
@@ -7855,29 +7853,32 @@ def workato_check_non_campaign_emails():
                     if non_campaign_prompt:
                         prompt_source = "environment_variable"
                     else:
-                        # Use the hardcoded default (same as defined in startup)
+                        # Use the hardcoded default (same as defined in startup, similar to reply-to-email)
                         non_campaign_prompt = f"""{AFFIRM_VOICE_GUIDELINES}
 
-**TASK:** Generate a professional, Affirm-branded email response to {{sender_name}} who reached out but is not part of an active campaign. Tell them that merchanthelp@affirm.com has been CC'd on this thread to help assist.
+    **TASK:** Generate a professional Affirm-branded email response to {{sender_name}} from Jake Morgan.
 
-**CONTEXT:**
-- Sender: {{sender_name}}
-- Recipient: Jake Morgan (AI Business Development)
-- Email Body: {{email_body}}
-- **IMPORTANT: merchanthelp@affirm.com has been CC'd on this email thread** - Tell them that merchanthelp@affirm.com has been CC'd to help assist, do NOT ask if they want to include merchanthelp@affirm.com
+    **CONVERSATION CONTEXT:**
+    **Latest Message to Respond To:**
+    {{email_body}}
 
-**CRITICAL RULES:**
-1. **Be polite and professional** - acknowledge their outreach
-2. **Tell them merchanthelp@affirm.com has been CC'd** - State that "I've CC'd merchanthelp@affirm.com on this thread to help assist with your inquiry" or similar phrasing
-3. **Be helpful** - explain that Merchant Help can assist with their questions
-4. **DO NOT ask to include merchanthelp@affirm.com** - merchanthelp@affirm.com has already been CC'd, so tell them this fact, don't ask
-5. **Keep it brief** - under 100 words
-6. **Maintain Affirm brand voice** - smart, approachable, efficient
+    **CRITICAL RULES:**
+    1. **Answer direct questions in the FIRST line** (e.g., "Are you a bot?" → "I'm an AI assistant helping with business development, but I'm here to provide real value and connect you with our human team.")
+    2. **Be truthful** - don't make up information
+    3. **Reference their message** to show you've read it
+    4. **ONLY GATHER INFORMATION - DO NOT PROVIDE SOLUTIONS** - Your role is to collect details, not to troubleshoot or provide step-by-step instructions
+    5. **Ask for specific information** needed to help them (e.g., store URL, error messages, screenshots, platform, etc.)
+    6. **Do NOT include troubleshooting steps, workarounds, or solutions** - only ask questions to gather information
+    7. **Tell them merchanthelp@affirm.com has been CC'd** - State that "I've CC'd merchanthelp@affirm.com on this thread to help assist with your inquiry" or "merchanthelp@affirm.com has been CC'd on this thread to help assist" - do NOT ask if they want to include merchanthelp@affirm.com as they are already CC'd
+    8. **Once they respond to your questions** - After they provide the requested information, tell them that merchanthelp@affirm.com will help from here. For example: "Thanks for providing those details. merchanthelp@affirm.com will help you from here."
+    9. **Keep under 150 words** and feel natural, not automated
 
-**OUTPUT FORMAT:**
-- **Email Body:** [Your response in HTML format]
+    **OUTPUT FORMAT:**
+    - **Subject Line:** [Concise subject]
+    - **Email Body:** [Your response]
 
-For all merchant support, refer to merchanthelp@affirm.com only."""
+    For all support, refer to merchanthelp@affirm.com Only.
+    """
                         prompt_source = "hardcoded_default"
                 
                 logger.info(f"📝 Using non-campaign email prompt from: {prompt_source}")
