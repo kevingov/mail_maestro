@@ -660,31 +660,16 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     reply_email_prompt_template = prompt_template or os.getenv('REPLY_EMAIL_PROMPT_TEMPLATE')
     prompt_source = "custom" if prompt_template else ("env_variable" if os.getenv('REPLY_EMAIL_PROMPT_TEMPLATE') else "default")
     
-    prompt = None  # Initialize prompt variable
-    
     if reply_email_prompt_template:
         # Use custom template (from parameter, environment variable, or default)
         try:
-            # Format the custom template - only include variables that are commonly used
-            # Some templates may not use all variables, so we'll handle KeyError gracefully
-            format_vars = {
-                'AFFIRM_VOICE_GUIDELINES': AFFIRM_VOICE_GUIDELINES,
-                'recipient_name': recipient_name,
-                'sender_name': sender_name,
-                'conversation_context': conversation_context,
-                'email_body': email_body
-            }
-            
-            # Try to format with all variables, but handle missing ones gracefully
-            try:
-                prompt = reply_email_prompt_template.format(**format_vars)
-            except KeyError as missing_var:
-                # If a variable is missing, try to format without it (for templates that don't need all vars)
-                logger.debug(f"Template missing variable {missing_var}, attempting to format without it")
-                # Remove the missing variable from format_vars and try again
-                # But actually, we should just let it fail and use default
-                raise
-            
+            prompt = reply_email_prompt_template.format(
+                AFFIRM_VOICE_GUIDELINES=AFFIRM_VOICE_GUIDELINES,
+                recipient_name=recipient_name,
+                sender_name=sender_name,
+                conversation_context=conversation_context,
+                email_body=email_body
+            )
             prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
             source_description = "Custom prompt (from test/API)" if prompt_template else ("REPLY_EMAIL_PROMPT_TEMPLATE environment variable" if os.getenv('REPLY_EMAIL_PROMPT_TEMPLATE') else "Default prompt template (hardcoded)")
             logger.info(f"📝 PROMPT USED FOR REPLY EMAIL:")
@@ -696,13 +681,12 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
             logger.info(f"   Recipient: {recipient_name}")
             logger.info(f"   Conversation History Length: {len(conversation_history) if conversation_history else 0} characters")
             logger.info(f"   Full Prompt Content:\n{'='*80}\n{prompt}\n{'='*80}")
-        except (KeyError, ValueError) as e:
-            logger.warning(f"⚠️ Custom prompt template formatting failed: {e}, using default")
+        except KeyError as e:
+            logger.warning(f"⚠️ REPLY_EMAIL_PROMPT_TEMPLATE missing variable {e}, using default")
             reply_email_prompt_template = None
-            prompt = None  # Reset prompt so we use default
     
     # Default prompt if no custom template or formatting failed
-    if not reply_email_prompt_template or prompt is None:
+    if not reply_email_prompt_template:
         # Conditionally include rule about asking to include merchanthelp
         if not merchanthelp_already_ccd:
             merchanthelp_rule = """    7. **ASK (do not state) if they want to include merchanthelp@affirm.com** - You must ASK a question like "Would you like me to include merchanthelp@affirm.com in this thread?" or "Should I CC merchanthelp@affirm.com so they can help?" DO NOT say "I'll include merchanthelp" or "I will add merchanthelp" - you must ASK FIRST and wait for their response before including them.
@@ -715,7 +699,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     10. **DO NOT suggest emailing merchanthelp@affirm.com directly** - merchanthelp@affirm.com is already on this thread.
     11. **Keep under 150 words** and feel natural, not automated"""
 
-        prompt = f"""
+    prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
 
     **TASK:** Generate a professional Affirm-branded email response to {recipient_name} from {sender_name}.
@@ -772,12 +756,6 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
 
         if response and response.choices:
             response_text = response.choices[0].message.content.strip()
-            
-            # Clean up markdown code blocks if present (remove ```html, ```, etc.)
-            response_text = re.sub(r'^```html\s*\n?', '', response_text, flags=re.MULTILINE)
-            response_text = re.sub(r'^```\s*\n?', '', response_text, flags=re.MULTILINE)
-            response_text = re.sub(r'\n?```\s*$', '', response_text, flags=re.MULTILINE)
-            response_text = response_text.strip()
 
             # Extract Subject Line and Email Body using regex (same as generate_message)
             subject_line_match = re.search(r"\*\*Subject Line:\*\*\s*(.*)", response_text)
@@ -785,27 +763,6 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
 
             subject_line = subject_line_match.group(1).strip() if subject_line_match else f"Re: Your Message"
             email_body = email_body_match.group(1).strip() if email_body_match else f"Hi {recipient_name},\n\nThank you for your message. I'll be happy to help you with any questions about Affirm.\n\nBest regards,\n{sender_name}"
-            
-            # Clean up any remaining markdown code blocks from email_body
-            email_body = re.sub(r'^```html\s*\n?', '', email_body, flags=re.MULTILINE)
-            email_body = re.sub(r'^```\s*\n?', '', email_body, flags=re.MULTILINE)
-            email_body = re.sub(r'\n?```\s*$', '', email_body, flags=re.MULTILINE)
-            email_body = email_body.strip()
-            
-            # Normalize line breaks - convert HTML line breaks to newlines first, then clean up
-            # Convert HTML line breaks to newlines (so format_pardot_email can handle them consistently)
-            email_body = email_body.replace('<br>', '\n').replace('<br/>', '\n').replace('<br />', '\n')
-            email_body = email_body.replace('</p>', '\n\n').replace('<p>', '')
-            email_body = email_body.replace('</div>', '\n').replace('<div>', '')
-            # Remove any remaining HTML tags
-            email_body = re.sub(r'<[^>]+>', '', email_body)
-            # Normalize multiple consecutive newlines to double newlines (paragraph breaks)
-            email_body = re.sub(r'\n\s*\n\s*\n+', '\n\n', email_body)
-            # Clean up any extra whitespace at start of lines
-            email_body = re.sub(r'\n[ \t]+', '\n', email_body)
-            # Clean up multiple spaces to single space (but preserve intentional spacing)
-            email_body = re.sub(r'[ \t]{2,}', ' ', email_body)
-            email_body = email_body.strip()
 
             return format_pardot_email(first_name=recipient_name, 
                                        email_content=email_body, 
@@ -2085,57 +2042,6 @@ def reply_to_emails_with_accounts(accounts):
             "truncated_message": ai_summary_data['truncated_message'],
             "ai_summary": ai_summary_data['ai_summary']
         }
-        
-        # Extract plain text from ai_response (which is full HTML template)
-        # The ai_response is the full HTML email template, we need to extract just the email body text
-        ai_response_text = ""
-        if ai_response:
-            import re
-            # Try to extract content from the <p> tag that contains the email content
-            # The template has: <p style="line-height: 1.6;">{{EMAIL_CONTENT}}</p>
-            # After replacement, it's: <p style="line-height: 1.6;">[email content with <br> tags]</p>
-            email_content_match = re.search(r'<p[^>]*style="line-height: 1\.6;"[^>]*>(.*?)</p>', ai_response, re.DOTALL)
-            if email_content_match:
-                # Found the email content section
-                email_content_html = email_content_match.group(1)
-                # Convert HTML line breaks to newlines first
-                email_content_html = email_content_html.replace('<br>', '\n').replace('<br/>', '\n').replace('<br />', '\n')
-                # Remove remaining HTML tags
-                ai_response_text = re.sub(r'<[^>]+>', '', email_content_html)
-            else:
-                # Fallback: try to find content between <p> tags
-                p_match = re.search(r'<p[^>]*>(.*?)</p>', ai_response, re.DOTALL)
-                if p_match:
-                    email_content_html = p_match.group(1)
-                    email_content_html = email_content_html.replace('<br>', '\n').replace('<br/>', '\n').replace('<br />', '\n')
-                    ai_response_text = re.sub(r'<[^>]+>', '', email_content_html)
-                else:
-                    # Last fallback: remove all HTML tags from the entire response
-                    ai_response_text = re.sub(r'<[^>]+>', '', ai_response)
-                    # Convert HTML line breaks to newlines
-                    ai_response_text = ai_response_text.replace('<br>', '\n').replace('<br/>', '\n').replace('<br />', '\n')
-            
-            # Convert HTML entities
-            ai_response_text = ai_response_text.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"')
-            # Normalize multiple newlines
-            ai_response_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', ai_response_text)
-            # Clean up extra whitespace but preserve line breaks
-            ai_response_text = re.sub(r'[ \t]+', ' ', ai_response_text)  # Multiple spaces to single
-            ai_response_text = ai_response_text.strip()
-        
-        # Use the original message body (latest message) instead of full conversation history
-        # Strip HTML from original message body if present
-        original_message_text = original_message_body
-        if original_message_text:
-            import re
-            # Remove HTML tags if present
-            original_message_text = re.sub(r'<[^>]+>', '', original_message_text)
-            # Convert HTML entities
-            original_message_text = original_message_text.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"')
-            # Normalize whitespace but preserve line breaks
-            original_message_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', original_message_text)
-            original_message_text = re.sub(r'[ \t]+', ' ', original_message_text)
-            original_message_text = original_message_text.strip()
 
         responses.append({
             "sender": contact_email,
@@ -2144,8 +2050,8 @@ def reply_to_emails_with_accounts(accounts):
             "salesforce_id": salesforce_id,
             "thread_id": thread_id,
             "subject": email['subject'],
-            "original_message": original_message_text,  # Use original message body, not full conversation
-            "ai_response": ai_response_text,  # Use cleaned text version, not full HTML template
+            "original_message": conversation_content,
+            "ai_response": ai_response,
             "ai_summary_original_message": ai_summary_original_message,
             "email_status": email_status + tracking_info,
             "tracking_id": email_result.get('tracking_id') if isinstance(email_result, dict) else None,
@@ -4460,32 +4366,29 @@ Keep the email under 130 words. Make it feel natural and human, not like marketi
 
 For all support, refer to merchanthelp@affirm.com Only."""
 
-        # Default prompt for non-campaign emails (similar to reply-to-email, but with merchanthelp CC'd notice)
+        # Default prompt for non-campaign emails
         non_campaign_email_prompt_default = """{AFFIRM_VOICE_GUIDELINES}
 
-    **TASK:** Generate a professional Affirm-branded email response to {sender_name} from Jake Morgan.
+**TASK:** Generate a professional, Affirm-branded email response to {sender_name} who reached out but is not part of an active campaign. Politely direct them to merchanthelp@affirm.com for merchant support and inquiries.
 
-    **CONVERSATION CONTEXT:**
-    **Latest Message to Respond To:**
-    {email_body}
+**CONTEXT:**
+- Sender: {sender_name}
+- Recipient: Jake Morgan (AI Business Development)
+- Email Body: {email_body}
+- **IMPORTANT: merchanthelp@affirm.com is already CC'd on this email thread** - do NOT ask if they want to include merchanthelp@affirm.com
 
-    **CRITICAL RULES:**
-    1. **Answer direct questions in the FIRST line** (e.g., "Are you a bot?" → "I'm an AI assistant helping with business development, but I'm here to provide real value and connect you with our human team.")
-    2. **Be truthful** - don't make up information
-    3. **Reference their message** to show you've read it
-    4. **ONLY GATHER INFORMATION - DO NOT PROVIDE SOLUTIONS** - Your role is to collect details, not to troubleshoot or provide step-by-step instructions
-    5. **Ask for specific information** needed to help them (e.g., store URL, error messages, screenshots, platform, etc.)
-    6. **Do NOT include troubleshooting steps, workarounds, or solutions** - only ask questions to gather information
-    7. **Tell them merchanthelp@affirm.com has been CC'd** - State that "I've CC'd merchanthelp@affirm.com on this thread to help assist with your inquiry" or "merchanthelp@affirm.com has been CC'd on this thread to help assist" - do NOT ask if they want to include merchanthelp@affirm.com as they are already CC'd
-    8. **Once they respond to your questions** - After they provide the requested information, tell them that merchanthelp@affirm.com will help from here. For example: "Thanks for providing those details. merchanthelp@affirm.com will help you from here."
-    9. **Keep under 150 words** and feel natural, not automated
+**CRITICAL RULES:**
+1. **Be polite and professional** - acknowledge their outreach
+2. **Direct them to merchanthelp@affirm.com** - this is the main purpose
+3. **Be helpful** - explain that Merchant Help can assist with their questions
+4. **DO NOT ask to include merchanthelp@affirm.com** - merchanthelp@affirm.com is already CC'd on this thread, so do NOT ask if they want to include them
+5. **Keep it brief** - under 100 words
+6. **Maintain Affirm brand voice** - smart, approachable, efficient
 
-    **OUTPUT FORMAT:**
-    - **Subject Line:** [Concise subject]
-    - **Email Body:** [Your response]
+**OUTPUT FORMAT:**
+- **Email Body:** [Your response in HTML format]
 
-    For all support, refer to merchanthelp@affirm.com Only.
-    """
+For all merchant support, refer to merchanthelp@affirm.com only."""
 
         # Try to get from database first (from prompt_versions table with version_letter = 'DEFAULT')
         new_email_prompt = None
@@ -7828,17 +7731,8 @@ def workato_check_non_campaign_emails():
                     normalize_email(jake_email) == sender_email
                 )
                 
-                # Skip emails from merchanthelp@affirm.zendesk.com
-                is_from_merchanthelp_zendesk = (
-                    'merchanthelp@affirm.zendesk.com' in sender_email_original or
-                    'merchanthelp@affirm.zendesk.com' in sender_email or
-                    'merchanthelp@affirm.zendesk.com' in sender.lower()
-                )
-                
-                # Skip if campaign member, from us, or from merchanthelp zendesk
-                if is_campaign_member or is_from_us or is_from_merchanthelp_zendesk:
-                    if is_from_merchanthelp_zendesk:
-                        logger.info(f"⏭️ Skipping email from merchanthelp@affirm.zendesk.com: {sender_email_original}")
+                # Skip if campaign member or from us
+                if is_campaign_member or is_from_us:
                     continue
                 
                 # For non-campaign emails, check if the latest message in the thread is from them (not us)
@@ -7894,7 +7788,6 @@ def workato_check_non_campaign_emails():
                 
                 # Get non-campaign email prompt from database or use default
                 non_campaign_prompt = None
-                prompt_source = "default"
                 if DB_AVAILABLE:
                     try:
                         conn = get_db_connection()
@@ -7908,7 +7801,6 @@ def workato_check_non_campaign_emails():
                             row = cursor.fetchone()
                             if row:
                                 non_campaign_prompt = row[0]
-                                prompt_source = "database"
                             conn.close()
                     except Exception as e:
                         logger.warning(f"Could not load non-campaign email prompt from database: {e}")
@@ -7916,45 +7808,6 @@ def workato_check_non_campaign_emails():
                 # Fall back to environment variable or default
                 if not non_campaign_prompt:
                     non_campaign_prompt = os.getenv('NON_CAMPAIGN_EMAIL_PROMPT_TEMPLATE')
-                    if non_campaign_prompt:
-                        prompt_source = "environment_variable"
-                    else:
-                        # Use the hardcoded default (same as defined in startup, similar to reply-to-email)
-                        non_campaign_prompt = f"""{AFFIRM_VOICE_GUIDELINES}
-
-    **TASK:** Generate a professional Affirm-branded email response to {{sender_name}} from Jake Morgan.
-
-    **CONVERSATION CONTEXT:**
-    **Latest Message to Respond To:**
-    {{email_body}}
-
-    **CRITICAL RULES:**
-    1. **Answer direct questions in the FIRST line** (e.g., "Are you a bot?" → "I'm an AI assistant helping with business development, but I'm here to provide real value and connect you with our human team.")
-    2. **Be truthful** - don't make up information
-    3. **Reference their message** to show you've read it
-    4. **ONLY GATHER INFORMATION - DO NOT PROVIDE SOLUTIONS** - Your role is to collect details, not to troubleshoot or provide step-by-step instructions
-    5. **Ask for specific information** needed to help them (e.g., store URL, error messages, screenshots, platform, etc.)
-    6. **Do NOT include troubleshooting steps, workarounds, or solutions** - only ask questions to gather information
-    7. **Tell them merchanthelp@affirm.com has been CC'd** - State that "I've CC'd merchanthelp@affirm.com on this thread to help assist with your inquiry" or "merchanthelp@affirm.com has been CC'd on this thread to help assist" - do NOT ask if they want to include merchanthelp@affirm.com as they are already CC'd
-    8. **Once they respond to your questions** - After they provide the requested information, tell them that merchanthelp@affirm.com will help from here. For example: "Thanks for providing those details. merchanthelp@affirm.com will help you from here."
-    9. **Keep under 150 words** and feel natural, not automated
-
-    **OUTPUT FORMAT:**
-    - **Subject Line:** [Concise subject]
-    - **Email Body:** [Your response]
-
-    For all support, refer to merchanthelp@affirm.com Only.
-    """
-                        prompt_source = "hardcoded_default"
-                
-                logger.info(f"📝 Using non-campaign email prompt from: {prompt_source}")
-                logger.info(f"📝 Prompt preview (first 300 chars): {non_campaign_prompt[:300]}...")
-                
-                # Check if the prompt still contains the old "ask to CC" language
-                if non_campaign_prompt and ('ask if they want to include merchanthelp' in non_campaign_prompt.lower() or 
-                                            'would you like me to include merchanthelp' in non_campaign_prompt.lower()):
-                    logger.warning(f"⚠️ WARNING: Non-campaign prompt appears to still contain 'ask to CC' language. Prompt source: {prompt_source}")
-                    logger.warning(f"⚠️ Consider updating the prompt in the database to use the new 'tell them merchanthelp has been CC'd' language.")
                 
                 # Generate AI response using the non-campaign email prompt
                 try:
