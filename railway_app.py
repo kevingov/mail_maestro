@@ -1851,6 +1851,85 @@ def reply_to_emails_with_accounts(accounts):
                 will_add_merchanthelp = True  # Flag to add them to CC after generating response
                 logger.info(f"📧 Merchant said yes to including merchanthelp - will add to CC and AI should not ask again")
             
+            # Check if we've already said merchanthelp will take it from here
+            # If merchanthelp is CC'd AND we've said they'll take it from here, skip replying unless merchant specifically asks for Jake
+            merchanthelp_will_take_over = False
+            if merchanthelp_already_ccd and conversation_content:
+                conversation_lower = conversation_content.lower()
+                # Check for phrases indicating we've handed off to merchanthelp
+                handoff_phrases = [
+                    'merchanthelp@affirm.com will help from here',
+                    'merchanthelp will help from here',
+                    'merchanthelp@affirm.com will help',
+                    'merchanthelp will help',
+                    'merchanthelp@affirm.com will take it from here',
+                    'merchanthelp will take it from here',
+                    'merchanthelp@affirm.com can help',
+                    'merchanthelp can help',
+                    'merchanthelp@affirm.com will assist',
+                    'merchanthelp will assist',
+                    'thanks for providing those details. merchanthelp@affirm.com will help',
+                    'merchanthelp@affirm.com will help you from here'
+                ]
+                
+                # Check if any of our previous messages (from Jake) contain handoff phrases
+                jake_email = os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com').lower()
+                for msg_part in conversation_parts:
+                    msg_sender = msg_part.get('sender', '').lower()
+                    msg_body = msg_part.get('body', '').lower()
+                    
+                    # Check if this message is from Jake Morgan (check sender email or name)
+                    # Extract email from sender field if it's in "Name <email>" format
+                    sender_email = None
+                    if '<' in msg_part.get('sender', '') and '>' in msg_part.get('sender', ''):
+                        sender_email = msg_part.get('sender', '').split('<')[1].split('>')[0].strip().lower()
+                    else:
+                        sender_email = msg_part.get('sender', '').strip().lower()
+                    
+                    is_from_jake = (jake_email in msg_sender or 
+                                   'jake' in msg_sender or 
+                                   'jake.morgan' in msg_sender or
+                                   (sender_email and jake_email in sender_email))
+                    
+                    if is_from_jake:
+                        # Check if this message contains a handoff phrase
+                        if any(phrase in msg_body for phrase in handoff_phrases):
+                            merchanthelp_will_take_over = True
+                            logger.info(f"📧 Found handoff message to merchanthelp in conversation history - will check if merchant specifically asks for Jake")
+                            break
+            
+            # If merchanthelp is CC'd and we've said they'll take it from here, check if merchant specifically asks for Jake
+            if merchanthelp_will_take_over:
+                email_body_lower = email.get('body', '').lower()
+                # Check if merchant specifically asks for Jake Morgan
+                jake_request_patterns = [
+                    'jake',
+                    'jake morgan',
+                    'jake.morgan',
+                    'talk to jake',
+                    'speak with jake',
+                    'contact jake',
+                    'reach out to jake',
+                    'jake can help',
+                    'jake will help',
+                    'jake should',
+                    'jake needs to',
+                    'need jake',
+                    'want jake',
+                    'jake please',
+                    'jake,',
+                    'jake?',
+                    'jake!'
+                ]
+                
+                merchant_asks_for_jake = any(pattern in email_body_lower for pattern in jake_request_patterns)
+                
+                if not merchant_asks_for_jake:
+                    logger.info(f"⏭️ Skipping reply: merchanthelp@affirm.com is CC'd and we've already said they'll take it from here. Merchant hasn't specifically asked for Jake Morgan.")
+                    continue  # Skip this thread
+                else:
+                    logger.info(f"✅ Merchant specifically asked for Jake Morgan - will reply despite merchanthelp handoff")
+            
             # Generate AI response using the full conversation history
             # Pass information about whether merchanthelp is already CC'd (or will be CC'd)
             logger.info(f"🤖 Generating AI response for thread {thread_id} from {contact_email}")
