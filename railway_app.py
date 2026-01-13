@@ -7824,8 +7824,8 @@ def workato_check_non_campaign_emails():
                         sender_name = "there"
                     
                     logger.info(f"🤖 Generating AI response for non-campaign email from {sender_email_original}")
-                    # For non-campaign emails, we're CC'ing merchanthelp, so merchanthelp_already_ccd should be False
-                    # (False means we're adding them now, not that they were already there)
+                    # For non-campaign emails, we're automatically CC'ing merchanthelp@affirm.com,
+                    # so merchanthelp_already_ccd should be True to tell them it's CC'd (not ask)
                     # To avoid the merchanthelp_rule error: if a custom template is provided, ensure it will fall back to default
                     # by checking if it references merchanthelp_rule. If not, don't pass it so default prompt is used.
                     # This mimics the reply-to-email endpoint which passes prompt_template=None
@@ -7841,7 +7841,7 @@ def workato_check_non_campaign_emails():
                         recipient_name="Jake Morgan",
                         conversation_history=None,
                         prompt_template=non_campaign_prompt,
-                        merchanthelp_already_ccd=False
+                        merchanthelp_already_ccd=True  # Set to True so AI tells them merchanthelp is CC'd, not asks
                     )
                     logger.info(f"✅ AI response generated for non-campaign email from {sender_email_original}")
                     
