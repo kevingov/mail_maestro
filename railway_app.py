@@ -1809,6 +1809,10 @@ def reply_to_emails_with_accounts(accounts):
                     'yes add them',
                     'yes, cc them',
                     'yes cc them',
+                    'yes please cc them',  # Added: "Yes please cc them to this thread"
+                    'yes, please cc them',  # Added: "Yes, please cc them"
+                    'please cc them',  # Added: "Please cc them"
+                    'cc them to this thread',  # Added: "cc them to this thread"
                     'yes, please',
                     'yes please',
                     'yes.',
@@ -1835,10 +1839,20 @@ def reply_to_emails_with_accounts(accounts):
                 # Look for context clues in conversation history
                 if not wants_merchantcare and conversation_content:
                     conversation_lower = conversation_content.lower()
-                    # Check if previous message asked about including merchantcare
-                    if 'include merchantcare' in conversation_lower or 'include merchant care' in conversation_lower or 'cc merchanthelp' in conversation_lower:
+                    # Check if previous message asked about including merchantcare or CC'ing
+                    if ('include merchantcare' in conversation_lower or 
+                        'include merchant care' in conversation_lower or 
+                        'cc merchanthelp' in conversation_lower or
+                        'cc them' in conversation_lower or
+                        'include them' in conversation_lower):
+                        # Check if the current message contains "cc them" or "include them" with affirmative words
+                        if ('cc them' in email_body_lower or 'include them' in email_body_lower):
+                            # If it contains "cc them" or "include them" with affirmative context, it's a yes
+                            if any(word in email_body_lower for word in ['yes', 'yeah', 'yep', 'sure', 'ok', 'okay', 'please']):
+                                wants_merchantcare = True
+                                logger.info(f"✅ Merchant requested to include merchanthelp@affirm.com (affirmative response with 'cc them' or 'include them')")
                         # If the latest message is short and affirmative, likely a yes
-                        if len(email['body'].strip()) < 50:  # Short response likely means yes/no
+                        elif len(email['body'].strip()) < 100:  # Increased threshold for short responses
                             if any(word in email_body_lower for word in ['yes', 'yeah', 'yep', 'sure', 'ok', 'okay']):
                                 wants_merchantcare = True
                                 logger.info(f"✅ Merchant requested to include merchanthelp@affirm.com (short affirmative response to previous question)")
