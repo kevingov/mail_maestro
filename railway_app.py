@@ -791,6 +791,21 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
             email_body = re.sub(r'^```\s*\n?', '', email_body, flags=re.MULTILINE)
             email_body = re.sub(r'\n?```\s*$', '', email_body, flags=re.MULTILINE)
             email_body = email_body.strip()
+            
+            # Normalize line breaks - convert HTML line breaks to newlines first, then clean up
+            # Convert HTML line breaks to newlines (so format_pardot_email can handle them consistently)
+            email_body = email_body.replace('<br>', '\n').replace('<br/>', '\n').replace('<br />', '\n')
+            email_body = email_body.replace('</p>', '\n\n').replace('<p>', '')
+            email_body = email_body.replace('</div>', '\n').replace('<div>', '')
+            # Remove any remaining HTML tags
+            email_body = re.sub(r'<[^>]+>', '', email_body)
+            # Normalize multiple consecutive newlines to double newlines (paragraph breaks)
+            email_body = re.sub(r'\n\s*\n\s*\n+', '\n\n', email_body)
+            # Clean up any extra whitespace at start of lines
+            email_body = re.sub(r'\n[ \t]+', '\n', email_body)
+            # Clean up multiple spaces to single space (but preserve intentional spacing)
+            email_body = re.sub(r'[ \t]{2,}', ' ', email_body)
+            email_body = email_body.strip()
 
             return format_pardot_email(first_name=recipient_name, 
                                        email_content=email_body, 
