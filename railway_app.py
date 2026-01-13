@@ -2430,7 +2430,7 @@ def get_emails_needing_replies_with_accounts(accounts):
         logger.info(f"🔍 Checking if sender is merchant - account_emails keys: {list(account_emails.keys())[:5]}..., normalized_account_emails keys: {list(normalized_account_emails.keys())[:5]}...")
         
         if latest_sender_normalized in normalized_account_emails:
-                is_from_merchant = True
+            is_from_merchant = True
             logger.info(f"✅ Matched merchant by normalized email: {latest_sender_normalized}")
         elif latest_sender_original in account_emails:
             is_from_merchant = True
@@ -2597,7 +2597,7 @@ def get_emails_needing_replies_with_accounts(accounts):
             emails_needing_replies.append(reply_email)
             if is_from_merchant:
                 logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from merchant, normalized: {latest_sender_normalized})")
-        else:
+            else:
                 logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from CC'd participant, normalized: {latest_sender_normalized})")
         else:
             if not should_reply:
@@ -6409,7 +6409,7 @@ def workato_reply_to_emails():
         # Format response with actual email and thread details
         email_details = []
         if 'responses' in result and result['responses']:
-                    import re
+            import re
             for response in result['responses']:
                 # Clean AI response for display - preserve formatting but remove HTML
                 ai_response_text = response.get('ai_response', '')
@@ -6815,9 +6815,9 @@ def workato_send_new_email():
                 import re
                 raw_data = request.get_data(as_text=True)
                 
-        logger.info(f"🔍 DEBUG: Received request to send-new-email")
-        logger.info(f"🔍 DEBUG: Content-Type: {request.content_type}")
-        logger.info(f"🔍 DEBUG: Is JSON: {request.is_json}")
+                logger.info(f"🔍 DEBUG: Received request to send-new-email")
+                logger.info(f"🔍 DEBUG: Content-Type: {request.content_type}")
+                logger.info(f"🔍 DEBUG: Is JSON: {request.is_json}")
                 logger.info(f"🔍 DEBUG: Raw data length: {len(raw_data)} characters")
                 logger.info(f"🔍 DEBUG: Raw data preview: {raw_data[:1000]}")
                 
@@ -7229,11 +7229,11 @@ def workato_send_new_email():
                         raise ValueError("Could not extract contact_email")
                 except Exception as fallback_error:
                     logger.error(f"❌ Fallback parsing also failed: {fallback_error}")
-            return jsonify({
-                "status": "error",
+                    return jsonify({
+                        "status": "error",
                         "message": f"Invalid JSON format: {str(json_error)}. Please check your Workato request format.",
-                "timestamp": datetime.datetime.now().isoformat()
-            }), 400
+                        "timestamp": datetime.datetime.now().isoformat()
+                    }), 400
                 # If fallback parsing succeeded, continue with the extracted data
         
         # Check if data was successfully parsed
