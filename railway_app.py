@@ -2085,6 +2085,57 @@ def reply_to_emails_with_accounts(accounts):
             "truncated_message": ai_summary_data['truncated_message'],
             "ai_summary": ai_summary_data['ai_summary']
         }
+        
+        # Extract plain text from ai_response (which is full HTML template)
+        # The ai_response is the full HTML email template, we need to extract just the email body text
+        ai_response_text = ""
+        if ai_response:
+            import re
+            # Try to extract content from the <p> tag that contains the email content
+            # The template has: <p style="line-height: 1.6;">{{EMAIL_CONTENT}}</p>
+            # After replacement, it's: <p style="line-height: 1.6;">[email content with <br> tags]</p>
+            email_content_match = re.search(r'<p[^>]*style="line-height: 1\.6;"[^>]*>(.*?)</p>', ai_response, re.DOTALL)
+            if email_content_match:
+                # Found the email content section
+                email_content_html = email_content_match.group(1)
+                # Convert HTML line breaks to newlines first
+                email_content_html = email_content_html.replace('<br>', '\n').replace('<br/>', '\n').replace('<br />', '\n')
+                # Remove remaining HTML tags
+                ai_response_text = re.sub(r'<[^>]+>', '', email_content_html)
+            else:
+                # Fallback: try to find content between <p> tags
+                p_match = re.search(r'<p[^>]*>(.*?)</p>', ai_response, re.DOTALL)
+                if p_match:
+                    email_content_html = p_match.group(1)
+                    email_content_html = email_content_html.replace('<br>', '\n').replace('<br/>', '\n').replace('<br />', '\n')
+                    ai_response_text = re.sub(r'<[^>]+>', '', email_content_html)
+                else:
+                    # Last fallback: remove all HTML tags from the entire response
+                    ai_response_text = re.sub(r'<[^>]+>', '', ai_response)
+                    # Convert HTML line breaks to newlines
+                    ai_response_text = ai_response_text.replace('<br>', '\n').replace('<br/>', '\n').replace('<br />', '\n')
+            
+            # Convert HTML entities
+            ai_response_text = ai_response_text.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"')
+            # Normalize multiple newlines
+            ai_response_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', ai_response_text)
+            # Clean up extra whitespace but preserve line breaks
+            ai_response_text = re.sub(r'[ \t]+', ' ', ai_response_text)  # Multiple spaces to single
+            ai_response_text = ai_response_text.strip()
+        
+        # Use the original message body (latest message) instead of full conversation history
+        # Strip HTML from original message body if present
+        original_message_text = original_message_body
+        if original_message_text:
+            import re
+            # Remove HTML tags if present
+            original_message_text = re.sub(r'<[^>]+>', '', original_message_text)
+            # Convert HTML entities
+            original_message_text = original_message_text.replace('&nbsp;', ' ').replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>').replace('&quot;', '"')
+            # Normalize whitespace but preserve line breaks
+            original_message_text = re.sub(r'\n\s*\n\s*\n+', '\n\n', original_message_text)
+            original_message_text = re.sub(r'[ \t]+', ' ', original_message_text)
+            original_message_text = original_message_text.strip()
 
         responses.append({
             "sender": contact_email,
@@ -2093,8 +2144,8 @@ def reply_to_emails_with_accounts(accounts):
             "salesforce_id": salesforce_id,
             "thread_id": thread_id,
             "subject": email['subject'],
-            "original_message": conversation_content,
-            "ai_response": ai_response,
+            "original_message": original_message_text,  # Use original message body, not full conversation
+            "ai_response": ai_response_text,  # Use cleaned text version, not full HTML template
             "ai_summary_original_message": ai_summary_original_message,
             "email_status": email_status + tracking_info,
             "tracking_id": email_result.get('tracking_id') if isinstance(email_result, dict) else None,
