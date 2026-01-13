@@ -933,7 +933,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
             if len(formatted_prompt.strip()) < 100 and '{' not in prompt_template:
                 # This looks like a simple instruction, not a full prompt template
                 # Wrap it in a proper prompt structure
-    prompt = f"""
+                prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
     
 **TASK:** {formatted_prompt}
