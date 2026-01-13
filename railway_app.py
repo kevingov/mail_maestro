@@ -933,7 +933,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
             if len(formatted_prompt.strip()) < 100 and '{' not in prompt_template:
                 # This looks like a simple instruction, not a full prompt template
                 # Wrap it in a proper prompt structure
-                prompt = f"""
+    prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
     
 **TASK:** {formatted_prompt}
@@ -1758,29 +1758,23 @@ def reply_to_emails_with_accounts(accounts):
                             logger.info(f"📧 merchanthelp@affirm.com found in CC of message from {msg_part.get('sender', 'unknown')} - will not ask again")
                             break
             
-            # Also check conversation history text for mentions of merchanthelp being CC'd
-            if not merchanthelp_already_ccd and conversation_content:
-                conversation_lower = conversation_content.lower()
-                # Check if merchanthelp was mentioned as being CC'd or included
-                if 'merchanthelp@affirm.com' in conversation_lower:
-                    # Look for patterns indicating they're already CC'd or included
-                    if any(phrase in conversation_lower for phrase in [
-                        'cc merchanthelp',
-                        'cc\'d merchanthelp',
-                        'cced merchanthelp',
-                        'include merchanthelp',
-                        'added merchanthelp',
-                        'merchanthelp is on',
-                        'merchanthelp on this thread',
-                        'merchanthelp in this thread',
-                        'i\'ll include merchanthelp',
-                        'i will include merchanthelp',
-                        'including merchanthelp',
-                        'merchanthelp has been',
-                        'merchanthelp was added'
-                    ]):
+            # Also check ALL messages in conversation history for merchanthelp in actual To/CC headers
+            # ONLY check actual email headers, NOT text mentions (to avoid false positives)
+            if not merchanthelp_already_ccd and conversation_parts:
+                merchanthelp_email_lower = merchanthelp_email.lower()
+                for msg_part in conversation_parts:
+                    msg_to = msg_part.get('to', '')
+                    msg_cc = msg_part.get('cc', '')
+                    
+                    # Parse To and CC recipients
+                    all_recipients_text = (msg_to or '') + ' ' + (msg_cc or '')
+                    all_recipients_lower = all_recipients_text.lower()
+                    
+                    # Check if merchanthelp@affirm.com is in the actual To/CC headers
+                    if merchanthelp_email_lower in all_recipients_lower:
                         merchanthelp_already_ccd = True
-                        logger.info(f"📧 merchanthelp@affirm.com appears to already be CC'd based on conversation history text")
+                        logger.info(f"📧 merchanthelp@affirm.com found in To/CC headers of message from {msg_part.get('sender', 'unknown')} - confirmed already CC'd")
+                        break
             
             # Check if merchant wants to include merchanthelp@affirm.com in the thread
             # IMPORTANT: Check this BEFORE generating AI response so the AI knows not to ask if they already said yes
@@ -2436,7 +2430,7 @@ def get_emails_needing_replies_with_accounts(accounts):
         logger.info(f"🔍 Checking if sender is merchant - account_emails keys: {list(account_emails.keys())[:5]}..., normalized_account_emails keys: {list(normalized_account_emails.keys())[:5]}...")
         
         if latest_sender_normalized in normalized_account_emails:
-            is_from_merchant = True
+                is_from_merchant = True
             logger.info(f"✅ Matched merchant by normalized email: {latest_sender_normalized}")
         elif latest_sender_original in account_emails:
             is_from_merchant = True
@@ -2603,7 +2597,7 @@ def get_emails_needing_replies_with_accounts(accounts):
             emails_needing_replies.append(reply_email)
             if is_from_merchant:
                 logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from merchant, normalized: {latest_sender_normalized})")
-            else:
+        else:
                 logger.info(f"Conversation thread {thread_id} from {latest_email['sender']} needs a reply (last message from CC'd participant, normalized: {latest_sender_normalized})")
         else:
             if not should_reply:
@@ -6415,7 +6409,7 @@ def workato_reply_to_emails():
         # Format response with actual email and thread details
         email_details = []
         if 'responses' in result and result['responses']:
-            import re
+                    import re
             for response in result['responses']:
                 # Clean AI response for display - preserve formatting but remove HTML
                 ai_response_text = response.get('ai_response', '')
@@ -6821,9 +6815,9 @@ def workato_send_new_email():
                 import re
                 raw_data = request.get_data(as_text=True)
                 
-                logger.info(f"🔍 DEBUG: Received request to send-new-email")
-                logger.info(f"🔍 DEBUG: Content-Type: {request.content_type}")
-                logger.info(f"🔍 DEBUG: Is JSON: {request.is_json}")
+        logger.info(f"🔍 DEBUG: Received request to send-new-email")
+        logger.info(f"🔍 DEBUG: Content-Type: {request.content_type}")
+        logger.info(f"🔍 DEBUG: Is JSON: {request.is_json}")
                 logger.info(f"🔍 DEBUG: Raw data length: {len(raw_data)} characters")
                 logger.info(f"🔍 DEBUG: Raw data preview: {raw_data[:1000]}")
                 
@@ -7235,11 +7229,11 @@ def workato_send_new_email():
                         raise ValueError("Could not extract contact_email")
                 except Exception as fallback_error:
                     logger.error(f"❌ Fallback parsing also failed: {fallback_error}")
-                    return jsonify({
-                        "status": "error",
+            return jsonify({
+                "status": "error",
                         "message": f"Invalid JSON format: {str(json_error)}. Please check your Workato request format.",
-                        "timestamp": datetime.datetime.now().isoformat()
-                    }), 400
+                "timestamp": datetime.datetime.now().isoformat()
+            }), 400
                 # If fallback parsing succeeded, continue with the extracted data
         
         # Check if data was successfully parsed
