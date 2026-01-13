@@ -660,16 +660,31 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     reply_email_prompt_template = prompt_template or os.getenv('REPLY_EMAIL_PROMPT_TEMPLATE')
     prompt_source = "custom" if prompt_template else ("env_variable" if os.getenv('REPLY_EMAIL_PROMPT_TEMPLATE') else "default")
     
+    prompt = None  # Initialize prompt variable
+    
     if reply_email_prompt_template:
         # Use custom template (from parameter, environment variable, or default)
         try:
-            prompt = reply_email_prompt_template.format(
-                AFFIRM_VOICE_GUIDELINES=AFFIRM_VOICE_GUIDELINES,
-                recipient_name=recipient_name,
-                sender_name=sender_name,
-                conversation_context=conversation_context,
-                email_body=email_body
-            )
+            # Format the custom template - only include variables that are commonly used
+            # Some templates may not use all variables, so we'll handle KeyError gracefully
+            format_vars = {
+                'AFFIRM_VOICE_GUIDELINES': AFFIRM_VOICE_GUIDELINES,
+                'recipient_name': recipient_name,
+                'sender_name': sender_name,
+                'conversation_context': conversation_context,
+                'email_body': email_body
+            }
+            
+            # Try to format with all variables, but handle missing ones gracefully
+            try:
+                prompt = reply_email_prompt_template.format(**format_vars)
+            except KeyError as missing_var:
+                # If a variable is missing, try to format without it (for templates that don't need all vars)
+                logger.debug(f"Template missing variable {missing_var}, attempting to format without it")
+                # Remove the missing variable from format_vars and try again
+                # But actually, we should just let it fail and use default
+                raise
+            
             prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
             source_description = "Custom prompt (from test/API)" if prompt_template else ("REPLY_EMAIL_PROMPT_TEMPLATE environment variable" if os.getenv('REPLY_EMAIL_PROMPT_TEMPLATE') else "Default prompt template (hardcoded)")
             logger.info(f"📝 PROMPT USED FOR REPLY EMAIL:")
@@ -681,12 +696,13 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
             logger.info(f"   Recipient: {recipient_name}")
             logger.info(f"   Conversation History Length: {len(conversation_history) if conversation_history else 0} characters")
             logger.info(f"   Full Prompt Content:\n{'='*80}\n{prompt}\n{'='*80}")
-        except KeyError as e:
-            logger.warning(f"⚠️ REPLY_EMAIL_PROMPT_TEMPLATE missing variable {e}, using default")
+        except (KeyError, ValueError) as e:
+            logger.warning(f"⚠️ Custom prompt template formatting failed: {e}, using default")
             reply_email_prompt_template = None
+            prompt = None  # Reset prompt so we use default
     
     # Default prompt if no custom template or formatting failed
-    if not reply_email_prompt_template:
+    if not reply_email_prompt_template or prompt is None:
         # Conditionally include rule about asking to include merchanthelp
         if not merchanthelp_already_ccd:
             merchanthelp_rule = """    7. **ASK (do not state) if they want to include merchanthelp@affirm.com** - You must ASK a question like "Would you like me to include merchanthelp@affirm.com in this thread?" or "Should I CC merchanthelp@affirm.com so they can help?" DO NOT say "I'll include merchanthelp" or "I will add merchanthelp" - you must ASK FIRST and wait for their response before including them.
@@ -699,7 +715,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     10. **DO NOT suggest emailing merchanthelp@affirm.com directly** - merchanthelp@affirm.com is already on this thread.
     11. **Keep under 150 words** and feel natural, not automated"""
 
-    prompt = f"""
+        prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
 
     **TASK:** Generate a professional Affirm-branded email response to {recipient_name} from {sender_name}.
