@@ -398,6 +398,38 @@ def strip_html_tags(html_content):
     
     return html_content
 
+def remove_quoted_text(email_body):
+    """Remove quoted/replied text from email body to avoid duplication in conversation history."""
+    import re
+    if not email_body:
+        return email_body
+    
+    lines = email_body.split('\n')
+    cleaned_lines = []
+    in_quoted_section = False
+    
+    for i, line in enumerate(lines):
+        line_stripped = line.strip()
+        
+        # Common patterns that indicate start of quoted text
+        if (re.match(r'^>+', line) or  # Lines starting with >
+            re.search(r'^On .+ wrote:', line_stripped, re.IGNORECASE) or  # "On [date], [name] wrote:"
+            re.search(r'wrote:.*$', line_stripped, re.IGNORECASE) or  # "... wrote:" anywhere in line
+            re.match(r'^-----Original Message-----', line_stripped, re.IGNORECASE) or
+            re.search(r'^From:.*Sent:.*To:.*Subject:', line_stripped, re.IGNORECASE) or
+            re.search(r'^From:.*Date:.*To:.*Subject:', line_stripped, re.IGNORECASE) or
+            # Check if line contains quoted email headers (common in forwarded/replied emails)
+            (re.search(r'^Subject:', line_stripped, re.IGNORECASE) and i > 0 and 
+             any(re.search(r'(From|Date|To|Sent):', prev_line, re.IGNORECASE) for prev_line in lines[max(0, i-3):i]))):
+            in_quoted_section = True
+            break  # Stop at first quoted section
+        
+        # If we haven't hit quoted section yet, keep the line
+        if not in_quoted_section:
+            cleaned_lines.append(line)
+    
+    return '\n'.join(cleaned_lines).strip()
+
 def extract_email_body(payload):
     """Extract the body of an email, handling both plain text and HTML."""
     body = ""
@@ -1648,6 +1680,9 @@ def reply_to_emails_with_accounts(accounts):
                 body_text = msg_part['body']
                 if body_text and ('<' in body_text and '>' in body_text):
                     body_text = strip_html_tags(body_text)
+                
+                # Remove quoted/replied text to avoid duplication in conversation history
+                body_text = remove_quoted_text(body_text)
                 
                 conversation_history_lines.append(f"--- Message {i} ---")
                 conversation_history_lines.append(f"From: {msg_part['sender']}")
