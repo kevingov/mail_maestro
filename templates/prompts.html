@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mail Maestro - Prompt Management</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
     <style>
         * {
             margin: 0;
@@ -11,378 +12,1633 @@
             box-sizing: border-box;
         }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --primary-light: #818cf8;
+            --success: #10b981;
+            --success-dark: #059669;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
         }
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f5f5;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
             overflow: hidden;
         }
 
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        .header-bar {
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .header-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #111827;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .icon-btn {
+            width: 36px;
+            height: 36px;
+            border: none;
+            background: transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #6b7280;
+            transition: all 0.2s;
+        }
+
+        .icon-btn:hover {
+            background: #f3f4f6;
+            color: #111827;
+        }
+
+        .main-layout {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 280px;
+            background: white;
+            border-right: 1px solid #e5e7eb;
+            overflow-y: auto;
+            padding: 24px;
+        }
+
+        .sidebar-search {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-bottom: 24px;
+        }
+
+        .sidebar-section {
+            margin-bottom: 32px;
+        }
+
+        .sidebar-section-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .prompt-type-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 4px;
+            transition: all 0.2s;
+            color: #374151;
+            font-size: 14px;
+        }
+
+        .prompt-type-item:hover {
+            background: #f3f4f6;
+        }
+
+        .prompt-type-item.active {
+            background: #eff6ff;
+            color: #2563eb;
+            font-weight: 500;
+        }
+
+        .prompt-type-item .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            margin-right: 12px;
+        }
+
+        .content-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #f9fafb;
+        }
+
+        .content-header {
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            padding: 20px 24px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .tab {
+            padding: 8px 16px;
+            border: none;
+            background: transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            color: #6b7280;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            background: #f3f4f6;
+        }
+
+        .tab.active {
+            background: #eff6ff;
+            color: #2563eb;
+        }
+
+        .tab-count {
+            margin-left: 6px;
+            color: #9ca3af;
+        }
+
+        .table-container {
+            flex: 1;
+            overflow-y: auto;
+            background: white;
+            margin: 0 24px 24px 24px;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .table thead {
+            background: #f9fafb;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        .table th {
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .table td {
+            padding: 16px;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 14px;
+            color: #374151;
+        }
+
+        .table tbody tr:hover {
+            background: #f9fafb;
+        }
+
+        .table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .prompt-variant-name {
+            font-weight: 500;
+            color: #111827;
+            margin-bottom: 4px;
+        }
+
+        .prompt-preview {
+            color: #6b7280;
+            font-size: 13px;
+            max-width: 500px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .status-active {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-draft {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-archived {
+            background: #f3f4f6;
+            color: #6b7280;
+        }
+
+        .edit-btn {
+            padding: 6px 12px;
+            background: #eff6ff;
+            color: #2563eb;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .edit-btn:hover {
+            background: #dbeafe;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #111827;
+        }
+
+        .modal-close {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #6b7280;
+        }
+
+        .modal-close:hover {
+            background: #f3f4f6;
+        }
+
+        .modal-body {
+            padding: 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .modal-textarea {
+            width: 100%;
+            min-height: 400px;
+            padding: 16px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            font-family: 'SF Mono', 'Monaco', 'Menlo', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            resize: vertical;
+        }
+
+        .modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        .btn-primary {
+            padding: 10px 20px;
+            background: #2563eb;
             color: white;
-            padding: 30px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .btn-secondary {
+            padding: 10px 20px;
+            background: #f3f4f6;
+            color: #374151;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 50px 40px;
             text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: pulse 8s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.5; }
+            50% { transform: scale(1.1); opacity: 0.8; }
         }
 
         .header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
+            font-size: 3em;
+            margin-bottom: 12px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            position: relative;
+            z-index: 1;
         }
 
         .header p {
-            opacity: 0.9;
-            font-size: 1.1em;
+            opacity: 0.95;
+            font-size: 1.2em;
+            font-weight: 400;
+            position: relative;
+            z-index: 1;
         }
 
         .content {
-            padding: 30px;
+            padding: 40px;
+            background: var(--gray-50);
+        }
+
+        .info-box {
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            border: none;
+            border-radius: 16px;
+            padding: 20px 24px;
+            margin-bottom: 32px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border-left: 4px solid var(--primary);
+        }
+
+        .info-box p {
+            color: var(--gray-800);
+            line-height: 1.7;
+            font-size: 0.95em;
         }
 
         .prompt-card {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 25px;
-            margin-bottom: 25px;
-            border-left: 4px solid #667eea;
+            background: white;
+            border-radius: 20px;
+            padding: 32px;
+            margin-bottom: 32px;
+            border: 1px solid var(--gray-200);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .prompt-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: linear-gradient(180deg, var(--primary) 0%, var(--primary-light) 100%);
+            transition: width 0.3s ease;
+        }
+
+        .prompt-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        .prompt-card:hover::before {
+            width: 6px;
         }
 
         .prompt-header {
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
+            align-items: flex-start;
+            margin-bottom: 20px;
+            gap: 20px;
         }
 
         .prompt-title {
-            font-size: 1.5em;
-            font-weight: 600;
-            color: #333;
-        }
-
-        .endpoint-badge {
-            background: #667eea;
-            color: white;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 0.85em;
-            font-weight: 500;
+            font-size: 1.75em;
+            font-weight: 700;
+            color: var(--gray-900);
+            letter-spacing: -0.01em;
+            margin-bottom: 8px;
         }
 
         .prompt-description {
-            color: #666;
-            margin-bottom: 15px;
+            color: var(--gray-600);
             font-size: 0.95em;
+            line-height: 1.6;
+        }
+
+        .endpoint-badge {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+            white-space: nowrap;
+            box-shadow: 0 2px 4px rgba(99, 102, 241, 0.3);
+            letter-spacing: 0.01em;
         }
 
         textarea {
             width: 100%;
-            min-height: 300px;
-            padding: 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 6px;
-            font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
+            min-height: 320px;
+            padding: 20px;
+            border: 2px solid var(--gray-200);
+            border-radius: 12px;
+            font-family: 'SF Mono', 'Monaco', 'Menlo', 'Courier New', monospace;
             font-size: 0.9em;
-            line-height: 1.6;
+            line-height: 1.7;
             resize: vertical;
-            transition: border-color 0.3s;
+            transition: all 0.3s ease;
+            background: var(--gray-50);
+            color: var(--gray-900);
         }
 
         textarea:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: var(--primary);
+            background: white;
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.1);
         }
 
         .button-group {
             display: flex;
-            gap: 10px;
-            margin-top: 15px;
+            gap: 12px;
+            margin-top: 20px;
+            flex-wrap: wrap;
         }
 
         button {
-            padding: 12px 24px;
+            padding: 14px 28px;
             border: none;
-            border-radius: 6px;
-            font-size: 1em;
-            font-weight: 500;
+            border-radius: 12px;
+            font-size: 0.95em;
+            font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            letter-spacing: 0.01em;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        button::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+
+        button:active::before {
+            width: 300px;
+            height: 300px;
         }
 
         .btn-save {
-            background: #28a745;
+            background: linear-gradient(135deg, var(--success) 0%, var(--success-dark) 100%);
             color: white;
         }
 
         .btn-save:hover {
-            background: #218838;
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+            box-shadow: 0 8px 16px rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-save:active {
+            transform: translateY(0);
         }
 
         .btn-reset {
-            background: #6c757d;
+            background: linear-gradient(135deg, var(--gray-600) 0%, var(--gray-700) 100%);
             color: white;
         }
 
         .btn-reset:hover {
-            background: #5a6268;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(75, 85, 99, 0.3);
         }
 
-        .btn-load {
-            background: #17a2b8;
-            color: white;
+        .btn-reset:active {
+            transform: translateY(0);
         }
 
-        .btn-load:hover {
-            background: #138496;
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none !important;
         }
 
         .status-message {
-            padding: 12px 20px;
-            border-radius: 6px;
-            margin-top: 15px;
+            padding: 16px 20px;
+            border-radius: 12px;
+            margin-top: 16px;
             display: none;
             font-weight: 500;
+            animation: slideIn 0.3s ease-out;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
         }
 
         .status-success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+            background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+            color: #065f46;
+            border: 1px solid #6ee7b7;
         }
 
         .status-error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+            color: #991b1b;
+            border: 1px solid #fca5a5;
         }
 
-        .loading {
-            display: inline-block;
-            width: 16px;
-            height: 16px;
-            border: 3px solid rgba(255,255,255,.3);
-            border-radius: 50%;
-            border-top-color: white;
-            animation: spin 1s ease-in-out infinite;
-            margin-right: 8px;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .info-box {
-            background: #e7f3ff;
-            border-left: 4px solid #2196F3;
-            padding: 15px;
-            border-radius: 4px;
-            margin-bottom: 25px;
-        }
-
-        .info-box p {
-            color: #1976D2;
-            line-height: 1.6;
+        @media (max-width: 768px) {
+            .header h1 { font-size: 2em; }
+            .header p { font-size: 1em; }
+            .content { padding: 24px; }
+            .prompt-card { padding: 24px; }
+            .prompt-header { flex-direction: column; }
+            .endpoint-badge { align-self: flex-start; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>📧 Mail Maestro</h1>
-            <p>AI Prompt Management Dashboard</p>
+    <div class="app-container">
+        <div class="header-bar">
+            <div class="header-left">
+                <div class="header-title" style="font-weight: 700; font-size: 18px; color: #111827; margin-right: 8px;">Mail Maestro</div>
+                <div style="color: #6b7280; font-size: 20px; margin: 0 8px;">/</div>
+                <div class="header-title">Prompts</div>
+            </div>
+            <div class="header-actions">
+                <button class="icon-btn" title="Download">⬇</button>
+                <button class="icon-btn" title="Settings">⚙</button>
+            </div>
         </div>
 
-        <div class="content">
-            <div class="info-box">
-                <p><strong>💡 Tip:</strong> Edit the prompts below to customize how AI generates emails. Changes are saved to environment variables and take effect immediately.</p>
+        <div class="main-layout">
+            <div class="sidebar">
+                <input type="text" class="sidebar-search" placeholder="Search...">
+
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">Prompt Types</div>
+                    <div class="prompt-type-item active" onclick="selectPromptType('new-email', event)">
+                        <span class="dot"></span>
+                        New Email Prompts
+                    </div>
+                    <div class="prompt-type-item" onclick="selectPromptType('reply-email', event)">
+                        <span class="dot"></span>
+                        Reply Email Prompts
+                    </div>
+                    <div class="prompt-type-item" onclick="selectPromptType('non-campaign-email', event)">
+                        <span class="dot"></span>
+                        Non-Campaign Email Prompts
+                    </div>
+                    <div class="prompt-type-item" onclick="selectPromptType('voice-guidelines', event)">
+                        <span class="dot"></span>
+                        Voice Guidelines
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">Testing</div>
+                    <div class="prompt-type-item" onclick="selectPromptType('test-merchant', event)">
+                        <span class="dot"></span>
+                        Test Merchant
+                    </div>
+                </div>
             </div>
 
-            <!-- Affirm Voice Guidelines -->
-            <div class="prompt-card">
-                <div class="prompt-header">
-                    <div>
-                        <div class="prompt-title">Affirm Voice Guidelines</div>
-                        <div class="prompt-description">Brand voice guidelines used in all email prompts</div>
+            <div class="content-area">
+                <div class="content-header">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <div class="tabs">
+                            <button class="tab active" onclick="selectTab('all', event)">
+                                All prompts <span class="tab-count" id="all-count">3</span>
+                            </button>
+                            <button class="tab" onclick="selectTab('active', event)">
+                                Active <span class="tab-count" id="active-count">2</span>
+                            </button>
+                            <button class="tab" onclick="selectTab('draft', event)">
+                                Draft <span class="tab-count" id="draft-count">1</span>
+                            </button>
+                        </div>
+                        <button class="btn-primary" onclick="createNewVersion()" style="margin-left: auto;">+ Create Version</button>
                     </div>
-                    <span class="endpoint-badge">Global</span>
                 </div>
-                <textarea id="voice-guidelines" placeholder="Enter Affirm voice guidelines..."></textarea>
-                <div class="button-group">
-                    <button class="btn-save" onclick="savePrompt('voice-guidelines', 'AFFIRM_VOICE_GUIDELINES')">
-                        💾 Save
-                    </button>
-                    <button class="btn-reset" onclick="resetPrompt('voice-guidelines', 'AFFIRM_VOICE_GUIDELINES')">
-                        🔄 Reset
-                    </button>
-                </div>
-                <div id="voice-guidelines-status" class="status-message"></div>
-            </div>
 
-            <!-- New Email Prompt -->
-            <div class="prompt-card">
-                <div class="prompt-header">
-                    <div>
-                        <div class="prompt-title">New Email Outreach Prompt</div>
-                        <div class="prompt-description">Used for generating initial outreach emails to merchants</div>
+                <div style="display: flex; gap: 24px; flex: 1; overflow: hidden;">
+                    <div class="table-container" style="flex: 1;">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;"><input type="checkbox"></th>
+                                    <th style="width: 60px;">#</th>
+                                    <th>Version Name / Preview</th>
+                                    <th style="width: 120px;">Status</th>
+                                    <th style="width: 150px;">Endpoint</th>
+                                    <th style="width: 120px;">Open Rate</th>
+                                    <th style="width: 100px;">Actions</th>
+                                    <th style="width: 100px;">Test</th>
+                                    <th style="width: 100px;">Delete</th>
+                                </tr>
+                            </thead>
+                            <tbody id="prompts-table-body">
+                                <!-- Table rows will be populated by JavaScript -->
+                            </tbody>
+                        </table>
                     </div>
-                    <span class="endpoint-badge">/api/workato/send-new-email</span>
-                </div>
-                <textarea id="new-email-prompt" placeholder="Enter new email prompt template..."></textarea>
-                <div class="button-group">
-                    <button class="btn-save" onclick="savePrompt('new-email-prompt', 'NEW_EMAIL_PROMPT')">
-                        💾 Save
-                    </button>
-                    <button class="btn-reset" onclick="resetPrompt('new-email-prompt', 'NEW_EMAIL_PROMPT')">
-                        🔄 Reset
-                    </button>
-                </div>
-                <div id="new-email-prompt-status" class="status-message"></div>
-            </div>
 
-            <!-- Reply Email Prompt -->
-            <div class="prompt-card">
-                <div class="prompt-header">
-                    <div>
-                        <div class="prompt-title">Email Reply Prompt</div>
-                        <div class="prompt-description">Used for generating AI responses to incoming emails</div>
+                    <!-- Test Results Panel -->
+                    <div id="test-results-panel" style="display: none; width: 400px; background: white; border-left: 1px solid #e5e7eb; padding: 24px; overflow-y: auto;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                            <h3 style="margin: 0; font-size: 18px; font-weight: 600;">Test Results</h3>
+                            <button onclick="closeTestPanel()" style="background: transparent; border: none; font-size: 20px; cursor: pointer; color: #6b7280; padding: 4px 8px;">✕</button>
+                        </div>
+
+                        <!-- Reply Input Section (only for reply-email prompts) -->
+                        <div id="test-reply-input-section" style="display: none; margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151; font-size: 14px;">Message to Reply To:</label>
+                            <textarea id="test-reply-input" rows="6" style="width: 100%; padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; font-family: inherit; resize: vertical;" placeholder="Enter the message you want the AI to reply to..."></textarea>
+                            <button onclick="generateTestReply()" class="btn-primary" style="width: 100%; margin-top: 12px;">Generate Reply</button>
+                        </div>
+
+                        <div id="test-results-content" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 14px; line-height: 1.6; background: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; min-height: 200px; overflow-y: auto; max-height: 600px;">
+                            Click "Test" on any prompt to see results here.
+                        </div>
                     </div>
-                    <span class="endpoint-badge">/api/workato/reply-to-emails</span>
                 </div>
-                <textarea id="reply-email-prompt" placeholder="Enter reply email prompt template..."></textarea>
-                <div class="button-group">
-                    <button class="btn-save" onclick="savePrompt('reply-email-prompt', 'REPLY_EMAIL_PROMPT')">
-                        💾 Save
-                    </button>
-                    <button class="btn-reset" onclick="resetPrompt('reply-email-prompt', 'REPLY_EMAIL_PROMPT')">
-                        🔄 Reset
-                    </button>
+
+                <!-- Test Merchant Content -->
+                <div class="content-area" id="test-merchant-content" style="display: none;">
+                    <div class="content-header">
+                        <h2 style="margin: 0 0 24px 0; font-size: 24px; font-weight: 600;">Test Merchant</h2>
+                        <p style="color: #6b7280; margin-bottom: 24px;">Enter merchant information to test prompt responses</p>
+                    </div>
+
+                    <div style="padding: 24px; max-width: 1200px;">
+                        <div style="background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <h3 style="margin: 0 0 20px 0; font-size: 18px; font-weight: 600;">Merchant Information</h3>
+                            <form id="test-merchant-form" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Merchant Name *</label>
+                                    <input type="text" id="merchant_name" name="merchant_name" required
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;"
+                                           placeholder="Acme Corporation">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Contact Email</label>
+                                    <input type="email" id="contact_email" name="contact_email"
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;"
+                                           placeholder="contact@acme.com">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Contact Title</label>
+                                    <input type="text" id="contact_title" name="contact_title"
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;"
+                                           placeholder="CEO">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Industry</label>
+                                    <input type="text" id="merchant_industry" name="merchant_industry"
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;"
+                                           placeholder="E-commerce">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Website</label>
+                                    <input type="url" id="merchant_website" name="merchant_website"
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;"
+                                           placeholder="https://acme.com">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Location</label>
+                                    <input type="text" id="account_location" name="account_location"
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;"
+                                           placeholder="San Francisco, CA">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Annual Revenue ($)</label>
+                                    <input type="number" id="account_revenue" name="account_revenue"
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;"
+                                           placeholder="1000000">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Employees</label>
+                                    <input type="number" id="account_employees" name="account_employees"
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;"
+                                           placeholder="50">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">GMV ($)</label>
+                                    <input type="number" id="account_gmv" name="account_gmv"
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;"
+                                           placeholder="5000000">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Last Activity</label>
+                                    <input type="text" id="last_activity" name="last_activity"
+                                           style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;"
+                                           placeholder="Recent" value="Recent">
+                                </div>
+                                <div style="grid-column: 1 / -1;">
+                                    <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Account Description</label>
+                                    <textarea id="account_description" name="account_description" rows="3"
+                                              style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; font-family: inherit;"
+                                              placeholder="A leading e-commerce platform..."></textarea>
+                                </div>
+                                <div style="grid-column: 1 / -1; display: flex; gap: 12px; margin-top: 8px;">
+                                    <button type="button" onclick="saveTestMerchant()" class="btn-primary" style="flex: 0 0 auto;">Save Test Merchant</button>
+                                    <button type="button" onclick="loadTestMerchant()" class="btn-secondary" style="flex: 0 0 auto;">Load Saved</button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div style="background: white; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            <h3 style="margin: 0 0 20px 0; font-size: 18px; font-weight: 600;">Generate Sample Response</h3>
+                            <div style="margin-bottom: 20px;">
+                                <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Prompt Type</label>
+                                <select id="sample-prompt-type" style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px;">
+                                    <option value="new-email">New Email</option>
+                                    <option value="reply-email">Reply Email</option>
+                                </select>
+                            </div>
+                            <div id="conversation-context-section" style="margin-bottom: 20px; display: none;">
+                                <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Conversation Context (for reply emails)</label>
+                                <textarea id="conversation_context" rows="4"
+                                          style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; font-family: inherit;"
+                                          placeholder="Previous conversation history..."></textarea>
+                            </div>
+                            <div style="margin-bottom: 20px;">
+                                <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #374151;">Use Custom Prompt (optional - leave empty to use default/current prompt)</label>
+                                <textarea id="custom-prompt-content" rows="6"
+                                          style="width: 100%; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; font-family: 'Courier New', monospace;"
+                                          placeholder="Leave empty to use the current prompt version, or paste a custom prompt template here..."></textarea>
+                            </div>
+                            <button type="button" onclick="generateSample()" class="btn-primary" style="width: 100%;">Generate Sample Response</button>
+
+                            <div id="sample-results" style="margin-top: 24px; display: none;">
+                                <h4 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 600;">Generated Response</h4>
+                                <div id="sample-output" style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; white-space: pre-wrap; font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6;"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div id="reply-email-prompt-status" class="status-message"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div class="modal" id="edit-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title" id="modal-title">Edit Prompt</div>
+                <button class="modal-close" onclick="closeModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <textarea class="modal-textarea" id="modal-textarea" placeholder="Enter prompt content..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn-primary" onclick="savePromptFromModal()">Save</button>
             </div>
         </div>
     </div>
 
     <script>
-        // Load prompts on page load
+        let currentPromptType = 'new-email';
+        let currentTab = 'all';
+        let promptsData = {
+            'new-email': [],
+            'reply-email': [],
+            'voice-guidelines': []
+        };
+        let currentEditingPrompt = null;
+        let variantStats = {};
+
+        const promptTypes = {
+            'new-email': {
+                name: 'New Email Prompts',
+                endpoint: '/api/workato/send-new-email',
+                key: 'NEW_EMAIL_PROMPT_TEMPLATE'
+            },
+            'reply-email': {
+                name: 'Reply Email Prompts',
+                endpoint: '/api/workato/reply-to-emails',
+                key: 'REPLY_EMAIL_PROMPT_TEMPLATE'
+            },
+            'voice-guidelines': {
+                name: 'Voice Guidelines',
+                endpoint: 'Global',
+                key: 'AFFIRM_VOICE_GUIDELINES'
+            }
+        };
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/prompts/get-stats');
+                const data = await response.json();
+                console.log('Stats API response:', data);
+                if (data.status === 'success') {
+                    variantStats = data.stats || {};
+                    console.log('Stats loaded into variantStats:', variantStats);
+                } else {
+                    console.error('Stats API returned error:', data);
+                    variantStats = {};
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+                variantStats = {};
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', async () => {
-            await loadAllPrompts();
+            console.log('Loading prompts and stats...');
+            await Promise.all([loadAllPrompts(), loadStats()]);
+            console.log('Prompts loaded:', promptsData);
+            console.log('Stats loaded:', variantStats);
+            renderTable();
         });
+
+        function selectPromptType(type, event) {
+            currentPromptType = type;
+            document.querySelectorAll('.prompt-type-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            if (event && event.currentTarget) {
+                event.currentTarget.classList.add('active');
+            } else {
+                // Fallback: find the clicked element by type
+                document.querySelectorAll('.prompt-type-item').forEach(item => {
+                    if (item.getAttribute('onclick') && item.getAttribute('onclick').includes(`'${type}'`)) {
+                        item.classList.add('active');
+                    }
+                });
+            }
+
+            // Close test panel when switching prompts
+            const testPanel = document.getElementById('test-results-panel');
+            if (testPanel) {
+                testPanel.style.display = 'none';
+            }
+
+            // Show/hide content areas
+            const tableContainer = document.querySelector('div[style*="display: flex"][style*="gap: 24px"]') ||
+                                   document.querySelector('.table-container')?.parentElement ||
+                                   document.querySelector('div[style*="flex: 1"]');
+            const testMerchantContent = document.getElementById('test-merchant-content');
+
+            console.log('Switching to prompt type:', type);
+            console.log('Table container found:', !!tableContainer);
+            console.log('Test merchant content found:', !!testMerchantContent);
+
+            if (type === 'test-merchant') {
+                if (tableContainer) {
+                    tableContainer.style.display = 'none';
+                    console.log('Hiding table container');
+                }
+                if (testMerchantContent) {
+                    testMerchantContent.style.display = 'block';
+                    console.log('Showing test merchant content');
+                    loadTestMerchant();
+                }
+            } else {
+                if (tableContainer) {
+                    tableContainer.style.display = 'flex';
+                    console.log('Showing table container');
+                }
+                if (testMerchantContent) {
+                    testMerchantContent.style.display = 'none';
+                    console.log('Hiding test merchant content');
+                }
+
+                // Always reload prompts when switching types
+                console.log('Loading prompts for type:', type);
+                Promise.all([loadAllPrompts(), loadStats()]).then(() => {
+                    console.log('Reloaded prompts and stats for type:', type);
+                    console.log('Prompts for', type, ':', promptsData[type]);
+                    renderTable();
+                }).catch(error => {
+                    console.error('Error reloading prompts:', error);
+                    renderTable(); // Still try to render with existing data
+                });
+            }
+        }
+
+        function selectTab(tab, event) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            if (event && event.currentTarget) {
+                event.currentTarget.classList.add('active');
+            } else {
+                // Fallback: find the clicked element
+                document.querySelectorAll('.tab').forEach(t => {
+                    if (t.getAttribute('onclick') && t.getAttribute('onclick').includes(`'${tab}'`)) {
+                        t.classList.add('active');
+                    }
+                });
+            }
+            renderTable();
+        }
 
         async function loadAllPrompts() {
             try {
-                const response = await fetch('/api/prompts/get');
-                const data = await response.json();
+                console.log('Loading prompts from API...');
+                const [promptsResponse, versionsResponse] = await Promise.all([
+                    fetch('/api/prompts/get'),
+                    fetch('/api/prompts/get-versions')
+                ]);
 
-                if (data.status === 'success') {
-                    if (data.prompts.voice_guidelines) {
-                        document.getElementById('voice-guidelines').value = data.prompts.voice_guidelines;
+                if (!promptsResponse.ok) {
+                    console.error('Failed to fetch prompts:', promptsResponse.status, promptsResponse.statusText);
+                }
+
+                const promptsData_result = await promptsResponse.json();
+                console.log('Prompts API response:', promptsData_result);
+
+                let versionsData = { status: 'success', versions: [] };
+
+                try {
+                    if (versionsResponse.ok) {
+                        versionsData = await versionsResponse.json();
+                        console.log('Versions API response:', versionsData);
                     }
-                    if (data.prompts.new_email_prompt) {
-                        document.getElementById('new-email-prompt').value = data.prompts.new_email_prompt;
+                } catch (e) {
+                    console.warn('Could not load versions:', e);
+                }
+
+                if (promptsData_result.status === 'success') {
+                    // Start with default versions
+                    promptsData = {
+                        'new-email': [
+                            { id: 1, name: 'Default Version', preview: (promptsData_result.prompts.new_email_prompt || '').substring(0, 100) || 'Default new email prompt template...', status: 'active', endpoint: '/api/workato/send-new-email', key: 'NEW_EMAIL_PROMPT_TEMPLATE', content: promptsData_result.prompts.new_email_prompt || '', version_letter: null }
+                        ],
+                        'reply-email': [
+                            { id: 1, name: 'Default Version', preview: (promptsData_result.prompts.reply_email_prompt || '').substring(0, 100) || 'Default reply email prompt template...', status: 'active', endpoint: '/api/workato/reply-to-emails', key: 'REPLY_EMAIL_PROMPT_TEMPLATE', content: promptsData_result.prompts.reply_email_prompt || '', version_letter: null }
+                        ],
+                        'non-campaign-email': [
+                            { id: 1, name: 'Default Version', preview: (promptsData_result.prompts.non_campaign_email_prompt || '').substring(0, 100) || 'Default non-campaign email prompt template...', status: 'active', endpoint: '/api/workato/check-non-campaign-emails', key: 'NON_CAMPAIGN_EMAIL_PROMPT_TEMPLATE', content: promptsData_result.prompts.non_campaign_email_prompt || '', version_letter: null }
+                        ],
+                        'voice-guidelines': [
+                            { id: 1, name: 'Default Guidelines', preview: (promptsData_result.prompts.voice_guidelines || '').substring(0, 100) || 'Default voice guidelines...', status: 'active', endpoint: 'Global', key: 'AFFIRM_VOICE_GUIDELINES', content: promptsData_result.prompts.voice_guidelines || '', version_letter: null }
+                        ]
+                    };
+
+                    // Add versions from database
+                    if (versionsData.status === 'success' && versionsData.versions && Array.isArray(versionsData.versions)) {
+                        versionsData.versions.forEach((version, idx) => {
+                            const versionId = 1000 + version.id; // Use high IDs for versions
+                            const versionData = {
+                                id: versionId,
+                                name: version.version_name,
+                                preview: (version.prompt_content || '').substring(0, 100) || 'No preview...',
+                                status: version.status || 'draft',
+                                endpoint: version.endpoint_path,
+                                key: `${version.prompt_type.toUpperCase().replace('-', '_')}_PROMPT_TEMPLATE_${version.version_letter}`,
+                                content: version.prompt_content || '',
+                                version_letter: version.version_letter
+                            };
+
+                            if (version.prompt_type === 'new-email') {
+                                promptsData['new-email'].push(versionData);
+                            } else if (version.prompt_type === 'reply-email') {
+                                promptsData['reply-email'].push(versionData);
+                            } else if (version.prompt_type === 'non-campaign-email') {
+                                promptsData['non-campaign-email'].push(versionData);
+                            }
+                        });
                     }
-                    if (data.prompts.reply_email_prompt) {
-                        document.getElementById('reply-email-prompt').value = data.prompts.reply_email_prompt;
-                    }
+
+                    console.log('Loaded prompts data:', promptsData);
+                } else {
+                    console.error('Failed to load prompts:', promptsData_result);
+                    // Initialize with empty data structure
+                    promptsData = {
+                        'new-email': [],
+                        'reply-email': [],
+                        'non-campaign-email': [],
+                        'voice-guidelines': []
+                    };
                 }
             } catch (error) {
                 console.error('Error loading prompts:', error);
+                // Initialize with empty data structure on error
+                promptsData = {
+                    'new-email': [],
+                    'reply-email': [],
+                    'non-campaign-email': [],
+                    'voice-guidelines': []
+                };
             }
         }
 
-        async function savePrompt(textareaId, promptKey) {
-            const textarea = document.getElementById(textareaId);
-            const statusDiv = document.getElementById(textareaId + '-status');
-            const value = textarea.value.trim();
-
-            if (!value) {
-                showStatus(statusDiv, 'error', 'Prompt cannot be empty');
+        function renderTable() {
+            const tbody = document.getElementById('prompts-table-body');
+            if (!tbody) {
+                console.error('Table body not found!');
                 return;
             }
 
-            // Show loading
-            const button = event.target;
-            const originalText = button.innerHTML;
-            button.innerHTML = '<span class="loading"></span> Saving...';
-            button.disabled = true;
+            const prompts = promptsData[currentPromptType] || [];
+            console.log('Rendering table for type:', currentPromptType, 'with', prompts.length, 'prompts');
+            console.log('Prompts data:', prompts);
+
+            const filtered = currentTab === 'all' ? prompts : prompts.filter(p => p.status === currentTab);
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" style="text-align: center; padding: 40px; color: #6b7280;">
+                            No prompts found. ${prompts.length === 0 ? 'Click "+ Create Version" to create your first prompt version.' : 'Try selecting a different tab.'}
+                        </td>
+                    </tr>
+                `;
+            } else {
+                tbody.innerHTML = filtered.map((prompt, index) => {
+                    const endpoint = (prompt.endpoint || '/api/workato/send-new-email').trim();
+                    console.log(`Looking up stats for endpoint: "${endpoint}"`);
+                    console.log(`Available stats keys:`, Object.keys(variantStats));
+                    const stats = variantStats[endpoint] || { total_sent: 0, total_opened: 0, open_rate: 0 };
+                    const openRate = stats.open_rate || 0;
+                    const totalSent = stats.total_sent || 0;
+                    const totalOpened = stats.total_opened || 0;
+                    console.log(`Stats for "${endpoint}":`, stats);
+
+                    return `
+                    <tr>
+                        <td><input type="checkbox"></td>
+                        <td>${String(index + 1).padStart(2, '0')}</td>
+                        <td>
+                            <div class="prompt-variant-name">${prompt.name || 'Unnamed'}</div>
+                            <div class="prompt-preview">${prompt.preview || 'No preview available'}...</div>
+                        </td>
+                        <td>
+                            <span class="status-badge status-${prompt.status || 'draft'}">${(prompt.status || 'draft').charAt(0).toUpperCase() + (prompt.status || 'draft').slice(1)}</span>
+                        </td>
+                        <td>${prompt.endpoint || 'N/A'}</td>
+                        <td style="text-align: right;">
+                            <div style="font-weight: 600; color: #111827;">${openRate.toFixed(1)}%</div>
+                            <div style="font-size: 12px; color: #6b7280;">${totalOpened}/${totalSent} opened</div>
+                        </td>
+                        <td>
+                            <button class="edit-btn" onclick="openEditModal(${prompt.id})">Edit</button>
+                        </td>
+                        <td>
+                            <button class="edit-btn" onclick="testPrompt(${prompt.id})" style="background: #f0fdf4; color: #166534;">Test</button>
+                        </td>
+                        <td>
+                            ${prompt.version_letter ? `<button class="edit-btn" onclick="deletePrompt(${prompt.id})" style="background: #fef2f2; color: #991b1b;">Delete</button>` : '<span style="color: #9ca3af; font-size: 12px;">N/A</span>'}
+                        </td>
+                    </tr>
+                `;
+                }).join('');
+            }
+
+            // Update counts
+            const allCount = prompts.length;
+            const activeCount = prompts.filter(p => p.status === 'active').length;
+            const draftCount = prompts.filter(p => p.status === 'draft').length;
+
+            document.getElementById('all-count').textContent = allCount;
+            document.getElementById('active-count').textContent = activeCount;
+            document.getElementById('draft-count').textContent = draftCount;
+        }
+
+        function openEditModal(promptId) {
+            const prompts = promptsData[currentPromptType] || [];
+            const prompt = prompts.find(p => p.id === promptId);
+            if (!prompt) return;
+
+            currentEditingPrompt = prompt;
+            document.getElementById('modal-title').textContent = `Edit: ${prompt.name}`;
+            document.getElementById('modal-textarea').value = prompt.content || '';
+            document.getElementById('edit-modal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('edit-modal').classList.remove('active');
+            currentEditingPrompt = null;
+        }
+
+        async function savePromptFromModal() {
+            if (!currentEditingPrompt) return;
+
+            const content = document.getElementById('modal-textarea').value.trim();
+            if (!content) {
+                alert('Prompt cannot be empty');
+                return;
+            }
 
             try {
+                // If it's a version (has version_letter), update via version endpoint
+                if (currentEditingPrompt.version_letter) {
+                    // Extract the real version ID from the database
+                    // The prompt.id is 1000 + version.id, so we need to extract the real version ID
+                    const versionId = currentEditingPrompt.id - 1000;
+
+                    const response = await fetch('/api/prompts/update-version', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            version_id: versionId,
+                            prompt_content: content
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (data.status === 'success') {
+                        currentEditingPrompt.content = content;
+                        currentEditingPrompt.preview = content.substring(0, 100);
+                        await Promise.all([loadAllPrompts(), loadStats()]);
+                        renderTable();
+                        closeModal();
+                        alert('✅ Version prompt saved successfully!');
+                    } else {
+                        alert('❌ Error: ' + data.message);
+                    }
+                    return;
+                }
+
                 const response = await fetch('/api/prompts/update', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: currentEditingPrompt.key, value: content })
+                });
+
+                const data = await response.json();
+                if (data.status === 'success') {
+                    // Reload prompts from database to ensure sync
+                    await Promise.all([loadAllPrompts(), loadStats()]);
+                    renderTable();
+                    closeModal();
+                    alert('✅ Prompt saved successfully!');
+                } else {
+                    alert('❌ Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('❌ Error saving prompt: ' + error.message);
+            }
+        }
+
+        async function createNewVersion() {
+            if (currentPromptType === 'voice-guidelines') {
+                alert('Cannot create versions for voice guidelines');
+                return;
+            }
+
+            const versionName = prompt('Enter version name:');
+            if (!versionName) return;
+
+            const promptContent = prompt('Enter prompt content (or leave empty to edit later):');
+
+            try {
+                const response = await fetch('/api/prompts/create-version', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        key: promptKey,
-                        value: value
+                        version_name: versionName,
+                        prompt_type: currentPromptType,
+                        prompt_content: promptContent || 'Enter your prompt here...'
                     })
                 });
 
                 const data = await response.json();
-
                 if (data.status === 'success') {
-                    showStatus(statusDiv, 'success', '✅ Prompt saved successfully!');
+                    alert(`✅ Version created! Endpoint: ${data.endpoint_path}`);
+                    await Promise.all([loadAllPrompts(), loadStats()]);
+                    renderTable();
                 } else {
-                    showStatus(statusDiv, 'error', '❌ Error: ' + data.message);
+                    alert('❌ Error: ' + data.message);
                 }
             } catch (error) {
-                showStatus(statusDiv, 'error', '❌ Error saving prompt: ' + error.message);
-            } finally {
-                button.innerHTML = originalText;
-                button.disabled = false;
+                alert('❌ Error creating version: ' + error.message);
             }
         }
 
-        async function resetPrompt(textareaId, promptKey) {
-            if (!confirm('Are you sure you want to reset this prompt to the default value?')) {
+        // Close modal on outside click
+        document.getElementById('edit-modal')?.addEventListener('click', (e) => {
+            if (e.target.id === 'edit-modal') {
+                closeModal();
+            }
+        });
+
+        // Test Merchant Functions
+        async function saveTestMerchant() {
+            const form = document.getElementById('test-merchant-form');
+            const formData = {
+                merchant_name: document.getElementById('merchant_name').value,
+                contact_email: document.getElementById('contact_email').value,
+                contact_title: document.getElementById('contact_title').value,
+                merchant_industry: document.getElementById('merchant_industry').value,
+                merchant_website: document.getElementById('merchant_website').value,
+                account_description: document.getElementById('account_description').value,
+                account_revenue: parseFloat(document.getElementById('account_revenue').value) || 0,
+                account_employees: parseInt(document.getElementById('account_employees').value) || 0,
+                account_location: document.getElementById('account_location').value,
+                account_gmv: parseFloat(document.getElementById('account_gmv').value) || 0,
+                last_activity: document.getElementById('last_activity').value || 'Recent'
+            };
+
+            if (!formData.merchant_name) {
+                alert('Please enter a merchant name');
                 return;
             }
 
             try {
-                const response = await fetch('/api/prompts/reset', {
+                const response = await fetch('/api/test-merchants/save', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+
+                const data = await response.json();
+                if (data.status === 'success') {
+                    alert('✅ Test merchant saved successfully!');
+                } else {
+                    alert('❌ Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('❌ Error saving test merchant: ' + error.message);
+            }
+        }
+
+        async function loadTestMerchant() {
+            try {
+                const response = await fetch('/api/test-merchants/get');
+                const data = await response.json();
+
+                if (data.status === 'success' && data.merchant) {
+                    const m = data.merchant;
+                    document.getElementById('merchant_name').value = m.merchant_name || '';
+                    document.getElementById('contact_email').value = m.contact_email || '';
+                    document.getElementById('contact_title').value = m.contact_title || '';
+                    document.getElementById('merchant_industry').value = m.merchant_industry || '';
+                    document.getElementById('merchant_website').value = m.merchant_website || '';
+                    document.getElementById('account_description').value = m.account_description || '';
+                    document.getElementById('account_revenue').value = m.account_revenue || '';
+                    document.getElementById('account_employees').value = m.account_employees || '';
+                    document.getElementById('account_location').value = m.account_location || '';
+                    document.getElementById('account_gmv').value = m.account_gmv || '';
+                    document.getElementById('last_activity').value = m.last_activity || 'Recent';
+                }
+            } catch (error) {
+                console.error('Error loading test merchant:', error);
+            }
+        }
+
+        async function generateSample() {
+            const promptType = document.getElementById('sample-prompt-type').value;
+            const conversationContext = document.getElementById('conversation_context').value;
+            const customPromptContent = document.getElementById('custom-prompt-content').value.trim();
+
+            // Get current prompt content if editing and no custom prompt provided
+            let promptContent = null;
+            if (customPromptContent) {
+                promptContent = customPromptContent;
+            } else if (currentEditingPrompt && currentEditingPrompt.content) {
+                promptContent = currentEditingPrompt.content;
+            }
+
+            const resultsDiv = document.getElementById('sample-results');
+            const outputDiv = document.getElementById('sample-output');
+
+            resultsDiv.style.display = 'none';
+            outputDiv.textContent = 'Generating sample response...';
+            resultsDiv.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/test-merchants/generate-sample', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        key: promptKey
+                        prompt_type: promptType,
+                        prompt_content: promptContent,
+                        conversation_context: conversationContext
                     })
                 });
 
                 const data = await response.json();
+                if (data.status === 'success' && data.responses && data.responses.length > 0) {
+                    const response = data.responses[0];
+                    const output = `Subject: ${response.subject}
 
-                if (data.status === 'success') {
-                    const textarea = document.getElementById(textareaId);
-                    textarea.value = data.default_value || '';
-                    const statusDiv = document.getElementById(textareaId + '-status');
-                    showStatus(statusDiv, 'success', '✅ Prompt reset to default');
+${response.body}`;
+                    outputDiv.textContent = output;
                 } else {
-                    alert('Error resetting prompt: ' + data.message);
+                    outputDiv.textContent = 'Error: ' + (data.message || 'Failed to generate sample');
                 }
             } catch (error) {
-                alert('Error resetting prompt: ' + error.message);
+                outputDiv.textContent = 'Error: ' + error.message;
             }
         }
 
-        function showStatus(element, type, message) {
-            element.className = `status-message status-${type}`;
-            element.textContent = message;
-            element.style.display = 'block';
+        // Show/hide conversation context based on prompt type
+        document.getElementById('sample-prompt-type')?.addEventListener('change', (e) => {
+            const contextSection = document.getElementById('conversation-context-section');
+            if (e.target.value === 'reply-email') {
+                contextSection.style.display = 'block';
+            } else {
+                contextSection.style.display = 'none';
+            }
+        });
 
-            // Hide after 5 seconds
-            setTimeout(() => {
-                element.style.display = 'none';
-            }, 5000);
+        // Test Prompt Function
+        async function testPrompt(promptId) {
+            const prompts = promptsData[currentPromptType] || [];
+            const prompt = prompts.find(p => p.id === promptId);
+            if (!prompt) {
+                alert('Prompt not found');
+                return;
+            }
+
+            // Skip test for voice guidelines
+            if (currentPromptType === 'voice-guidelines') {
+                alert('Cannot test voice guidelines. Please use a new-email, reply-email, or non-campaign-email prompt.');
+                return;
+            }
+
+            // Show test panel
+            const testPanel = document.getElementById('test-results-panel');
+            const testContent = document.getElementById('test-results-content');
+            const replyInputSection = document.getElementById('test-reply-input-section');
+            const replyInput = document.getElementById('test-reply-input');
+
+            testPanel.style.display = 'block';
+
+            // Determine prompt type
+            const promptType = currentPromptType === 'new-email' ? 'new-email' : (currentPromptType === 'non-campaign-email' ? 'non-campaign-email' : 'reply-email');
+
+            // For reply-email and non-campaign-email, show input box and wait for user input
+            if (promptType === 'reply-email' || promptType === 'non-campaign-email') {
+                replyInputSection.style.display = 'block';
+                testContent.innerHTML = 'Enter a message above and click "Generate Reply" to test the prompt.';
+                replyInput.value = '';
+                replyInput.focus();
+                // Store prompt info for later use
+                testContent.dataset.promptId = promptId;
+                testContent.dataset.promptContent = prompt.content || '';
+                testContent.dataset.promptType = promptType;
+            } else {
+                // For new-email, generate immediately
+                replyInputSection.style.display = 'none';
+                testContent.innerHTML = 'Generating test response...';
+
+                try {
+                    const promptContent = prompt.content || '';
+
+                    const response = await fetch('/api/test-merchants/generate-sample', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            prompt_type: promptType,
+                            prompt_content: promptContent,
+                            conversation_context: ''
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (data.status === 'success' && data.responses && data.responses.length > 0) {
+                        const result = data.responses[0];
+                        // Display with HTML rendering for proper formatting
+                        const output = `<div style="margin-bottom: 16px;"><strong>Subject:</strong> ${result.subject}</div><div style="border-top: 1px solid #e5e7eb; padding-top: 16px;">${result.body}</div>`;
+                        testContent.innerHTML = output;
+                    } else {
+                        testContent.innerHTML = 'Error: ' + (data.message || 'Failed to generate sample. Make sure you have saved a test merchant first.');
+                    }
+                } catch (error) {
+                    testContent.innerHTML = 'Error: ' + error.message;
+                }
+            }
+        }
+
+        // Generate Reply Function (for reply-email prompts)
+        async function generateTestReply() {
+            const replyInput = document.getElementById('test-reply-input');
+            const testContent = document.getElementById('test-results-content');
+            const messageToReplyTo = replyInput.value.trim();
+
+            if (!messageToReplyTo) {
+                alert('Please enter a message to reply to');
+                return;
+            }
+
+            // Get stored prompt info
+            const promptId = testContent.dataset.promptId;
+            const promptContent = testContent.dataset.promptContent || '';
+            const promptType = testContent.dataset.promptType || 'reply-email';
+
+            if (!promptId) {
+                alert('Prompt information not found. Please click "Test" again.');
+                return;
+            }
+
+            testContent.innerHTML = 'Generating reply...';
+
+            try {
+                const response = await fetch('/api/test-merchants/generate-sample', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt_type: promptType,
+                        prompt_content: promptContent,
+                        conversation_context: messageToReplyTo
+                    })
+                });
+
+                const data = await response.json();
+                if (data.status === 'success' && data.responses && data.responses.length > 0) {
+                    const result = data.responses[0];
+                    // Display with HTML rendering for proper formatting
+                    const output = `<div style="margin-bottom: 16px;"><strong>Subject:</strong> ${result.subject}</div><div style="border-top: 1px solid #e5e7eb; padding-top: 16px;">${result.body}</div>`;
+                    testContent.innerHTML = output;
+                } else {
+                    testContent.innerHTML = 'Error: ' + (data.message || 'Failed to generate reply. Make sure you have saved a test merchant first.');
+                }
+            } catch (error) {
+                testContent.innerHTML = 'Error: ' + error.message;
+            }
+        }
+
+        function closeTestPanel() {
+            document.getElementById('test-results-panel').style.display = 'none';
+        }
+
+        // Delete Prompt Function
+        async function deletePrompt(promptId) {
+            const prompts = promptsData[currentPromptType] || [];
+            const prompt = prompts.find(p => p.id === promptId);
+            if (!prompt) {
+                alert('Prompt not found');
+                return;
+            }
+
+            // Check if it's a default prompt (no version_letter)
+            if (!prompt.version_letter) {
+                alert('Cannot delete default prompts. You can only delete version prompts (A, B, C, etc.).');
+                return;
+            }
+
+            // Confirm deletion
+            const confirmMessage = `Are you sure you want to delete "${prompt.name}" (Version ${prompt.version_letter})?
+
+This action cannot be undone.`;
+            if (!confirm(confirmMessage)) {
+                return;
+            }
+
+            try {
+                // Get the actual version ID from the database
+                // The prompt.id is 1000 + version.id, so we need to extract the real version ID
+                const versionId = prompt.id - 1000;
+
+                const response = await fetch('/api/prompts/delete-version', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ version_id: versionId })
+                });
+
+                const data = await response.json();
+                if (data.status === 'success') {
+                    alert('✅ Prompt version deleted successfully!');
+                    await Promise.all([loadAllPrompts(), loadStats()]);
+                    renderTable();
+                } else {
+                    alert('❌ Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('❌ Error deleting prompt: ' + error.message);
+            }
         }
     </script>
 </body>
