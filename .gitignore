@@ -10,14 +10,33 @@
 !2025_hackathon.py
 !email_tracker.py
 !dump_email_tracking.py
+!query_database.py
 !requirements.txt
 !Procfile
 !runtime.txt
 !.gitignore
+
+# Keep documentation
 !README.md
-!DUMP_SCRIPT_README.md
-!RAILWAY_SCHEDULE_SETUP.md
-!GOOGLE_SHEETS_SETUP.md
+!SETUP.md
+!MAINTENANCE.md
+!REFACTORING.md
+
+# Keep configuration
+!config.py
+!workato_reply_schema.json
+
+# Keep modular structure
+!models/
+!models/**
+!services/
+!services/**
+!routes/
+!routes/**
+!utils/
+!utils/**
+!templates/
+!templates/**
 
 # Ignore virtual environments
 flask_env/
