@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "Reply to Emails Response Schema",
+  "description": "Schema for the /api/workato/reply-to-emails endpoint response. This describes the 'response' field in Workato's HTTP connector output.",
+  "properties": {
+    "status": {
+      "type": "string",
+      "description": "Status of the request",
+      "enum": ["success", "error"]
+    },
+    "message": {
+      "type": "string",
+      "description": "Human-readable message about the operation"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of when the response was generated"
+    },
+    "accounts_processed": {
+      "type": "integer",
+      "description": "Number of accounts processed"
+    },
+    "emails_processed": {
+      "type": "integer",
+      "description": "Number of email threads processed"
+    },
+    "replies_sent": {
+      "type": "integer",
+      "description": "Number of reply emails sent"
+    },
+    "emails": {
+      "type": "array",
+      "description": "Array of email thread details",
+      "items": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "description": "Gmail thread ID"
+          },
+          "sender": {
+            "type": "string",
+            "description": "Email address and name of the sender"
+          },
+          "contact_name": {
+            "type": "string",
+            "description": "Name of the contact"
+          },
+          "subject": {
+            "type": "string",
+            "description": "Email subject line"
+          },
+          "original_message": {
+            "type": "string",
+            "description": "The original email message that was replied to"
+          },
+          "ai_response": {
+            "type": "string",
+            "description": "The AI-generated reply (cleaned, no HTML)"
+          },
+          "email_status": {
+            "type": "string",
+            "description": "Status message of the email send operation"
+          },
+          "reply_tracking_id": {
+            "type": "string",
+            "description": "Tracking ID of the reply email that was sent",
+            "nullable": true
+          },
+          "reply_tracking_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL to track the reply email",
+            "nullable": true
+          },
+          "tracking_id": {
+            "type": "string",
+            "description": "Tracking ID of the reply email (backward compatibility)",
+            "nullable": true
+          },
+          "tracking_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Tracking URL of the reply email (backward compatibility)",
+            "nullable": true
+          },
+          "account_id": {
+            "type": "string",
+            "description": "Salesforce account ID",
+            "nullable": true
+          },
+          "salesforce_id": {
+            "type": "string",
+            "description": "Salesforce contact ID",
+            "nullable": true
+          }
+        },
+        "required": [
+          "thread_id",
+          "sender",
+          "contact_name",
+          "subject",
+          "original_message",
+          "ai_response",
+          "email_status"
+        ]
+      }
+    }
+  },
+  "required": [
+    "status",
+    "message",
+    "timestamp",
+    "accounts_processed",
+    "emails_processed",
+    "replies_sent",
+    "emails"
+  ]
+}
+
