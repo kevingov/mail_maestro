@@ -7421,8 +7421,33 @@ def workato_send_new_email():
         formatted_email = email_content_with_signature.replace("\n", "<br>")
         logger.info(f"🔍 After newline conversion: {len(formatted_email)} chars")
         logger.info(f"🔍 Formatted email preview (first 500 chars): {formatted_email[:500]}")
-        logger.info(f"🔍 Checking if formatted_email contains '<div class=\"logo-container\"': {('<div class=\"logo-container\"' in formatted_email) or ('<div class=logo-container' in formatted_email)}")
-        logger.info(f"🔍 Checking if formatted_email contains 'Affirm</h1>': {'Affirm</h1>' in formatted_email}")
+
+        # FORCE REMOVE any HTML template wrapper that might have been added
+        # Strip out everything between <!DOCTYPE and <body>, and between </body> and </html>
+        import re
+        # If it's a full HTML document, extract just the body content
+        if '<!DOCTYPE' in formatted_email or '<html' in formatted_email:
+            logger.info(f"⚠️ Found HTML template wrapper, stripping it out...")
+            # Extract content between <body> tags if they exist
+            body_match = re.search(r'<body[^>]*>(.*?)</body>', formatted_email, re.DOTALL | re.IGNORECASE)
+            if body_match:
+                body_content = body_match.group(1)
+                # Remove any wrapping divs with classes (container, logo-container, etc.)
+                body_content = re.sub(r'<div[^>]*class="[^"]*container[^"]*"[^>]*>', '', body_content, flags=re.IGNORECASE)
+                body_content = re.sub(r'</div>\s*</div>\s*$', '', body_content)  # Remove closing divs
+                # Extract just the paragraph content
+                p_match = re.search(r'<p[^>]*>(.*?)</p>', body_content, re.DOTALL | re.IGNORECASE)
+                if p_match:
+                    formatted_email = p_match.group(1)
+                    logger.info(f"✅ Extracted content from <p> tag")
+                else:
+                    formatted_email = body_content
+                    logger.info(f"✅ Used body content directly")
+            else:
+                logger.warning(f"⚠️ Could not find <body> tag, using original content")
+
+        logger.info(f"🔍 Final formatted email (first 500 chars): {formatted_email[:500]}")
+        logger.info(f"🔍 Checking if formatted_email still contains template: {('<div class=\"logo-container\"' in formatted_email) or ('Affirm</h1>' in formatted_email)}")
 
         # Send email with tracking
         logger.info(f"🔍 About to call send_email()...")
