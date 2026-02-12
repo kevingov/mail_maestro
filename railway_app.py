@@ -719,10 +719,10 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     
     # Default prompt if no custom template or formatting failed
     if not reply_email_prompt_template:
-        # Conditionally include rule about asking to include merchanthelp
+        # Conditionally include rule about including merchanthelp
         if not merchanthelp_already_ccd:
-            merchanthelp_rule = """    7. **ASK (do not state) if they want to include merchanthelp@affirm.com** - You must ASK a question like "Would you like me to include merchanthelp@affirm.com in this thread?" or "Should I CC merchanthelp@affirm.com so they can help?" DO NOT say "I'll include merchanthelp" or "I will add merchanthelp" - you must ASK FIRST and wait for their response before including them.
-    8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - Only offer to CC merchanthelp@affirm.com in the thread. Never suggest emailing merchanthelp@affirm.com directly as an alternative.
+            merchanthelp_rule = """    7. **Inform them merchanthelp@affirm.com is being CC'd** - Let them know that you're including our merchant support team (merchanthelp@affirm.com) in this thread so they can help directly. Use natural language like "I'm including our merchant support team (merchanthelp@affirm.com) in this thread so they can help you directly."
+    8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - They're being CC'd on this thread automatically.
     9. **Keep under 150 words** and feel natural, not automated"""
         else:
             merchanthelp_rule = """    7. **CRITICAL: merchanthelp@affirm.com is ALREADY CC'd on this email thread** - Do NOT mention adding them, including them, or asking about them. Act as if they are already part of the conversation and will see your response.
@@ -1893,13 +1893,13 @@ def reply_to_emails_with_accounts(accounts):
                                 wants_merchantcare = True
                                 logger.info(f"✅ Merchant requested to include merchanthelp@affirm.com (short affirmative response to previous question)")
             
-            # If merchant said "yes" to including merchanthelp, mark them as already CC'd for AI response
-            # This prevents the AI from asking again when we're about to add them
+            # Automatically add merchanthelp@affirm.com to CC if not already present
+            # No need to ask - we'll inform them in the response
             will_add_merchanthelp = False
-            if wants_merchantcare and not merchanthelp_already_ccd:
+            if not merchanthelp_already_ccd:
                 merchanthelp_already_ccd = True  # Tell AI they're already/will be CC'd
                 will_add_merchanthelp = True  # Flag to add them to CC after generating response
-                logger.info(f"📧 Merchant said yes to including merchanthelp - will add to CC and AI should not ask again")
+                logger.info(f"📧 Automatically adding merchanthelp@affirm.com to CC")
             
             # Check if we've already said merchanthelp will take it from here
             # If merchanthelp is CC'd AND we've said they'll take it from here, skip replying unless merchant specifically asks for Jake
