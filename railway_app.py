@@ -1001,6 +1001,7 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
     # If no custom template provided, try to get from database first, then environment variable
     # IMPORTANT: Only use DEFAULT version, never versioned prompts (A, B, C, etc.)
     if not prompt_template:
+        logger.info(f"🔍 [generate_message] No custom template provided, checking database...")
         # First, try to get from database (most up-to-date) - ONLY DEFAULT VERSION
         db_prompt_template = None
         if DB_AVAILABLE:
@@ -1009,21 +1010,27 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
                 if conn:
                     cursor = conn.cursor()
                     # Explicitly only get DEFAULT version - never use versioned prompts (A, B, C, etc.)
+                    logger.info(f"🔍 [generate_message] Querying database for DEFAULT new-email prompt...")
                     cursor.execute('''
                         SELECT prompt_content
                         FROM prompt_versions
-                        WHERE prompt_type = 'new-email' 
+                        WHERE prompt_type = 'new-email'
                         AND version_letter = 'DEFAULT'
                     ''')
                     row = cursor.fetchone()
                     if row:
                         db_prompt_template = row[0]
-                        logger.debug(f"✅ Loaded DEFAULT prompt from database for new-email")
+                        logger.info(f"✅ [generate_message] Loaded DEFAULT prompt from database for new-email (length: {len(db_prompt_template)} chars)")
+                        logger.info(f"🔍 [generate_message] DB prompt preview (first 300 chars): {db_prompt_template[:300]}")
                     else:
-                        logger.debug(f"⚠️ No DEFAULT prompt found in database for new-email")
+                        logger.info(f"⚠️ [generate_message] No DEFAULT prompt found in database for new-email")
                     conn.close()
+                else:
+                    logger.warning(f"⚠️ [generate_message] Database connection failed")
             except Exception as db_error:
-                logger.debug(f"Could not load prompt from database: {db_error}")
+                logger.error(f"❌ [generate_message] Could not load prompt from database: {db_error}")
+        else:
+            logger.info(f"⚠️ [generate_message] DB_AVAILABLE is False, skipping database check")
         
         # Use database prompt if available, otherwise fall back to environment variable
         env_prompt_template = db_prompt_template or os.getenv('NEW_EMAIL_PROMPT_TEMPLATE')
@@ -7356,24 +7363,33 @@ def workato_send_new_email():
                 "emails_sent": 0
             }), 200
         
+        logger.info(f"📧 ============== SEND-NEW-EMAIL ENDPOINT START ==============")
         logger.info(f"📧 Sending personalized email to {contact_name} ({contact_email})")
         logger.info(f"   Account: {account_name} ({account_industry})")
         logger.info(f"   Website: {account_website}")
 
         # TEMPORARY: Clear any DEFAULT prompts from database to force using hardcoded plain template
+        logger.info(f"🔍 DB_AVAILABLE: {DB_AVAILABLE}")
         if DB_AVAILABLE:
             try:
                 conn = get_db_connection()
                 if conn:
                     cursor = conn.cursor()
+                    logger.info("🔍 About to delete DEFAULT new-email prompt from database...")
                     cursor.execute("DELETE FROM prompt_versions WHERE version_letter = 'DEFAULT' AND prompt_type = 'new-email'")
+                    deleted_count = cursor.rowcount
                     conn.commit()
                     conn.close()
-                    logger.info("🗑️ Cleared DEFAULT new-email prompt from database")
+                    logger.info(f"🗑️ Cleared DEFAULT new-email prompt from database (deleted {deleted_count} rows)")
+                else:
+                    logger.warning("⚠️ Database connection failed")
             except Exception as e:
-                logger.warning(f"Could not clear DEFAULT prompt: {e}")
+                logger.error(f"❌ Could not clear DEFAULT prompt: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
 
         # Generate personalized subject and content using AI
+        logger.info(f"🔍 About to call generate_message()...")
         subject_line, email_content = generate_message(
             merchant_name=contact_name,
             last_activity="Recent",
@@ -7388,17 +7404,28 @@ def workato_send_new_email():
             account_gmv=account_gmv
         )
         
+        logger.info(f"🔍 generate_message() returned successfully")
+        logger.info(f"🔍 Email content length: {len(email_content)} chars")
+        logger.info(f"🔍 Email content preview (first 300 chars): {email_content[:300]}")
+
         # Remove any existing signature from AI-generated content
         email_content_cleaned = remove_existing_signature(email_content, sender_name)
+        logger.info(f"🔍 After signature removal: {len(email_content_cleaned)} chars")
 
         # Add standardized email signature with AI Business Development title
         signature = f"\n\nBest regards,<br>{sender_name}<br>Affirm - AI Business Development"
         email_content_with_signature = email_content_cleaned + signature
+        logger.info(f"🔍 After adding signature: {len(email_content_with_signature)} chars")
 
         # Convert newlines to <br> for HTML (plain format without template wrapper)
         formatted_email = email_content_with_signature.replace("\n", "<br>")
+        logger.info(f"🔍 After newline conversion: {len(formatted_email)} chars")
+        logger.info(f"🔍 Formatted email preview (first 500 chars): {formatted_email[:500]}")
+        logger.info(f"🔍 Checking if formatted_email contains '<div class=\"logo-container\"': {('<div class=\"logo-container\"' in formatted_email) or ('<div class=logo-container' in formatted_email)}")
+        logger.info(f"🔍 Checking if formatted_email contains 'Affirm</h1>': {'Affirm</h1>' in formatted_email}")
 
         # Send email with tracking
+        logger.info(f"🔍 About to call send_email()...")
         email_result = send_email(
             to_email=contact_email,
             merchant_name=contact_name,
