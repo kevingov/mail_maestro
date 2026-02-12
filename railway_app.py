@@ -731,7 +731,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     10. **DO NOT suggest emailing merchanthelp@affirm.com directly** - merchanthelp@affirm.com is already on this thread.
     11. **Keep under 150 words** and feel natural, not automated"""
 
-    prompt = f"""
+        prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
 
     **TASK:** Generate a professional Affirm-branded email response to {recipient_name} from {sender_name}.
@@ -750,7 +750,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     8. **Do NOT include troubleshooting steps, workarounds, or solutions** - only ask questions to gather information
     9. **Once they respond to your questions** - After the merchant provides the requested information, tell them that merchanthelp@affirm.com will help from here. For example: "Thanks for providing those details. merchanthelp@affirm.com will help you from here."
 {merchanthelp_rule}
-    
+
 
     **OUTPUT FORMAT:**
     - **Subject Line:** [Concise subject]
