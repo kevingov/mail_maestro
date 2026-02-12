@@ -5218,19 +5218,14 @@ def handle_versioned_send_new_email(version_letter):
         
         # Remove any existing signature from AI-generated content
         email_content_cleaned = remove_existing_signature(email_content, sender_name)
-        
+
         # Add standardized email signature with AI Business Development title
         signature = f"\n\nBest regards,<br>{sender_name}<br>Affirm - AI Business Development"
         email_content_with_signature = email_content_cleaned + signature
-        
-        # Format and send email
-        formatted_email = format_pardot_email(
-            first_name=contact_name,
-            email_content=email_content_with_signature,
-            recipient_email=contact_email,
-            sender_name=sender_name
-        )
-        
+
+        # Convert newlines to <br> for HTML (plain format without template wrapper)
+        formatted_email = email_content_with_signature.replace("\n", "<br>")
+
         email_result = send_email(
             to_email=contact_email,
             merchant_name=contact_name,
@@ -7382,19 +7377,14 @@ def workato_send_new_email():
         
         # Remove any existing signature from AI-generated content
         email_content_cleaned = remove_existing_signature(email_content, sender_name)
-        
+
         # Add standardized email signature with AI Business Development title
         signature = f"\n\nBest regards,<br>{sender_name}<br>Affirm - AI Business Development"
         email_content_with_signature = email_content_cleaned + signature
-        
-        # Format email with HTML template
-        formatted_email = format_pardot_email(
-            first_name=contact_name,
-            email_content=email_content_with_signature,
-            recipient_email=contact_email,
-            sender_name=sender_name
-        )
-        
+
+        # Convert newlines to <br> for HTML (plain format without template wrapper)
+        formatted_email = email_content_with_signature.replace("\n", "<br>")
+
         # Send email with tracking
         email_result = send_email(
             to_email=contact_email,
