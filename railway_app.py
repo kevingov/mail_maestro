@@ -7359,7 +7359,20 @@ def workato_send_new_email():
         logger.info(f"📧 Sending personalized email to {contact_name} ({contact_email})")
         logger.info(f"   Account: {account_name} ({account_industry})")
         logger.info(f"   Website: {account_website}")
-        
+
+        # TEMPORARY: Clear any DEFAULT prompts from database to force using hardcoded plain template
+        if DB_AVAILABLE:
+            try:
+                conn = get_db_connection()
+                if conn:
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM prompt_versions WHERE version_letter = 'DEFAULT' AND prompt_type = 'new-email'")
+                    conn.commit()
+                    conn.close()
+                    logger.info("🗑️ Cleared DEFAULT new-email prompt from database")
+            except Exception as e:
+                logger.warning(f"Could not clear DEFAULT prompt: {e}")
+
         # Generate personalized subject and content using AI
         subject_line, email_content = generate_message(
             merchant_name=contact_name,
