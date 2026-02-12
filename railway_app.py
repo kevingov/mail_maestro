@@ -719,17 +719,17 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     
     # Default prompt if no custom template or formatting failed
     if not reply_email_prompt_template:
-        # Conditionally include rule about including merchanthelp
-        if not merchanthelp_already_ccd:
-            merchanthelp_rule = """    7. **Inform them merchanthelp@affirm.com is being CC'd** - Let them know that you're including our merchant support team (merchanthelp@affirm.com) in this thread so they can help directly. Use natural language like "I'm including our merchant support team (merchanthelp@affirm.com) in this thread so they can help you directly."
-    8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - They're being CC'd on this thread automatically.
+        # Conditionally include rule about merchanthelp availability
+        if merchanthelp_already_ccd:
+            # Merchanthelp is CC'd (either already or being added now)
+            merchanthelp_rule = """    7. **Inform about support team availability** - Let them know our merchant support team (merchanthelp@affirm.com) is included in this thread and will help with any technical questions or issues. Use natural language like "I'm including our merchant support team in this thread - they'll be able to help you directly with this."
+    8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - They're on this thread.
     9. **Keep under 150 words** and feel natural, not automated"""
         else:
-            merchanthelp_rule = """    7. **CRITICAL: merchanthelp@affirm.com is ALREADY CC'd on this email thread** - Do NOT mention adding them, including them, or asking about them. Act as if they are already part of the conversation and will see your response.
-    8. **DO NOT say "I'll include merchanthelp@affirm.com"** - They are already included, so do NOT mention including them.
-    9. **DO NOT ask "should I cc merchanthelp@affirm.com"** - They are already CC'd, so do NOT ask about CC'ing them.
-    10. **DO NOT suggest emailing merchanthelp@affirm.com directly** - merchanthelp@affirm.com is already on this thread.
-    11. **Keep under 150 words** and feel natural, not automated"""
+            # Merchanthelp NOT being CC'd (simple inquiry, no technical issue)
+            merchanthelp_rule = """    7. **Keep response conversational** - This is a simple inquiry that doesn't need technical support escalation.
+    8. **If they ask technical questions later** - Let them know you can connect them with our support team.
+    9. **Keep under 150 words** and feel natural, not automated"""
 
         prompt = f"""
     {AFFIRM_VOICE_GUIDELINES}
@@ -1445,6 +1445,84 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
         logger.error(f"Error sending threaded email reply: {e}")
         raise e
 
+def should_cc_merchanthelp(email_body, conversation_history=""):
+    """
+    Intelligently determine if merchanthelp@affirm.com should be CC'd based on:
+    - Technical questions or problems
+    - Frustration or urgency indicators
+    - Skip for simple acknowledgments or thank you messages
+
+    Returns: (should_cc: bool, reason: str)
+    """
+    if not email_body:
+        return False, "Empty email body"
+
+    email_lower = email_body.lower()
+
+    # 1. Skip CC for simple acknowledgments or thank you messages
+    acknowledgment_patterns = [
+        'thank you', 'thanks', 'appreciate it', 'got it', 'sounds good',
+        'perfect', 'great', 'awesome', 'wonderful', 'excellent',
+        'ok', 'okay', 'understood', 'noted', 'will do', 'thanks for',
+        'appreciate your', 'looking forward', 'sounds great'
+    ]
+
+    # Check if email is ONLY acknowledgment (short and contains acknowledgment phrase)
+    if len(email_body.strip()) < 100:  # Short message
+        if any(pattern in email_lower for pattern in acknowledgment_patterns):
+            # Check if it's ONLY acknowledgment (no questions or issues)
+            if '?' not in email_body and not any(word in email_lower for word in ['help', 'issue', 'problem', 'error', 'not work', 'cant', "can't", 'unable', 'stuck']):
+                return False, "Simple acknowledgment/thanks"
+
+    # 2. Detect frustration or urgency - ALWAYS CC merchanthelp
+    frustration_indicators = [
+        'frustrated', 'frustrating', 'urgent', 'asap', 'immediately',
+        'still not working', 'still broken', 'still having', 'keeps failing',
+        'not working', 'doesnt work', "doesn't work", 'broken', 'not functioning',
+        'critical', 'emergency', 'serious issue', 'major problem',
+        'this is ridiculous', 'unacceptable', 'disappointed', 'unhappy',
+        'escalate', 'need help now', 'right away', 'been waiting',
+        'multiple times', 'several times', 'keep getting', 'still getting'
+    ]
+
+    if any(indicator in email_lower for indicator in frustration_indicators):
+        return True, "Frustration or urgency detected"
+
+    # 3. Detect technical questions or problems - CC merchanthelp
+    technical_keywords = [
+        # Integration/Technical
+        'api', 'integration', 'sdk', 'plugin', 'credentials', 'key',
+        'webhook', 'endpoint', 'configuration', 'setup', 'install',
+        'error', 'bug', 'issue', 'problem', 'broken', 'failed', 'failing',
+        'not working', 'doesnt work', "doesn't work", "isn't working",
+        'cant', "can't", 'unable to', 'stuck', 'blocked',
+
+        # Platform-specific
+        'shopify', 'magento', 'bigcommerce', 'woocommerce', 'salesforce',
+        'checkout', 'payment', 'transaction', 'order', 'declined',
+
+        # Support requests
+        'help', 'support', 'assistance', 'how do i', 'how to', 'can you help',
+        'need help with', 'having trouble', 'having issues', 'having problems',
+
+        # Technical questions
+        'why is', 'what is', 'how does', 'when will', 'where do i',
+        'what should i do', 'how can i', 'is there a way'
+    ]
+
+    # Check if email contains technical keywords AND questions or issues
+    has_technical_keyword = any(keyword in email_lower for keyword in technical_keywords)
+    has_question = '?' in email_body or any(word in email_lower for word in ['how', 'why', 'what', 'when', 'where', 'can you', 'could you', 'would you'])
+
+    if has_technical_keyword and has_question:
+        return True, "Technical question detected"
+
+    if has_technical_keyword and any(word in email_lower for word in ['issue', 'problem', 'error', 'not work', 'broken', 'help', 'stuck']):
+        return True, "Technical problem detected"
+
+    # 4. Default: Skip CC for general inquiries or casual conversation
+    return False, "General inquiry - no technical issue or urgency"
+
 def reply_to_emails_with_accounts(accounts):
     """Process emails for specific accounts provided by Workato - exact copy from 2025_hackathon.py."""
     emails_needing_replies = get_emails_needing_replies_with_accounts(accounts)
@@ -1893,13 +1971,21 @@ def reply_to_emails_with_accounts(accounts):
                                 wants_merchantcare = True
                                 logger.info(f"✅ Merchant requested to include merchanthelp@affirm.com (short affirmative response to previous question)")
             
-            # Automatically add merchanthelp@affirm.com to CC if not already present
-            # No need to ask - we'll inform them in the response
+            # Smart CC logic: Only add merchanthelp if email contains technical issues, urgency, or frustration
+            # Skip for simple acknowledgments or thank you messages
             will_add_merchanthelp = False
+            adding_merchanthelp_now = False  # Track if we're adding them NOW (vs. already there)
+            cc_reason = ""
             if not merchanthelp_already_ccd:
-                merchanthelp_already_ccd = True  # Tell AI they're already/will be CC'd
-                will_add_merchanthelp = True  # Flag to add them to CC after generating response
-                logger.info(f"📧 Automatically adding merchanthelp@affirm.com to CC")
+                should_cc, reason = should_cc_merchanthelp(email['body'], conversation_content)
+                if should_cc:
+                    adding_merchanthelp_now = True  # We're adding them in this reply
+                    merchanthelp_already_ccd = True  # Tell AI they're being added
+                    will_add_merchanthelp = True  # Flag to add them to CC after generating response
+                    cc_reason = reason
+                    logger.info(f"📧 Will CC merchanthelp@affirm.com - Reason: {reason}")
+                else:
+                    logger.info(f"📧 Skipping CC to merchanthelp@affirm.com - Reason: {reason}")
             
             # Check if we've already said merchanthelp will take it from here
             # If merchanthelp is CC'd AND we've said they'll take it from here, skip replying unless merchant specifically asks for Jake
