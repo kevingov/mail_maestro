@@ -796,25 +796,19 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
             subject_line = subject_line_match.group(1).strip() if subject_line_match else f"Re: Your Message"
             email_body = email_body_match.group(1).strip() if email_body_match else f"Hi {recipient_name},\n\nThank you for your message. I'll be happy to help you with any questions about Affirm.\n\nBest regards,\n{sender_name}"
 
-            return format_pardot_email(first_name=recipient_name, 
-                                       email_content=email_body, 
-                                       recipient_email="recipient@email.com", 
-                                       sender_name=sender_name)
+            # Convert newlines to <br> for plain HTML (no template wrapper)
+            return email_body.replace("\n", "<br>")
 
         else:
             fallback_response = f"Hi {recipient_name},\n\nThank you for your message. I'll be happy to help you with any questions about Affirm.\n\nBest regards,\n{sender_name}"
-            return format_pardot_email(first_name=recipient_name, 
-                                       email_content=fallback_response, 
-                                       recipient_email="recipient@email.com", 
-                                       sender_name=sender_name)
-        
+            # Convert newlines to <br> for plain HTML (no template wrapper)
+            return fallback_response.replace("\n", "<br>")
+
     except Exception as e:
         logger.error(f"❌ Error generating AI response: {e}")
         fallback_response = f"Hi {recipient_name},\n\nThank you for your message. I'll be happy to help you with any questions about Affirm.\n\nBest regards,\n{sender_name}"
-        return format_pardot_email(first_name=recipient_name, 
-                                   email_content=fallback_response, 
-                                   recipient_email="recipient@email.com", 
-                                   sender_name=sender_name)
+        # Convert newlines to <br> for plain HTML (no template wrapper)
+        return fallback_response.replace("\n", "<br>")
 
 def generate_ai_summary_of_message(message_body, max_length=500):
     """
