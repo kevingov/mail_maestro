@@ -662,14 +662,15 @@ def is_salesforce_case_notification(email_body, subject=None):
     
     return False
 
-def generate_ai_response(email_body, sender_name, recipient_name, conversation_history=None, prompt_template=None, merchanthelp_already_ccd=False):
+def generate_ai_response(email_body, sender_name, recipient_name, conversation_history=None, prompt_template=None, merchanthelp_already_ccd=False, adding_merchanthelp_now=False):
     """
     Generates an AI response using the same detailed prompt as generate_message.
     Creates a professional, Affirm-branded email response with full conversation context.
     Can use a custom prompt_template if provided, otherwise reads from REPLY_EMAIL_PROMPT_TEMPLATE environment variable.
-    
+
     Args:
-        merchanthelp_already_ccd: If True, the AI should NOT ask to include merchanthelp@affirm.com as they're already CC'd
+        merchanthelp_already_ccd: If True, merchanthelp@affirm.com is on the thread (either already there or being added now)
+        adding_merchanthelp_now: If True, merchanthelp@affirm.com is being CC'd in THIS response (say "I'm looping in...")
     """
     
     # Build conversation context if provided
@@ -720,10 +721,15 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
     # Default prompt if no custom template or formatting failed
     if not reply_email_prompt_template:
         # Conditionally include rule about merchanthelp availability
-        if merchanthelp_already_ccd:
-            # Merchanthelp is CC'd (either already or being added now)
-            merchanthelp_rule = """    7. **Inform about support team availability** - Let them know our merchant support team (merchanthelp@affirm.com) is included in this thread and will help with any technical questions or issues. Use natural language like "I'm including our merchant support team in this thread - they'll be able to help you directly with this."
-    8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - They're on this thread.
+        if adding_merchanthelp_now:
+            # Merchanthelp is being ADDED in this response (first time)
+            merchanthelp_rule = """    7. **Inform that you're looping in support team** - Let them know you're including our merchant support team (merchanthelp@affirm.com) on this thread. Use natural language like "I'm looping in our merchant support team (merchanthelp@affirm.com) on this thread so they can help directly."
+    8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - They're being CC'd on this thread.
+    9. **Keep under 150 words** and feel natural, not automated"""
+        elif merchanthelp_already_ccd:
+            # Merchanthelp was ALREADY on the thread (from a previous email)
+            merchanthelp_rule = """    7. **DO NOT say you're including/looping in merchanthelp** - They are ALREADY on this thread from before. If you need to reference the support team, say "Our merchant support team is already on this thread" or just refer to "the team" without mentioning the email again.
+    8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - They're already on this thread.
     9. **Keep under 150 words** and feel natural, not automated"""
         else:
             # Merchanthelp NOT being CC'd (simple inquiry, no technical issue)
@@ -2070,12 +2076,13 @@ def reply_to_emails_with_accounts(accounts):
             # Pass information about whether merchanthelp is already CC'd (or will be CC'd)
             logger.info(f"🤖 Generating AI response for thread {thread_id} from {contact_email}")
             ai_response = generate_ai_response(
-                email['body'], 
-                sender_name, 
-                contact_name, 
+                email['body'],
+                sender_name,
+                contact_name,
                 conversation_content,
                 prompt_template=None,
-                merchanthelp_already_ccd=merchanthelp_already_ccd
+                merchanthelp_already_ccd=merchanthelp_already_ccd,
+                adding_merchanthelp_now=adding_merchanthelp_now
             )
             logger.info(f"✅ AI response generated for thread {thread_id}")
             
@@ -8017,10 +8024,11 @@ def workato_check_non_campaign_emails():
                         recipient_name="Jake Morgan",
                         conversation_history=None,
                         prompt_template=non_campaign_prompt,
-                        merchanthelp_already_ccd=True  # Set to True so AI tells them merchanthelp is CC'd, not asks
+                        merchanthelp_already_ccd=True,  # Merchanthelp will be on thread
+                        adding_merchanthelp_now=True  # First response, so tell them we're looping in merchanthelp
                     )
                     logger.info(f"✅ AI response generated for non-campaign email from {sender_email_original}")
-                    
+
                     # Automatically CC merchanthelp@affirm.com on first response to non-campaign merchants
                     merchanthelp_email = "merchanthelp@affirm.com"
                     logger.info(f"📧 Automatically CC'ing merchanthelp@affirm.com on first response to non-campaign sender {sender_email_original}")
