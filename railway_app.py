@@ -2828,7 +2828,7 @@ def prompts_ui():
         
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: #e3f2fd;
+            background: #f5f5f5;
             margin: 0;
             padding: 0;
             min-height: 100vh;
