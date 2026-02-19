@@ -200,13 +200,25 @@ def init_database():
             cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS version_endpoint VARCHAR(255)')
         except Exception as e:
             logger.debug(f"version_endpoint column check: {e}")
-        
+
         # Remove old variant_endpoint column if it exists
         try:
             cursor.execute('ALTER TABLE email_tracking DROP COLUMN IF EXISTS variant_endpoint')
             logger.info("✅ Removed old variant_endpoint column")
         except Exception as e:
             logger.debug(f"variant_endpoint column removal check: {e}")
+
+        # Add cohort tracking columns for A/B testing and ramp-up
+        try:
+            cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS merchant_id VARCHAR(255)')
+            cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS cohort_name VARCHAR(100)')
+            cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS cohort_batch INTEGER')
+            cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS test_group VARCHAR(50)')
+            cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS ramp_phase VARCHAR(50)')
+            cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS enrolled_at TIMESTAMP')
+            logger.info("✅ Added cohort tracking columns to email_tracking table")
+        except Exception as e:
+            logger.debug(f"Cohort tracking columns check: {e}")
         
         # Email opens table
         cursor.execute('''
@@ -256,7 +268,26 @@ def init_database():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        
+
+        # Merchant cohorts table for tracking A/B test assignments and ramp-up
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS merchant_cohorts (
+                id SERIAL PRIMARY KEY,
+                merchant_id VARCHAR(255) UNIQUE NOT NULL,
+                merchant_email VARCHAR(255) NOT NULL,
+                merchant_name VARCHAR(255),
+                cohort_name VARCHAR(100),
+                cohort_batch INTEGER,
+                test_group VARCHAR(50),
+                ramp_phase VARCHAR(50),
+                enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status VARCHAR(50) DEFAULT 'active',
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         conn.commit()
         conn.close()
         logger.info("✅ PostgreSQL database initialized")
@@ -5755,31 +5786,65 @@ def track_email_send():
         sender_email = data.get('sender_email')
         subject = data.get('subject')
         campaign_name = data.get('campaign_name')
-        
+
+        # Extract cohort tracking fields
+        merchant_id = data.get('merchant_id')
+        cohort_name = data.get('cohort_name')
+        cohort_batch = data.get('cohort_batch')
+        test_group = data.get('test_group')
+        ramp_phase = data.get('ramp_phase')
+        enrolled_at = data.get('enrolled_at')  # Optional - will default to now if not provided
+
         if not recipient_email:
             return jsonify({'error': 'recipient_email is required'}), 400
-        
+
         # Generate tracking ID
         tracking_id = str(uuid.uuid4())
-        
+
         # Store in database
         conn = get_db_connection()
         if not conn:
             return jsonify({'error': 'Database connection failed'}), 503
-        
+
         cursor = conn.cursor()
         version_endpoint = data.get('version_endpoint')  # Get version endpoint if provided
         # Default to the main endpoint if not provided
         if not version_endpoint:
             version_endpoint = '/api/workato/send-new-email'
-        
-        logger.info(f"📝 Tracking email send: {tracking_id} -> {recipient_email} | version_endpoint: {version_endpoint}")
-        
+
+        logger.info(f"📝 Tracking email send: {tracking_id} -> {recipient_email} | cohort: {cohort_name} | test_group: {test_group} | version_endpoint: {version_endpoint}")
+
         cursor.execute('''
-            INSERT INTO email_tracking (tracking_id, recipient_email, sender_email, subject, campaign_name, status, version_endpoint)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ''', (tracking_id, recipient_email, sender_email, subject, campaign_name, 'AI Outbound Email', version_endpoint))
-        
+            INSERT INTO email_tracking (
+                tracking_id, recipient_email, sender_email, subject, campaign_name, status, version_endpoint,
+                merchant_id, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (
+            tracking_id, recipient_email, sender_email, subject, campaign_name, 'AI Outbound Email', version_endpoint,
+            merchant_id, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at
+        ))
+
+        # Also insert/update merchant_cohorts table if cohort info is provided
+        if merchant_id and cohort_name:
+            try:
+                # Use ON CONFLICT to update if merchant already exists
+                cursor.execute('''
+                    INSERT INTO merchant_cohorts (
+                        merchant_id, merchant_email, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, COALESCE(%s, CURRENT_TIMESTAMP))
+                    ON CONFLICT (merchant_id) DO UPDATE SET
+                        cohort_name = EXCLUDED.cohort_name,
+                        cohort_batch = EXCLUDED.cohort_batch,
+                        test_group = EXCLUDED.test_group,
+                        ramp_phase = EXCLUDED.ramp_phase,
+                        updated_at = CURRENT_TIMESTAMP
+                ''', (merchant_id, recipient_email, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at))
+                logger.info(f"✅ Updated merchant_cohorts for {merchant_id}")
+            except Exception as cohort_error:
+                logger.warning(f"⚠️ Could not update merchant_cohorts: {cohort_error}")
+
         conn.commit()
         conn.close()
         
@@ -6437,6 +6502,234 @@ def get_stats():
         
     except Exception as e:
         logger.error(f"Error getting stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/analytics/cohort-performance', methods=['GET'])
+def get_cohort_performance():
+    """Get performance metrics by cohort for A/B testing and ramp-up tracking."""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 503
+
+        cursor = conn.cursor()
+
+        # Get performance metrics grouped by cohort and test group
+        cursor.execute('''
+            SELECT
+                cohort_name,
+                cohort_batch,
+                test_group,
+                ramp_phase,
+                COUNT(*) as emails_sent,
+                SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) as emails_opened,
+                ROUND(100.0 * SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) / COUNT(*), 2) as open_rate,
+                AVG(open_count) as avg_opens_per_email,
+                MIN(sent_at) as first_email_sent,
+                MAX(sent_at) as last_email_sent
+            FROM email_tracking
+            WHERE cohort_name IS NOT NULL
+            GROUP BY cohort_name, cohort_batch, test_group, ramp_phase
+            ORDER BY cohort_batch, cohort_name, test_group
+        ''')
+
+        cohorts = []
+        for row in cursor.fetchall():
+            cohorts.append({
+                'cohort_name': row[0],
+                'cohort_batch': row[1],
+                'test_group': row[2],
+                'ramp_phase': row[3],
+                'emails_sent': row[4],
+                'emails_opened': row[5],
+                'open_rate': float(row[6]) if row[6] else 0,
+                'avg_opens_per_email': float(row[7]) if row[7] else 0,
+                'first_email_sent': row[8].isoformat() if row[8] else None,
+                'last_email_sent': row[9].isoformat() if row[9] else None
+            })
+
+        conn.close()
+
+        return jsonify({
+            'status': 'success',
+            'cohorts': cohorts,
+            'total_cohorts': len(cohorts)
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting cohort performance: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/analytics/ab-test-results', methods=['GET'])
+def get_ab_test_results():
+    """Compare A/B test performance across different test groups."""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 503
+
+        cursor = conn.cursor()
+
+        # Get test group parameter (optional filter)
+        test_groups = request.args.get('test_groups')  # e.g., "control,variant_a"
+
+        # Compare performance by test group
+        query = '''
+            SELECT
+                test_group,
+                version_endpoint,
+                COUNT(*) as emails_sent,
+                SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) as emails_opened,
+                ROUND(100.0 * SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) / COUNT(*), 2) as open_rate,
+                AVG(open_count) as avg_opens_per_email,
+                COUNT(DISTINCT merchant_id) as unique_merchants
+            FROM email_tracking
+            WHERE test_group IS NOT NULL
+        '''
+
+        if test_groups:
+            groups_list = test_groups.split(',')
+            placeholders = ','.join(['%s'] * len(groups_list))
+            query += f' AND test_group IN ({placeholders})'
+            query += ' GROUP BY test_group, version_endpoint ORDER BY test_group'
+            cursor.execute(query, groups_list)
+        else:
+            query += ' GROUP BY test_group, version_endpoint ORDER BY test_group'
+            cursor.execute(query)
+
+        results = []
+        for row in cursor.fetchall():
+            results.append({
+                'test_group': row[0],
+                'version_endpoint': row[1],
+                'emails_sent': row[2],
+                'emails_opened': row[3],
+                'open_rate': float(row[4]) if row[4] else 0,
+                'avg_opens_per_email': float(row[5]) if row[5] else 0,
+                'unique_merchants': row[6]
+            })
+
+        # Calculate statistical significance if we have control and variant groups
+        control_group = next((r for r in results if r['test_group'] == 'control'), None)
+        if control_group:
+            for result in results:
+                if result['test_group'] != 'control':
+                    # Simple difference calculation (could be enhanced with proper statistical tests)
+                    result['vs_control'] = {
+                        'open_rate_diff': result['open_rate'] - control_group['open_rate'],
+                        'open_rate_lift_pct': ((result['open_rate'] - control_group['open_rate']) / control_group['open_rate'] * 100) if control_group['open_rate'] > 0 else 0
+                    }
+
+        conn.close()
+
+        return jsonify({
+            'status': 'success',
+            'test_results': results,
+            'total_groups': len(results)
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting A/B test results: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/analytics/ramp-dashboard', methods=['GET'])
+def get_ramp_dashboard():
+    """Get overall ramp-up dashboard with key metrics."""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 503
+
+        cursor = conn.cursor()
+
+        # Overall metrics
+        cursor.execute('''
+            SELECT
+                COUNT(*) as total_emails,
+                SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) as total_opens,
+                ROUND(100.0 * SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) / COUNT(*), 2) as overall_open_rate,
+                COUNT(DISTINCT merchant_id) as unique_merchants,
+                COUNT(DISTINCT cohort_name) as total_cohorts
+            FROM email_tracking
+            WHERE cohort_name IS NOT NULL
+        ''')
+        overall = cursor.fetchone()
+
+        # Metrics by ramp phase
+        cursor.execute('''
+            SELECT
+                ramp_phase,
+                COUNT(*) as emails_sent,
+                SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) as emails_opened,
+                ROUND(100.0 * SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) / COUNT(*), 2) as open_rate,
+                COUNT(DISTINCT merchant_id) as unique_merchants
+            FROM email_tracking
+            WHERE ramp_phase IS NOT NULL
+            GROUP BY ramp_phase
+            ORDER BY
+                CASE ramp_phase
+                    WHEN 'pilot' THEN 1
+                    WHEN 'ramp_up' THEN 2
+                    WHEN 'full_rollout' THEN 3
+                    ELSE 4
+                END
+        ''')
+
+        phases = []
+        for row in cursor.fetchall():
+            phases.append({
+                'ramp_phase': row[0],
+                'emails_sent': row[1],
+                'emails_opened': row[2],
+                'open_rate': float(row[3]) if row[3] else 0,
+                'unique_merchants': row[4]
+            })
+
+        # Active cohorts
+        cursor.execute('''
+            SELECT
+                cohort_name,
+                COUNT(DISTINCT merchant_id) as merchant_count,
+                status
+            FROM merchant_cohorts
+            GROUP BY cohort_name, status
+            ORDER BY cohort_name
+        ''')
+
+        cohort_summary = []
+        for row in cursor.fetchall():
+            cohort_summary.append({
+                'cohort_name': row[0],
+                'merchant_count': row[1],
+                'status': row[2]
+            })
+
+        conn.close()
+
+        return jsonify({
+            'status': 'success',
+            'overall': {
+                'total_emails': overall[0],
+                'total_opens': overall[1],
+                'overall_open_rate': float(overall[2]) if overall[2] else 0,
+                'unique_merchants': overall[3],
+                'total_cohorts': overall[4]
+            },
+            'by_phase': phases,
+            'cohort_summary': cohort_summary
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting ramp dashboard: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/debug/env', methods=['GET'])
@@ -7422,7 +7715,24 @@ def workato_send_new_email():
         account_state = data.get('account_state', '')
         account_country = data.get('account_country', '')
         account_id = data.get('account_id', '')
-        
+
+        # Extract cohort tracking fields for A/B testing and ramp-up
+        merchant_id = data.get('merchant_id') or account_id  # Use account_id as fallback
+        cohort_name = data.get('cohort_name', '')
+        cohort_batch = data.get('cohort_batch')
+        test_group = data.get('test_group', '')
+        ramp_phase = data.get('ramp_phase', '')
+        campaign_name = data.get('campaign_name', '')  # Accept dynamic campaign name from Workato
+
+        # If no campaign_name provided, generate one based on cohort info
+        if not campaign_name and cohort_name:
+            campaign_name = f"{ramp_phase}_{cohort_name}_{test_group}_{datetime.datetime.now().strftime('%Y-%m')}"
+        elif not campaign_name:
+            # Fallback to default
+            campaign_name = "MSS Signed But Not Activated Campaign"
+
+        logger.info(f"🎯 Cohort tracking: merchant_id={merchant_id}, cohort={cohort_name}, batch={cohort_batch}, test_group={test_group}, phase={ramp_phase}, campaign={campaign_name}")
+
         # Extract activities from Workato request (can be string, dict, or list)
         activities = data.get('activities', [])
         if activities:
@@ -7549,7 +7859,7 @@ def workato_send_new_email():
             merchant_name=contact_name,
             subject_line=subject_line,
             email_content=formatted_email,
-            campaign_name="MSS Signed But Not Activated Campaign",
+            campaign_name=campaign_name,  # Use dynamic campaign name from Workato or generated from cohort
             version_endpoint='/api/workato/send-new-email'
         )
         
