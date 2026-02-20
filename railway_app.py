@@ -288,6 +288,52 @@ def init_database():
             )
         ''')
 
+        # Merchant responses table for tracking replies to outreach emails
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS merchant_responses (
+                id SERIAL PRIMARY KEY,
+                tracking_id VARCHAR(255) REFERENCES email_tracking(tracking_id),
+                merchant_email VARCHAR(255) NOT NULL,
+                merchant_name VARCHAR(255),
+                responded_at TIMESTAMP NOT NULL,
+                response_subject TEXT,
+                response_body TEXT,
+                response_snippet TEXT,
+                thread_id VARCHAR(255),
+                message_id VARCHAR(255),
+
+                -- Classification
+                response_sentiment VARCHAR(50),  -- 'positive', 'neutral', 'negative'
+                response_type VARCHAR(50),  -- 'interested', 'question', 'not_interested', 'out_of_office', 'auto_reply'
+                interest_level VARCHAR(50),  -- 'high', 'medium', 'low'
+
+                -- Metrics
+                time_to_response_hours DECIMAL(10,2),
+                response_length INTEGER,
+                question_count INTEGER DEFAULT 0,
+                quality_score DECIMAL(5,2),  -- 0-100 score
+
+                -- Conversion tracking
+                meeting_scheduled BOOLEAN DEFAULT FALSE,
+                converted_to_opportunity BOOLEAN DEFAULT FALSE,
+                conversion_date TIMESTAMP,
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                UNIQUE(tracking_id, message_id)
+            )
+        ''')
+
+        -- Add response tracking columns to email_tracking if not exists
+        try:
+            cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS response_count INTEGER DEFAULT 0')
+            cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS first_response_at TIMESTAMP')
+            cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS last_response_at TIMESTAMP')
+            logger.info("✅ Added response tracking columns to email_tracking table")
+        except Exception as e:
+            logger.debug(f"Response tracking columns check: {e}")
+
         conn.commit()
         conn.close()
         logger.info("✅ PostgreSQL database initialized")
@@ -1581,6 +1627,271 @@ def should_cc_merchanthelp(email_body, conversation_history=""):
 
     # 4. Default: Skip CC for general inquiries or casual conversation
     return False, "General inquiry - no technical issue or urgency"
+
+
+def classify_response_sentiment(response_body):
+    """Classify response sentiment as positive, neutral, or negative."""
+    if not response_body:
+        return 'neutral'
+
+    response_lower = response_body.lower()
+
+    # Positive indicators
+    positive_words = [
+        'thank', 'thanks', 'great', 'excellent', 'perfect', 'love', 'interested',
+        'yes', 'sounds good', 'looking forward', 'appreciate', 'helpful', 'awesome',
+        'wonderful', 'fantastic', 'absolutely', 'definitely', 'excited'
+    ]
+
+    # Negative indicators
+    negative_words = [
+        'no', 'not interested', 'unsubscribe', 'remove', 'stop', 'dont', "don't",
+        'never', 'disappointed', 'frustrated', 'angry', 'terrible', 'awful',
+        'poor', 'bad', 'wrong', 'issue', 'problem'
+    ]
+
+    positive_count = sum(1 for word in positive_words if word in response_lower)
+    negative_count = sum(1 for word in negative_words if word in response_lower)
+
+    if positive_count > negative_count and positive_count > 0:
+        return 'positive'
+    elif negative_count > positive_count and negative_count > 0:
+        return 'negative'
+    else:
+        return 'neutral'
+
+
+def classify_response_type(response_body):
+    """Classify response type: interested, question, not_interested, out_of_office, auto_reply."""
+    if not response_body:
+        return 'unknown'
+
+    response_lower = response_body.lower()
+
+    # Out of office / Auto-reply detection
+    if any(phrase in response_lower for phrase in [
+        'out of office', 'away from office', 'automatic reply', 'auto-reply',
+        'currently unavailable', 'on vacation', 'will respond when', 'away until'
+    ]):
+        return 'out_of_office'
+
+    # Not interested
+    if any(phrase in response_lower for phrase in [
+        'not interested', 'no thank', 'unsubscribe', 'remove me', 'stop sending',
+        'not a good fit', 'pass', 'decline', 'opt out'
+    ]):
+        return 'not_interested'
+
+    # Interested
+    if any(phrase in response_lower for phrase in [
+        'interested', 'tell me more', 'learn more', 'sounds good', 'yes',
+        'lets talk', "let's talk", 'schedule', 'meeting', 'call me', 'demo',
+        'sign up', 'get started', 'love to', 'would like'
+    ]):
+        return 'interested'
+
+    # Question
+    if '?' in response_body or any(word in response_lower for word in [
+        'how', 'what', 'when', 'where', 'why', 'which', 'can you', 'could you', 'would you'
+    ]):
+        return 'question'
+
+    return 'neutral'
+
+
+def calculate_interest_level(response_body, response_type, response_sentiment):
+    """Calculate interest level: high, medium, low."""
+    if response_type == 'interested' or response_sentiment == 'positive':
+        # Check for strong interest signals
+        if any(word in response_body.lower() for word in [
+            'schedule', 'meeting', 'call', 'demo', 'asap', 'when can', 'lets talk'
+        ]):
+            return 'high'
+        return 'medium'
+
+    if response_type == 'question':
+        return 'medium'
+
+    if response_type == 'not_interested' or response_sentiment == 'negative':
+        return 'low'
+
+    return 'medium'
+
+
+def calculate_quality_score(response_body):
+    """Calculate response quality score 0-100 based on length and engagement."""
+    if not response_body:
+        return 0
+
+    score = 0
+    response_length = len(response_body)
+    question_count = response_body.count('?')
+
+    # Length scoring (max 40 points)
+    if response_length > 500:
+        score += 40
+    elif response_length > 200:
+        score += 30
+    elif response_length > 100:
+        score += 20
+    elif response_length > 50:
+        score += 10
+
+    # Question count (max 30 points)
+    if question_count >= 3:
+        score += 30
+    elif question_count == 2:
+        score += 20
+    elif question_count == 1:
+        score += 10
+
+    # Engagement words (max 30 points)
+    engagement_words = ['interested', 'yes', 'tell me more', 'schedule', 'meeting', 'call', 'demo']
+    engagement_count = sum(1 for word in engagement_words if word in response_body.lower())
+    score += min(engagement_count * 10, 30)
+
+    return min(score, 100)
+
+
+def check_for_merchant_responses():
+    """
+    Check Gmail for responses to sent outreach emails.
+    Automatically detects replies, classifies them, and stores in database.
+    Returns count of new responses found.
+    """
+    try:
+        service = authenticate_gmail()
+        if not service:
+            logger.error("Failed to authenticate with Gmail")
+            return {'status': 'error', 'message': 'Gmail authentication failed'}
+
+        # Get emails sent in last 30 days that we're tracking
+        if not DB_AVAILABLE:
+            return {'status': 'error', 'message': 'Database not available'}
+
+        conn = get_db_connection()
+        if not conn:
+            return {'status': 'error', 'message': 'Database connection failed'}
+
+        cursor = conn.cursor()
+
+        # Get tracked emails from last 30 days
+        cursor.execute('''
+            SELECT tracking_id, recipient_email, sent_at, subject
+            FROM email_tracking
+            WHERE sent_at >= NOW() - INTERVAL '30 days'
+            AND response_count = 0
+            ORDER BY sent_at DESC
+            LIMIT 100
+        ''')
+
+        tracked_emails = cursor.fetchall()
+        new_responses_count = 0
+
+        logger.info(f"🔍 Checking {len(tracked_emails)} sent emails for responses...")
+
+        for tracking_id, recipient_email, sent_at, subject in tracked_emails:
+            try:
+                # Search Gmail for replies from this merchant
+                query = f'from:{recipient_email} after:{sent_at.strftime("%Y/%m/%d")}'
+                results = service.users().messages().list(userId='me', q=query, maxResults=10).execute()
+                messages = results.get('messages', [])
+
+                for msg in messages:
+                    message_data = service.users().messages().get(userId='me', id=msg['id'], format='full').execute()
+
+                    # Extract message details
+                    headers = message_data['payload']['headers']
+                    message_id = next((h['value'] for h in headers if h['name'].lower() == 'message-id'), None)
+                    in_reply_to = next((h['value'] for h in headers if h['name'].lower() == 'in-reply-to'), None)
+                    thread_id = message_data.get('threadId')
+                    response_subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), '')
+                    received_date = message_data.get('internalDate')
+
+                    # Get message body
+                    if 'parts' in message_data['payload']:
+                        parts = message_data['payload']['parts']
+                        response_body = ''
+                        for part in parts:
+                            if part['mimeType'] == 'text/plain' and 'data' in part['body']:
+                                import base64
+                                response_body = base64.urlsafe_b64decode(part['body']['data']).decode('utf-8')
+                                break
+                    elif 'body' in message_data['payload'] and 'data' in message_data['payload']['body']:
+                        import base64
+                        response_body = base64.urlsafe_b64decode(message_data['payload']['body']['data']).decode('utf-8')
+                    else:
+                        response_body = message_data.get('snippet', '')
+
+                    # Check if we've already recorded this response
+                    cursor.execute('SELECT id FROM merchant_responses WHERE tracking_id = %s AND message_id = %s', (tracking_id, message_id))
+                    if cursor.fetchone():
+                        continue  # Already recorded
+
+                    # Calculate time to response
+                    import datetime
+                    responded_at = datetime.datetime.fromtimestamp(int(received_date) / 1000)
+                    time_to_response = (responded_at - sent_at).total_seconds() / 3600  # hours
+
+                    # Classify response
+                    sentiment = classify_response_sentiment(response_body)
+                    response_type = classify_response_type(response_body)
+                    interest_level = calculate_interest_level(response_body, response_type, sentiment)
+                    quality_score = calculate_quality_score(response_body)
+                    question_count = response_body.count('?')
+                    response_length = len(response_body)
+                    response_snippet = response_body[:200] if response_body else message_data.get('snippet', '')
+
+                    # Insert response record
+                    cursor.execute('''
+                        INSERT INTO merchant_responses (
+                            tracking_id, merchant_email, responded_at, response_subject,
+                            response_body, response_snippet, thread_id, message_id,
+                            response_sentiment, response_type, interest_level,
+                            time_to_response_hours, response_length, question_count, quality_score
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (tracking_id, message_id) DO NOTHING
+                    ''', (
+                        tracking_id, recipient_email, responded_at, response_subject,
+                        response_body, response_snippet, thread_id, message_id,
+                        sentiment, response_type, interest_level,
+                        time_to_response, response_length, question_count, quality_score
+                    ))
+
+                    # Update email_tracking with response info
+                    cursor.execute('''
+                        UPDATE email_tracking
+                        SET response_count = response_count + 1,
+                            first_response_at = COALESCE(first_response_at, %s),
+                            last_response_at = %s
+                        WHERE tracking_id = %s
+                    ''', (responded_at, responded_at, tracking_id))
+
+                    new_responses_count += 1
+                    logger.info(f"✅ Found response from {recipient_email} - Type: {response_type}, Sentiment: {sentiment}, Interest: {interest_level}")
+
+            except Exception as e:
+                logger.error(f"Error checking responses for {recipient_email}: {e}")
+                continue
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"🎉 Response check complete: {new_responses_count} new responses found")
+
+        return {
+            'status': 'success',
+            'new_responses': new_responses_count,
+            'emails_checked': len(tracked_emails)
+        }
+
+    except Exception as e:
+        logger.error(f"Error in check_for_merchant_responses: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {'status': 'error', 'message': str(e)}
+
 
 def reply_to_emails_with_accounts(accounts):
     """Process emails for specific accounts provided by Workato - exact copy from 2025_hackathon.py."""
@@ -3230,6 +3541,11 @@ def analytics_dashboard():
                     <div class="value" id="total-cohorts">0</div>
                     <div class="change" id="cohorts-change"></div>
                 </div>
+                <div class="stat-card">
+                    <div class="label">Response Rate</div>
+                    <div class="value" id="response-rate">0%</div>
+                    <div class="change" id="response-rate-change"></div>
+                </div>
             </div>
 
             <!-- Charts -->
@@ -3255,6 +3571,13 @@ def analytics_dashboard():
                 </div>
             </div>
 
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h3>Response Rate by Cohort</h3>
+                    <canvas id="responseRateChart"></canvas>
+                </div>
+            </div>
+
             <!-- Cohort Details Table -->
             <div class="table-card">
                 <h3>Cohort Performance Details</h3>
@@ -3268,6 +3591,8 @@ def analytics_dashboard():
                             <th>Emails Sent</th>
                             <th>Opened</th>
                             <th>Open Rate</th>
+                            <th>Responses</th>
+                            <th>Response Rate</th>
                             <th>Avg Opens</th>
                             <th>First Email</th>
                         </tr>
@@ -3337,6 +3662,7 @@ def analytics_dashboard():
             document.getElementById('open-rate').textContent = (overall.overall_open_rate || 0).toFixed(1) + '%';
             document.getElementById('unique-merchants').textContent = overall.unique_merchants || 0;
             document.getElementById('total-cohorts').textContent = overall.total_cohorts || 0;
+            document.getElementById('response-rate').textContent = (overall.overall_response_rate || 0).toFixed(1) + '%';
         }
 
         function updateCharts(rampData, cohortData, abTestData) {
@@ -3482,6 +3808,53 @@ def analytics_dashboard():
                     }
                 }
             );
+
+            // Chart 5: Response Rate by Cohort
+            charts.responseRate = new Chart(
+                document.getElementById('responseRateChart'),
+                {
+                    type: 'bar',
+                    data: {
+                        labels: cohorts.map(c => c.cohort_name),
+                        datasets: [
+                            {
+                                label: 'Open Rate (%)',
+                                data: cohorts.map(c => c.open_rate),
+                                backgroundColor: 'rgba(99, 102, 241, 0.6)',
+                                borderColor: 'rgba(99, 102, 241, 1)',
+                                borderWidth: 1
+                            },
+                            {
+                                label: 'Response Rate (%)',
+                                data: cohorts.map(c => c.response_rate || 0),
+                                backgroundColor: 'rgba(16, 185, 129, 0.6)',
+                                borderColor: 'rgba(16, 185, 129, 1)',
+                                borderWidth: 1
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 100,
+                                ticks: {
+                                    callback: function(value) {
+                                        return value + '%';
+                                    }
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top'
+                            }
+                        }
+                    }
+                }
+            );
         }
 
         function updateTables(cohortData, rampData) {
@@ -3500,6 +3873,8 @@ def analytics_dashboard():
                     <td>${cohort.emails_sent}</td>
                     <td>${cohort.emails_opened}</td>
                     <td><strong>${cohort.open_rate.toFixed(1)}%</strong></td>
+                    <td>${cohort.emails_with_responses || 0}</td>
+                    <td><strong>${cohort.response_rate ? cohort.response_rate.toFixed(1) : '0'}%</strong></td>
                     <td>${cohort.avg_opens_per_email ? cohort.avg_opens_per_email.toFixed(2) : '0'}</td>
                     <td>${cohort.first_email_sent ? new Date(cohort.first_email_sent).toLocaleDateString() : '-'}</td>
                 `;
@@ -7276,7 +7651,10 @@ def get_cohort_performance():
                 ROUND(100.0 * SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) / COUNT(*), 2) as open_rate,
                 AVG(open_count) as avg_opens_per_email,
                 MIN(sent_at) as first_email_sent,
-                MAX(sent_at) as last_email_sent
+                MAX(sent_at) as last_email_sent,
+                SUM(COALESCE(response_count, 0)) as total_responses,
+                SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) as emails_with_responses,
+                ROUND(100.0 * SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as response_rate
             FROM email_tracking
             GROUP BY COALESCE(cohort_name, 'Uncategorized'), cohort_batch, COALESCE(test_group, 'none'), COALESCE(ramp_phase, 'none')
             ORDER BY cohort_batch NULLS LAST, cohort_name, test_group
@@ -7294,7 +7672,10 @@ def get_cohort_performance():
                 'open_rate': float(row[6]) if row[6] else 0,
                 'avg_opens_per_email': float(row[7]) if row[7] else 0,
                 'first_email_sent': row[8].isoformat() if row[8] else None,
-                'last_email_sent': row[9].isoformat() if row[9] else None
+                'last_email_sent': row[9].isoformat() if row[9] else None,
+                'total_responses': row[10],
+                'emails_with_responses': row[11],
+                'response_rate': float(row[12]) if row[12] else 0
             })
 
         conn.close()
@@ -7404,7 +7785,10 @@ def get_ramp_dashboard():
                 SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) as total_opens,
                 ROUND(100.0 * SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) / COUNT(*), 2) as overall_open_rate,
                 COUNT(DISTINCT NULLIF(merchant_id, '')) as unique_merchants,
-                COUNT(DISTINCT cohort_name) as total_cohorts
+                COUNT(DISTINCT cohort_name) as total_cohorts,
+                SUM(COALESCE(response_count, 0)) as total_responses,
+                SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) as emails_with_responses,
+                ROUND(100.0 * SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as overall_response_rate
             FROM email_tracking
         ''')
         overall = cursor.fetchone()
@@ -7466,7 +7850,10 @@ def get_ramp_dashboard():
                 'total_opens': overall[1],
                 'overall_open_rate': float(overall[2]) if overall[2] else 0,
                 'unique_merchants': overall[3],
-                'total_cohorts': overall[4]
+                'total_cohorts': overall[4],
+                'total_responses': overall[5],
+                'emails_with_responses': overall[6],
+                'overall_response_rate': float(overall[7]) if overall[7] else 0
             },
             'by_phase': phases,
             'cohort_summary': cohort_summary
@@ -7475,6 +7862,48 @@ def get_ramp_dashboard():
     except Exception as e:
         logger.error(f"Error getting ramp dashboard: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/check-responses', methods=['GET', 'POST'])
+def check_responses_endpoint():
+    """
+    Scheduled endpoint to check for merchant responses.
+    Can be called by Workato every 15 minutes.
+    Returns count of new responses found.
+    """
+    try:
+        logger.info("🔍 Checking for merchant responses...")
+
+        # Call the response checking function
+        result = check_for_merchant_responses()
+
+        if result.get('error'):
+            logger.error(f"Error checking responses: {result['error']}")
+            return jsonify({
+                'status': 'error',
+                'message': result['error'],
+                'new_responses': 0
+            }), 500
+
+        new_responses = result.get('new_responses', 0)
+        emails_checked = result.get('emails_checked', 0)
+
+        logger.info(f"✅ Response check complete: {new_responses} new responses found out of {emails_checked} emails checked")
+
+        return jsonify({
+            'status': 'success',
+            'new_responses': new_responses,
+            'emails_checked': emails_checked,
+            'message': f'Found {new_responses} new responses from {emails_checked} emails',
+            'timestamp': datetime.datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        logger.error(f"Error in check-responses endpoint: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'new_responses': 0
+        }), 500
 
 @app.route('/api/debug/env', methods=['GET'])
 def debug_env():
