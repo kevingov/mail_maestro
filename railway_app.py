@@ -7117,12 +7117,13 @@ def get_cohort_performance():
         cursor = conn.cursor()
 
         # Get performance metrics grouped by cohort and test group
+        # Show ALL emails, including those without cohort data (grouped as "Uncategorized")
         cursor.execute('''
             SELECT
-                cohort_name,
+                COALESCE(cohort_name, 'Uncategorized') as cohort_name,
                 cohort_batch,
-                test_group,
-                ramp_phase,
+                COALESCE(test_group, 'none') as test_group,
+                COALESCE(ramp_phase, 'none') as ramp_phase,
                 COUNT(*) as emails_sent,
                 SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) as emails_opened,
                 ROUND(100.0 * SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) / COUNT(*), 2) as open_rate,
@@ -7130,9 +7131,8 @@ def get_cohort_performance():
                 MIN(sent_at) as first_email_sent,
                 MAX(sent_at) as last_email_sent
             FROM email_tracking
-            WHERE cohort_name IS NOT NULL
-            GROUP BY cohort_name, cohort_batch, test_group, ramp_phase
-            ORDER BY cohort_batch, cohort_name, test_group
+            GROUP BY COALESCE(cohort_name, 'Uncategorized'), cohort_batch, COALESCE(test_group, 'none'), COALESCE(ramp_phase, 'none')
+            ORDER BY cohort_batch NULLS LAST, cohort_name, test_group
         ''')
 
         cohorts = []
@@ -7250,32 +7250,30 @@ def get_ramp_dashboard():
 
         cursor = conn.cursor()
 
-        # Overall metrics
+        # Overall metrics - Include ALL emails
         cursor.execute('''
             SELECT
                 COUNT(*) as total_emails,
                 SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) as total_opens,
                 ROUND(100.0 * SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) / COUNT(*), 2) as overall_open_rate,
-                COUNT(DISTINCT merchant_id) as unique_merchants,
+                COUNT(DISTINCT NULLIF(merchant_id, '')) as unique_merchants,
                 COUNT(DISTINCT cohort_name) as total_cohorts
             FROM email_tracking
-            WHERE cohort_name IS NOT NULL
         ''')
         overall = cursor.fetchone()
 
-        # Metrics by ramp phase
+        # Metrics by ramp phase - Include ALL emails (uncategorized shown as "none")
         cursor.execute('''
             SELECT
-                ramp_phase,
+                COALESCE(ramp_phase, 'none') as ramp_phase,
                 COUNT(*) as emails_sent,
                 SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) as emails_opened,
                 ROUND(100.0 * SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) / COUNT(*), 2) as open_rate,
-                COUNT(DISTINCT merchant_id) as unique_merchants
+                COUNT(DISTINCT NULLIF(merchant_id, '')) as unique_merchants
             FROM email_tracking
-            WHERE ramp_phase IS NOT NULL
-            GROUP BY ramp_phase
+            GROUP BY COALESCE(ramp_phase, 'none')
             ORDER BY
-                CASE ramp_phase
+                CASE COALESCE(ramp_phase, 'none')
                     WHEN 'pilot' THEN 1
                     WHEN 'ramp_up' THEN 2
                     WHEN 'full_rollout' THEN 3
