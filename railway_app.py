@@ -2796,9 +2796,608 @@ def home():
             'workato_get_all_email_opens': 'GET/POST /api/workato/get-all-email-opens',
             'workato_update_sfdc_task_id': 'POST /api/workato/update-sfdc-task-id',
             'prompts_ui': 'GET /prompts',
-            'prompts_api': 'GET/POST /api/prompts'
+            'prompts_api': 'GET/POST /api/prompts',
+            'analytics_dashboard': 'GET /analytics'
         }
     })
+
+@app.route('/analytics')
+def analytics_dashboard():
+    """Serve the cohort analytics dashboard."""
+    return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cohort Analytics Dashboard - Mail Maestro</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #6366f1;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--gray-50);
+            color: var(--gray-900);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .header {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--gray-900);
+        }
+
+        .header p {
+            color: var(--gray-600);
+            margin-top: 4px;
+        }
+
+        .refresh-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .refresh-btn:hover {
+            background: #4f46e5;
+            transform: translateY(-1px);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .stat-card .label {
+            color: var(--gray-600);
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .stat-card .value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--gray-900);
+        }
+
+        .stat-card .change {
+            font-size: 14px;
+            margin-top: 8px;
+        }
+
+        .change.positive {
+            color: var(--success);
+        }
+
+        .change.negative {
+            color: var(--danger);
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .chart-card {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .chart-card h3 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--gray-900);
+        }
+
+        .table-card {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 24px;
+        }
+
+        .table-card h3 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: var(--gray-50);
+        }
+
+        th {
+            text-align: left;
+            padding: 12px;
+            font-weight: 600;
+            color: var(--gray-700);
+            font-size: 14px;
+            border-bottom: 2px solid var(--gray-200);
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid var(--gray-200);
+            font-size: 14px;
+        }
+
+        tbody tr:hover {
+            background: var(--gray-50);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge.pilot {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .badge.ramp-up {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge.full-rollout {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge.control {
+            background: var(--gray-200);
+            color: var(--gray-700);
+        }
+
+        .badge.variant-a {
+            background: #e0e7ff;
+            color: #3730a3;
+        }
+
+        .badge.variant-b {
+            background: #fce7f3;
+            color: #831843;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--gray-600);
+        }
+
+        .spinner {
+            border: 3px solid var(--gray-200);
+            border-top: 3px solid var(--primary);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 24px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>📊 Cohort Analytics Dashboard</h1>
+                <p>Real-time tracking of merchant ramp-up and A/B testing</p>
+            </div>
+            <button class="refresh-btn" onclick="loadDashboard()">🔄 Refresh Data</button>
+        </div>
+
+        <div id="error-message"></div>
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p>Loading analytics data...</p>
+        </div>
+
+        <div id="dashboard" style="display: none;">
+            <!-- Stats Overview -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="label">Total Emails Sent</div>
+                    <div class="value" id="total-emails">0</div>
+                    <div class="change" id="emails-change"></div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Overall Open Rate</div>
+                    <div class="value" id="open-rate">0%</div>
+                    <div class="change" id="open-rate-change"></div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Unique Merchants</div>
+                    <div class="value" id="unique-merchants">0</div>
+                    <div class="change" id="merchants-change"></div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">Active Cohorts</div>
+                    <div class="value" id="total-cohorts">0</div>
+                    <div class="change" id="cohorts-change"></div>
+                </div>
+            </div>
+
+            <!-- Charts -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h3>Open Rate by Cohort</h3>
+                    <canvas id="cohortOpenRateChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>Emails Sent by Phase</h3>
+                    <canvas id="phaseDistributionChart"></canvas>
+                </div>
+            </div>
+
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h3>A/B Test Comparison</h3>
+                    <canvas id="abTestChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>Merchant Count by Cohort</h3>
+                    <canvas id="merchantCountChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Cohort Details Table -->
+            <div class="table-card">
+                <h3>Cohort Performance Details</h3>
+                <table id="cohort-table">
+                    <thead>
+                        <tr>
+                            <th>Cohort Name</th>
+                            <th>Batch</th>
+                            <th>Test Group</th>
+                            <th>Phase</th>
+                            <th>Emails Sent</th>
+                            <th>Opened</th>
+                            <th>Open Rate</th>
+                            <th>Avg Opens</th>
+                            <th>First Email</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cohort-table-body">
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Phase Breakdown Table -->
+            <div class="table-card">
+                <h3>Performance by Ramp Phase</h3>
+                <table id="phase-table">
+                    <thead>
+                        <tr>
+                            <th>Ramp Phase</th>
+                            <th>Emails Sent</th>
+                            <th>Opened</th>
+                            <th>Open Rate</th>
+                            <th>Unique Merchants</th>
+                        </tr>
+                    </thead>
+                    <tbody id="phase-table-body">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let charts = {};
+
+        async function loadDashboard() {
+            try {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('dashboard').style.display = 'none';
+                document.getElementById('error-message').innerHTML = '';
+
+                // Fetch all analytics data
+                const [rampData, cohortData, abTestData] = await Promise.all([
+                    fetch('/api/analytics/ramp-dashboard').then(r => r.json()),
+                    fetch('/api/analytics/cohort-performance').then(r => r.json()),
+                    fetch('/api/analytics/ab-test-results').then(r => r.json())
+                ]);
+
+                if (rampData.status === 'success') {
+                    updateOverviewStats(rampData);
+                    updateCharts(rampData, cohortData, abTestData);
+                    updateTables(cohortData, rampData);
+
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('dashboard').style.display = 'block';
+                } else {
+                    throw new Error('Failed to load dashboard data');
+                }
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error-message').innerHTML =
+                    '<div class="error">❌ Error loading analytics data: ' + error.message + '</div>';
+            }
+        }
+
+        function updateOverviewStats(data) {
+            const overall = data.overall || {};
+            document.getElementById('total-emails').textContent = overall.total_emails || 0;
+            document.getElementById('open-rate').textContent = (overall.overall_open_rate || 0).toFixed(1) + '%';
+            document.getElementById('unique-merchants').textContent = overall.unique_merchants || 0;
+            document.getElementById('total-cohorts').textContent = overall.total_cohorts || 0;
+        }
+
+        function updateCharts(rampData, cohortData, abTestData) {
+            // Destroy existing charts
+            Object.values(charts).forEach(chart => chart.destroy());
+            charts = {};
+
+            // Chart 1: Open Rate by Cohort
+            const cohorts = cohortData.cohorts || [];
+            charts.cohortOpenRate = new Chart(
+                document.getElementById('cohortOpenRateChart'),
+                {
+                    type: 'bar',
+                    data: {
+                        labels: cohorts.map(c => c.cohort_name),
+                        datasets: [{
+                            label: 'Open Rate (%)',
+                            data: cohorts.map(c => c.open_rate),
+                            backgroundColor: 'rgba(99, 102, 241, 0.8)',
+                            borderColor: 'rgba(99, 102, 241, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 100,
+                                ticks: {
+                                    callback: function(value) {
+                                        return value + '%';
+                                    }
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            );
+
+            // Chart 2: Emails by Phase
+            const phases = rampData.by_phase || [];
+            charts.phaseDistribution = new Chart(
+                document.getElementById('phaseDistributionChart'),
+                {
+                    type: 'doughnut',
+                    data: {
+                        labels: phases.map(p => p.ramp_phase),
+                        datasets: [{
+                            data: phases.map(p => p.emails_sent),
+                            backgroundColor: [
+                                'rgba(59, 130, 246, 0.8)',
+                                'rgba(245, 158, 11, 0.8)',
+                                'rgba(16, 185, 129, 0.8)'
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                }
+            );
+
+            // Chart 3: A/B Test Comparison
+            const abTests = abTestData.test_results || [];
+            charts.abTest = new Chart(
+                document.getElementById('abTestChart'),
+                {
+                    type: 'bar',
+                    data: {
+                        labels: abTests.map(t => t.test_group),
+                        datasets: [{
+                            label: 'Open Rate (%)',
+                            data: abTests.map(t => t.open_rate),
+                            backgroundColor: abTests.map(t =>
+                                t.test_group === 'control' ? 'rgba(156, 163, 175, 0.8)' :
+                                t.test_group === 'variant_a' ? 'rgba(129, 140, 248, 0.8)' :
+                                'rgba(244, 114, 182, 0.8)'
+                            ),
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                max: 100,
+                                ticks: {
+                                    callback: function(value) {
+                                        return value + '%';
+                                    }
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            );
+
+            // Chart 4: Merchant Count by Cohort
+            const cohortSummary = rampData.cohort_summary || [];
+            charts.merchantCount = new Chart(
+                document.getElementById('merchantCountChart'),
+                {
+                    type: 'bar',
+                    data: {
+                        labels: cohortSummary.map(c => c.cohort_name),
+                        datasets: [{
+                            label: 'Merchant Count',
+                            data: cohortSummary.map(c => c.merchant_count),
+                            backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                            borderColor: 'rgba(16, 185, 129, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            );
+        }
+
+        function updateTables(cohortData, rampData) {
+            // Cohort details table
+            const cohortTableBody = document.getElementById('cohort-table-body');
+            cohortTableBody.innerHTML = '';
+
+            const cohorts = cohortData.cohorts || [];
+            cohorts.forEach(cohort => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${cohort.cohort_name}</td>
+                    <td>${cohort.cohort_batch || '-'}</td>
+                    <td><span class="badge ${cohort.test_group}">${cohort.test_group || '-'}</span></td>
+                    <td><span class="badge ${cohort.ramp_phase}">${cohort.ramp_phase || '-'}</span></td>
+                    <td>${cohort.emails_sent}</td>
+                    <td>${cohort.emails_opened}</td>
+                    <td><strong>${cohort.open_rate.toFixed(1)}%</strong></td>
+                    <td>${cohort.avg_opens_per_email ? cohort.avg_opens_per_email.toFixed(2) : '0'}</td>
+                    <td>${cohort.first_email_sent ? new Date(cohort.first_email_sent).toLocaleDateString() : '-'}</td>
+                `;
+                cohortTableBody.appendChild(row);
+            });
+
+            // Phase breakdown table
+            const phaseTableBody = document.getElementById('phase-table-body');
+            phaseTableBody.innerHTML = '';
+
+            const phases = rampData.by_phase || [];
+            phases.forEach(phase => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td><span class="badge ${phase.ramp_phase}">${phase.ramp_phase}</span></td>
+                    <td>${phase.emails_sent}</td>
+                    <td>${phase.emails_opened || 0}</td>
+                    <td><strong>${phase.open_rate ? phase.open_rate.toFixed(1) : '0'}%</strong></td>
+                    <td>${phase.unique_merchants}</td>
+                `;
+                phaseTableBody.appendChild(row);
+            });
+        }
+
+        // Load dashboard on page load
+        loadDashboard();
+
+        // Auto-refresh every 30 seconds
+        setInterval(loadDashboard, 30000);
+    </script>
+</body>
+</html>
+    """
 
 @app.route('/prompts')
 def prompts_ui():
