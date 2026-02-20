@@ -2910,44 +2910,37 @@ def analytics_dashboard():
             padding: 24px 0;
         }
 
-        .nav-section {
-            margin-bottom: 24px;
+        .header-nav {
+            display: flex;
+            gap: 4px;
+            margin-left: 24px;
         }
 
-        .nav-section-title {
-            font-size: 12px;
-            font-weight: 600;
-            color: #6b7280;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            padding: 0 24px;
-            margin-bottom: 8px;
-        }
-
-        .nav-item {
+        .nav-tab {
             display: flex;
             align-items: center;
-            padding: 10px 24px;
-            color: #374151;
+            gap: 8px;
+            padding: 8px 16px;
+            color: #6b7280;
             text-decoration: none;
             font-size: 14px;
             font-weight: 500;
+            border-radius: 8px;
             transition: all 0.2s;
         }
 
-        .nav-item:hover {
+        .nav-tab:hover {
             background: #f3f4f6;
+            color: #374151;
         }
 
-        .nav-item.active {
+        .nav-tab.active {
             background: #eff6ff;
             color: #2563eb;
-            border-right: 3px solid #2563eb;
         }
 
-        .nav-item-icon {
-            margin-right: 12px;
-            font-size: 18px;
+        .nav-tab-icon {
+            font-size: 16px;
         }
 
         .content-area {
@@ -3186,36 +3179,28 @@ def analytics_dashboard():
         <!-- Header Bar -->
         <div class="header-bar">
             <div class="header-left">
-                <div class="header-title" style="font-weight: 700; font-size: 18px; color: #111827; margin-right: 8px;">Mail Maestro</div>
-                <div style="color: #6b7280; font-size: 20px; margin: 0 8px;">/</div>
-                <div class="header-title">Analytics</div>
+                <div class="header-title" style="font-weight: 700; font-size: 18px; color: #111827;">Mail Maestro</div>
+                <!-- Navigation Tabs -->
+                <div class="header-nav">
+                    <a href="/prompts" class="nav-tab">
+                        <span class="nav-tab-icon">📝</span>
+                        Prompts
+                    </a>
+                    <a href="/analytics" class="nav-tab active">
+                        <span class="nav-tab-icon">📊</span>
+                        Analytics
+                    </a>
+                </div>
             </div>
             <div class="header-actions">
                 <button class="refresh-btn" onclick="loadDashboard()">🔄 Refresh Data</button>
             </div>
         </div>
 
-        <!-- Main Layout with Sidebar -->
+        <!-- Main Layout -->
         <div class="main-layout">
-            <!-- Sidebar Navigation -->
-            <div class="sidebar">
-                <nav>
-                    <div class="nav-section">
-                        <div class="nav-section-title">Menu</div>
-                        <a href="/prompts" class="nav-item">
-                            <span class="nav-item-icon">📝</span>
-                            Prompts
-                        </a>
-                        <a href="/analytics" class="nav-item active">
-                            <span class="nav-item-icon">📊</span>
-                            Analytics
-                        </a>
-                    </div>
-                </nav>
-            </div>
-
-            <!-- Content Area -->
-            <div class="content-area">
+            <!-- Content Area (no sidebar for analytics) -->
+            <div class="content-area" style="padding: 24px; max-width: 1600px; margin: 0 auto;">
                 <div id="error-message"></div>
                 <div id="loading" class="loading">
                     <div class="spinner"></div>
@@ -4277,31 +4262,27 @@ def prompts_ui():
     <div class="app-container">
         <div class="header-bar">
             <div class="header-left">
-                <div class="header-title" style="font-weight: 700; font-size: 18px; color: #111827; margin-right: 8px;">Mail Maestro</div>
-                <div style="color: #6b7280; font-size: 20px; margin: 0 8px;">/</div>
-                <div class="header-title">Prompts</div>
+                <div class="header-title" style="font-weight: 700; font-size: 18px; color: #111827;">Mail Maestro</div>
+                <!-- Navigation Tabs -->
+                <div class="header-nav">
+                    <a href="/prompts" class="nav-tab active">
+                        <span class="nav-tab-icon">📝</span>
+                        Prompts
+                    </a>
+                    <a href="/analytics" class="nav-tab">
+                        <span class="nav-tab-icon">📊</span>
+                        Analytics
+                    </a>
+                </div>
             </div>
             <div class="header-actions">
                 <button class="icon-btn" title="Download">⬇</button>
                 <button class="icon-btn" title="Settings">⚙</button>
             </div>
         </div>
-        
+
         <div class="main-layout">
             <div class="sidebar">
-                <!-- Navigation -->
-                <div class="sidebar-section">
-                    <div class="sidebar-section-title">Menu</div>
-                    <a href="/prompts" class="prompt-type-item active" style="text-decoration: none; display: flex;">
-                        <span style="margin-right: 12px;">📝</span>
-                        Prompts
-                    </a>
-                    <a href="/analytics" class="prompt-type-item" style="text-decoration: none; display: flex;">
-                        <span style="margin-right: 12px;">📊</span>
-                        Analytics
-                    </a>
-                </div>
-
                 <input type="text" class="sidebar-search" placeholder="Search...">
 
                 <div class="sidebar-section">
