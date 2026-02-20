@@ -2832,7 +2832,7 @@ def analytics_dashboard():
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cohort Analytics Dashboard - Mail Maestro</title>
+    <title>Analytics - Mail Maestro</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
@@ -2844,12 +2844,14 @@ def analytics_dashboard():
 
         :root {
             --primary: #6366f1;
+            --primary-dark: #4f46e5;
             --success: #10b981;
             --warning: #f59e0b;
             --danger: #ef4444;
             --gray-50: #f9fafb;
             --gray-100: #f3f4f6;
             --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
             --gray-600: #4b5563;
             --gray-700: #374151;
             --gray-800: #1f2937;
@@ -2857,15 +2859,101 @@ def analytics_dashboard():
         }
 
         body {
-            font-family: 'Inter', sans-serif;
-            background: var(--gray-50);
-            color: var(--gray-900);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
             line-height: 1.6;
         }
 
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .header-bar {
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .header-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #111827;
+        }
+
+        .main-layout {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 250px;
+            background: white;
+            border-right: 1px solid #e5e7eb;
+            overflow-y: auto;
+            padding: 24px 0;
+        }
+
+        .nav-section {
+            margin-bottom: 24px;
+        }
+
+        .nav-section-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 0 24px;
+            margin-bottom: 8px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 24px;
+            color: #374151;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .nav-item:hover {
+            background: #f3f4f6;
+        }
+
+        .nav-item.active {
+            background: #eff6ff;
+            color: #2563eb;
+            border-right: 3px solid #2563eb;
+        }
+
+        .nav-item-icon {
+            margin-right: 12px;
+            font-size: 18px;
+        }
+
+        .content-area {
+            flex: 1;
+            overflow-y: auto;
+            background: #f9fafb;
             padding: 24px;
         }
 
@@ -3076,25 +3164,65 @@ def analytics_dashboard():
             border-radius: 8px;
             margin-bottom: 24px;
         }
+        .refresh-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 14px;
+        }
+
+        .refresh-btn:hover {
+            background: var(--primary-dark);
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <div>
-                <h1>📊 Cohort Analytics Dashboard</h1>
-                <p>Real-time tracking of merchant ramp-up and A/B testing</p>
+    <div class="app-container">
+        <!-- Header Bar -->
+        <div class="header-bar">
+            <div class="header-left">
+                <div class="header-title" style="font-weight: 700; font-size: 18px; color: #111827; margin-right: 8px;">Mail Maestro</div>
+                <div style="color: #6b7280; font-size: 20px; margin: 0 8px;">/</div>
+                <div class="header-title">Analytics</div>
             </div>
-            <button class="refresh-btn" onclick="loadDashboard()">🔄 Refresh Data</button>
+            <div class="header-actions">
+                <button class="refresh-btn" onclick="loadDashboard()">🔄 Refresh Data</button>
+            </div>
         </div>
 
-        <div id="error-message"></div>
-        <div id="loading" class="loading">
-            <div class="spinner"></div>
-            <p>Loading analytics data...</p>
-        </div>
+        <!-- Main Layout with Sidebar -->
+        <div class="main-layout">
+            <!-- Sidebar Navigation -->
+            <div class="sidebar">
+                <nav>
+                    <div class="nav-section">
+                        <div class="nav-section-title">Menu</div>
+                        <a href="/prompts" class="nav-item">
+                            <span class="nav-item-icon">📝</span>
+                            Prompts
+                        </a>
+                        <a href="/analytics" class="nav-item active">
+                            <span class="nav-item-icon">📊</span>
+                            Analytics
+                        </a>
+                    </div>
+                </nav>
+            </div>
 
-        <div id="dashboard" style="display: none;">
+            <!-- Content Area -->
+            <div class="content-area">
+                <div id="error-message"></div>
+                <div id="loading" class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading analytics data...</p>
+                </div>
+
+                <div id="dashboard" style="display: none;">
             <!-- Stats Overview -->
             <div class="stats-grid">
                 <div class="stat-card">
@@ -3417,6 +3545,9 @@ def analytics_dashboard():
         // Auto-refresh every 30 seconds
         setInterval(loadDashboard, 30000);
     </script>
+            </div><!-- /content-area -->
+        </div><!-- /main-layout -->
+    </div><!-- /app-container -->
 </body>
 </html>
     """
@@ -4158,8 +4289,21 @@ def prompts_ui():
         
         <div class="main-layout">
             <div class="sidebar">
+                <!-- Navigation -->
+                <div class="sidebar-section">
+                    <div class="sidebar-section-title">Menu</div>
+                    <a href="/prompts" class="prompt-type-item active" style="text-decoration: none; display: flex;">
+                        <span style="margin-right: 12px;">📝</span>
+                        Prompts
+                    </a>
+                    <a href="/analytics" class="prompt-type-item" style="text-decoration: none; display: flex;">
+                        <span style="margin-right: 12px;">📊</span>
+                        Analytics
+                    </a>
+                </div>
+
                 <input type="text" class="sidebar-search" placeholder="Search...">
-                
+
                 <div class="sidebar-section">
                     <div class="sidebar-section-title">Prompt Types</div>
                     <div class="prompt-type-item active" onclick="selectPromptType('new-email', event)">
