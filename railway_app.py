@@ -1188,30 +1188,52 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
         logger.error(f"❌ Error generating AI response: {e}")
         return f"Ready to go live with Affirm?", f"Hi {merchant_name},\n\nI wanted to check in on your Affirm integration. You've completed the technical setup, and we're here to help you take the final step to go live.\n\nIf you have any questions or need support, feel free to reach out. We're here when you're ready.\n\nBest,\n{sender_name}"
 
-def send_email(to_email, merchant_name, subject_line, email_content, campaign_name=None, base_url="https://web-production-6dfbd.up.railway.app", version_endpoint=None):
-    """Send email with tracking - exact copy from 2025_hackathon.py."""
+def send_email(to_email, merchant_name, subject_line, email_content, campaign_name=None, base_url="https://web-production-6dfbd.up.railway.app", version_endpoint=None, merchant_id=None, cohort_name=None, cohort_batch=None, test_group=None, ramp_phase=None):
+    """Send email with tracking - supports cohort tracking."""
     try:
         from email_tracker import EmailTracker
         import time
         import random
-        
+        import requests
+
         # Initialize email tracker
         tracker = EmailTracker()
-        
+
         # Track the email and get tracking ID
         # Default to main endpoint if version_endpoint is not provided
         if not version_endpoint:
             version_endpoint = '/api/workato/send-new-email'
-        
-        logger.info(f"📧 Sending email to {to_email} with version_endpoint: {version_endpoint}")
-        
-        tracking_id = tracker.track_email_sent(
-            recipient_email=to_email,
-            sender_email=os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com'),
-            subject=subject_line,
-            campaign_name=campaign_name or "Personalized Outreach",
-            version_endpoint=version_endpoint
-        )
+
+        logger.info(f"📧 Sending email to {to_email} with cohort: {cohort_name}, test_group: {test_group}")
+
+        # Generate tracking ID
+        tracking_id = str(uuid.uuid4())
+
+        # Send tracking data to Railway API with cohort fields
+        try:
+            response = requests.post(
+                f"{base_url}/api/track-send",
+                json={
+                    'tracking_id': tracking_id,
+                    'recipient_email': to_email,
+                    'sender_email': os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com'),
+                    'subject': subject_line,
+                    'campaign_name': campaign_name or "Personalized Outreach",
+                    'version_endpoint': version_endpoint,
+                    'merchant_id': merchant_id,
+                    'cohort_name': cohort_name,
+                    'cohort_batch': cohort_batch,
+                    'test_group': test_group,
+                    'ramp_phase': ramp_phase
+                },
+                timeout=10
+            )
+            if response.status_code == 200:
+                logger.info(f"✅ Tracking data saved with cohort info")
+            else:
+                logger.warning(f"⚠️ Track-send API returned {response.status_code}")
+        except Exception as track_error:
+            logger.error(f"❌ Error sending tracking data: {track_error}")
         
         # Add tracking pixel to email content
         tracked_email_content = tracker.add_tracking_to_email(email_content, tracking_id, base_url)
@@ -8449,7 +8471,7 @@ def workato_send_new_email():
         logger.info(f"🔍 Final formatted email (first 500 chars): {formatted_email[:500]}")
         logger.info(f"🔍 Checking if formatted_email still contains template: {('<div class=\"logo-container\"' in formatted_email) or ('Affirm</h1>' in formatted_email)}")
 
-        # Send email with tracking
+        # Send email with tracking (including cohort data)
         logger.info(f"🔍 About to call send_email()...")
         email_result = send_email(
             to_email=contact_email,
@@ -8457,7 +8479,12 @@ def workato_send_new_email():
             subject_line=subject_line,
             email_content=formatted_email,
             campaign_name=campaign_name,  # Use dynamic campaign name from Workato or generated from cohort
-            version_endpoint='/api/workato/send-new-email'
+            version_endpoint='/api/workato/send-new-email',
+            merchant_id=merchant_id,
+            cohort_name=cohort_name,
+            cohort_batch=cohort_batch,
+            test_group=test_group,
+            ramp_phase=ramp_phase
         )
         
         email_status = email_result['status'] if isinstance(email_result, dict) else email_result
