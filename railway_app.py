@@ -1428,9 +1428,17 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
             if response.status_code == 200:
                 logger.info(f"✅ Reply tracked successfully: {tracking_id}")
             else:
-                logger.warning(f"⚠️ Tracking API returned {response.status_code}")
+                logger.error(f"❌ Tracking API failed: {response.status_code} - {response.text}")
+                # Try to parse error for debugging
+                try:
+                    error_data = response.json()
+                    logger.error(f"❌ Tracking error details: {error_data}")
+                except:
+                    pass
         except Exception as track_error:
-            logger.warning(f"⚠️ Could not track reply (non-fatal): {track_error}")
+            logger.error(f"❌ Could not track reply: {track_error}")
+            import traceback
+            logger.error(f"❌ Tracking error traceback: {traceback.format_exc()}")
 
         # Add tracking pixel to email content
         tracking_pixel = f'<img src="{base_url}/track/{tracking_id}" width="1" height="1" style="display:none;" alt="" />'
