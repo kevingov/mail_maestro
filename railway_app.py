@@ -3667,7 +3667,13 @@ def analytics_dashboard():
 
         function updateCharts(rampData, cohortData, abTestData) {
             // Destroy existing charts
-            Object.values(charts).forEach(chart => chart.destroy());
+            if (charts && typeof charts === 'object') {
+                Object.values(charts).forEach(chart => {
+                    if (chart && typeof chart.destroy === 'function') {
+                        chart.destroy();
+                    }
+                });
+            }
             charts = {};
 
             // Chart 1: Open Rate by Cohort
