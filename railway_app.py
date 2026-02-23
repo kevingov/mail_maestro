@@ -1367,11 +1367,12 @@ def send_email(to_email, merchant_name, subject_line, email_content, campaign_na
             'error': str(e)
         }
 
-def send_threaded_email_reply(to_email, subject, reply_content, original_message_id, sender_name, cc_recipients=None):
+def send_threaded_email_reply(to_email, subject, reply_content, original_message_id, sender_name, cc_recipients=None, merchant_id=None, cohort_name=None, cohort_batch=None, test_group=None, ramp_phase=None, campaign_name=None):
     """
     Send a threaded email reply that maintains the conversation thread.
     Uses SMTP like 2025_hackathon.py for better outbox visibility.
     Includes CC recipients from the original email if provided.
+    Supports cohort tracking for A/B testing of reply engagement.
     """
     try:
         import smtplib
@@ -1394,25 +1395,49 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
         logger.info(f"Preparing to send threaded reply to {to_email} with subject: {subject}")
         if cc_recipients:
             logger.info(f"📧 CC recipients: {cc_recipients}")
-        
-        # Initialize email tracker (same as 2025_hackathon.py)
-        tracker = EmailTracker()
-        
-        # Track the email and get tracking ID
-        # Use the reply-to-emails endpoint for version tracking
+
+        # Generate tracking ID
+        tracking_id = str(uuid.uuid4())
+
+        # Track the email with cohort info via Railway API
         version_endpoint = '/api/workato/reply-to-emails'
-        logger.info(f"📧 Sending reply email to {to_email} with version_endpoint: {version_endpoint}")
-        
-        tracking_id = tracker.track_email_sent(
-            recipient_email=to_email,
-            sender_email=os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com'),
-            subject=subject,
-            campaign_name="AI Email Reply",
-            version_endpoint=version_endpoint
-        )
-        
+        base_url = "https://web-production-6dfbd.up.railway.app"
+
+        logger.info(f"📧 Tracking reply email: {tracking_id} -> {to_email} | cohort: {cohort_name} | test_group: {test_group} | email_type: reply")
+
+        try:
+            import requests
+            response = requests.post(
+                f"{base_url}/api/track-send",
+                json={
+                    'tracking_id': tracking_id,
+                    'recipient_email': to_email,
+                    'sender_email': os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com'),
+                    'subject': subject,
+                    'campaign_name': campaign_name or "AI Email Reply",
+                    'version_endpoint': version_endpoint,
+                    'merchant_id': merchant_id,
+                    'cohort_name': cohort_name,
+                    'cohort_batch': cohort_batch,
+                    'test_group': test_group,
+                    'ramp_phase': ramp_phase,
+                    'email_type': 'reply'
+                },
+                timeout=10
+            )
+            if response.status_code == 200:
+                logger.info(f"✅ Reply tracked successfully: {tracking_id}")
+            else:
+                logger.warning(f"⚠️ Tracking API returned {response.status_code}")
+        except Exception as track_error:
+            logger.warning(f"⚠️ Could not track reply (non-fatal): {track_error}")
+
         # Add tracking pixel to email content
-        tracked_email_content = tracker.add_tracking_to_email(reply_content, tracking_id, "https://web-production-6dfbd.up.railway.app")
+        tracking_pixel = f'<img src="{base_url}/track/{tracking_id}" width="1" height="1" style="display:none;" alt="" />'
+        if '</body>' in reply_content:
+            tracked_email_content = reply_content.replace('</body>', f'{tracking_pixel}\n</body>')
+        else:
+            tracked_email_content = reply_content + f'\n{tracking_pixel}'
         
         # Create email message with enhanced headers (same as 2025_hackathon.py)
         msg = MIMEMultipart()
@@ -2542,6 +2567,13 @@ def reply_to_emails_with_accounts(accounts):
             else:
                 logger.info(f"📧 No CC recipients for this reply")
             
+            # Lookup merchant's cohort info for A/B testing tracking
+            cohort_info = lookup_merchant_cohort(contact_email)
+            if cohort_info:
+                logger.info(f"📊 Found cohort for {contact_email}: {cohort_info['cohort_name']} / {cohort_info['test_group']}")
+            else:
+                logger.info(f"ℹ️ No cohort info found for {contact_email} - reply will not be cohort-tracked")
+
             logger.info(f"📧 Sending reply email to {contact_email} for thread {thread_id}")
             email_result = send_threaded_email_reply(
                 to_email=contact_email,
@@ -2549,7 +2581,13 @@ def reply_to_emails_with_accounts(accounts):
                 reply_content=ai_response,
                 original_message_id=email['id'],
                 sender_name=sender_name,
-                cc_recipients=cc_recipients
+                cc_recipients=cc_recipients,
+                merchant_id=cohort_info.get('merchant_id') if cohort_info else None,
+                cohort_name=cohort_info.get('cohort_name') if cohort_info else None,
+                cohort_batch=cohort_info.get('cohort_batch') if cohort_info else None,
+                test_group=cohort_info.get('test_group') if cohort_info else None,
+                ramp_phase=cohort_info.get('ramp_phase') if cohort_info else None,
+                campaign_name=cohort_info.get('campaign_name') if cohort_info else "AI Email Reply"
             )
             
             email_status = email_result['status'] if isinstance(email_result, dict) else email_result
@@ -3599,6 +3637,11 @@ def analytics_dashboard():
                     <div class="value" id="response-rate">0%</div>
                     <div class="change" id="response-rate-change"></div>
                 </div>
+                <div class="stat-card">
+                    <div class="label">Avg Replies/Merchant</div>
+                    <div class="value" id="avg-replies">0</div>
+                    <div class="change" id="avg-replies-change"></div>
+                </div>
             </div>
 
             <!-- Charts -->
@@ -3646,6 +3689,8 @@ def analytics_dashboard():
                             <th>Open Rate</th>
                             <th>Responses</th>
                             <th>Response Rate</th>
+                            <th>Replies Sent</th>
+                            <th>Avg Replies</th>
                             <th>Avg Opens</th>
                             <th>First Email</th>
                         </tr>
@@ -3735,11 +3780,12 @@ def analytics_dashboard():
 
         function updateOverviewStats(data) {
             const overall = data.overall || {};
-            document.getElementById('total-emails').textContent = overall.total_emails || 0;
+            document.getElementById('total-emails').textContent = overall.total_outreach_emails || 0;
             document.getElementById('open-rate').textContent = (overall.overall_open_rate || 0).toFixed(1) + '%';
             document.getElementById('unique-merchants').textContent = overall.unique_merchants || 0;
             document.getElementById('total-cohorts').textContent = overall.total_cohorts || 0;
             document.getElementById('response-rate').textContent = (overall.overall_response_rate || 0).toFixed(1) + '%';
+            document.getElementById('avg-replies').textContent = (overall.avg_replies_per_merchant || 0).toFixed(1);
         }
 
         function updateCharts(rampData, cohortData, abTestData) {
@@ -3953,11 +3999,13 @@ def analytics_dashboard():
                     <td>${cohort.cohort_batch || '-'}</td>
                     <td><span class="badge ${cohort.test_group}">${cohort.test_group || '-'}</span></td>
                     <td><span class="badge ${cohort.ramp_phase}">${cohort.ramp_phase || '-'}</span></td>
-                    <td>${cohort.emails_sent}</td>
-                    <td>${cohort.emails_opened}</td>
+                    <td>${cohort.outreach_emails_sent || 0}</td>
+                    <td>${cohort.emails_opened || 0}</td>
                     <td><strong>${cohort.open_rate.toFixed(1)}%</strong></td>
                     <td>${cohort.emails_with_responses || 0}</td>
                     <td><strong>${cohort.response_rate ? cohort.response_rate.toFixed(1) : '0'}%</strong></td>
+                    <td>${cohort.total_replies_sent || 0}</td>
+                    <td>${cohort.avg_replies_per_merchant ? cohort.avg_replies_per_merchant.toFixed(1) : '0'}</td>
                     <td>${cohort.avg_opens_per_email ? cohort.avg_opens_per_email.toFixed(2) : '0'}</td>
                     <td>${cohort.first_email_sent ? new Date(cohort.first_email_sent).toLocaleDateString() : '-'}</td>
                 `;
@@ -7749,21 +7797,28 @@ def get_cohort_performance():
 
         # Get performance metrics grouped by cohort and test group
         # Show ALL emails, including those without cohort data (grouped as "Uncategorized")
+        # Separate outreach emails from reply emails for accurate A/B testing
         cursor.execute('''
             SELECT
                 COALESCE(cohort_name, 'Uncategorized') as cohort_name,
                 cohort_batch,
                 COALESCE(test_group, 'none') as test_group,
                 COALESCE(ramp_phase, 'none') as ramp_phase,
-                COUNT(*) as emails_sent,
-                SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) as emails_opened,
-                ROUND(100.0 * SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) / COUNT(*), 2) as open_rate,
-                AVG(open_count) as avg_opens_per_email,
-                MIN(sent_at) as first_email_sent,
-                MAX(sent_at) as last_email_sent,
-                SUM(COALESCE(response_count, 0)) as total_responses,
-                SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) as emails_with_responses,
-                ROUND(100.0 * SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as response_rate
+                COUNT(*) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as outreach_emails_sent,
+                SUM(CASE WHEN (email_type = 'outreach' OR email_type IS NULL) AND open_count > 0 THEN 1 ELSE 0 END) as emails_opened,
+                ROUND(100.0 * SUM(CASE WHEN (email_type = 'outreach' OR email_type IS NULL) AND open_count > 0 THEN 1 ELSE 0 END) /
+                      NULLIF(COUNT(*) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL), 0), 2) as open_rate,
+                AVG(open_count) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as avg_opens_per_email,
+                MIN(sent_at) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as first_email_sent,
+                MAX(sent_at) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as last_email_sent,
+                SUM(COALESCE(response_count, 0)) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as total_responses,
+                SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as emails_with_responses,
+                ROUND(100.0 * SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) /
+                      NULLIF(COUNT(*) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL), 0), 2) as response_rate,
+                COUNT(*) FILTER (WHERE email_type = 'reply') as total_replies_sent,
+                COUNT(DISTINCT merchant_id) FILTER (WHERE merchant_id IS NOT NULL AND email_type = 'outreach') as unique_merchants,
+                ROUND(COUNT(*) FILTER (WHERE email_type = 'reply')::numeric /
+                      NULLIF(COUNT(DISTINCT merchant_id) FILTER (WHERE merchant_id IS NOT NULL AND email_type = 'outreach'), 0), 2) as avg_replies_per_merchant
             FROM email_tracking
             GROUP BY COALESCE(cohort_name, 'Uncategorized'), cohort_batch, COALESCE(test_group, 'none'), COALESCE(ramp_phase, 'none')
             ORDER BY cohort_batch NULLS LAST, cohort_name, test_group
@@ -7776,7 +7831,7 @@ def get_cohort_performance():
                 'cohort_batch': row[1],
                 'test_group': row[2],
                 'ramp_phase': row[3],
-                'emails_sent': row[4],
+                'outreach_emails_sent': row[4],
                 'emails_opened': row[5],
                 'open_rate': float(row[6]) if row[6] else 0,
                 'avg_opens_per_email': float(row[7]) if row[7] else 0,
@@ -7784,7 +7839,10 @@ def get_cohort_performance():
                 'last_email_sent': row[9].isoformat() if row[9] else None,
                 'total_responses': row[10],
                 'emails_with_responses': row[11],
-                'response_rate': float(row[12]) if row[12] else 0
+                'response_rate': float(row[12]) if row[12] else 0,
+                'total_replies_sent': row[13],
+                'unique_merchants': row[14],
+                'avg_replies_per_merchant': float(row[15]) if row[15] else 0
             })
 
         conn.close()
@@ -7887,17 +7945,22 @@ def get_ramp_dashboard():
 
         cursor = conn.cursor()
 
-        # Overall metrics - Include ALL emails
+        # Overall metrics - Separate outreach from replies
         cursor.execute('''
             SELECT
-                COUNT(*) as total_emails,
-                SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) as total_opens,
-                ROUND(100.0 * SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) / COUNT(*), 2) as overall_open_rate,
-                COUNT(DISTINCT NULLIF(merchant_id, '')) as unique_merchants,
+                COUNT(*) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as total_outreach_emails,
+                SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as total_opens,
+                ROUND(100.0 * SUM(CASE WHEN open_count > 0 THEN 1 ELSE 0 END) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) /
+                      NULLIF(COUNT(*) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL), 0), 2) as overall_open_rate,
+                COUNT(DISTINCT NULLIF(merchant_id, '')) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as unique_merchants,
                 COUNT(DISTINCT cohort_name) as total_cohorts,
-                SUM(COALESCE(response_count, 0)) as total_responses,
-                SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) as emails_with_responses,
-                ROUND(100.0 * SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as overall_response_rate
+                SUM(COALESCE(response_count, 0)) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as total_responses,
+                SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as emails_with_responses,
+                ROUND(100.0 * SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) /
+                      NULLIF(COUNT(*) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL), 0), 2) as overall_response_rate,
+                COUNT(*) FILTER (WHERE email_type = 'reply') as total_replies_sent,
+                ROUND(COUNT(*) FILTER (WHERE email_type = 'reply')::numeric /
+                      NULLIF(COUNT(DISTINCT NULLIF(merchant_id, '')) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL), 0), 2) as avg_replies_per_merchant
             FROM email_tracking
         ''')
         overall = cursor.fetchone()
@@ -7955,14 +8018,16 @@ def get_ramp_dashboard():
         return jsonify({
             'status': 'success',
             'overall': {
-                'total_emails': overall[0],
+                'total_outreach_emails': overall[0],
                 'total_opens': overall[1],
                 'overall_open_rate': float(overall[2]) if overall[2] else 0,
                 'unique_merchants': overall[3],
                 'total_cohorts': overall[4],
                 'total_responses': overall[5],
                 'emails_with_responses': overall[6],
-                'overall_response_rate': float(overall[7]) if overall[7] else 0
+                'overall_response_rate': float(overall[7]) if overall[7] else 0,
+                'total_replies_sent': overall[8],
+                'avg_replies_per_merchant': float(overall[9]) if overall[9] else 0
             },
             'by_phase': phases,
             'cohort_summary': cohort_summary
