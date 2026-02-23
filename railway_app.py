@@ -3624,8 +3624,17 @@ def analytics_dashboard():
 
     <script>
         let charts = {};
+        let isLoading = false;
 
         async function loadDashboard() {
+            // Prevent multiple simultaneous loads
+            if (isLoading) {
+                console.log('Already loading, skipping...');
+                return;
+            }
+
+            isLoading = true;
+
             try {
                 document.getElementById('loading').style.display = 'block';
                 document.getElementById('dashboard').style.display = 'none';
@@ -3653,6 +3662,8 @@ def analytics_dashboard():
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('error-message').innerHTML =
                     '<div class="error">❌ Error loading analytics data: ' + error.message + '</div>';
+            } finally {
+                isLoading = false;
             }
         }
 
@@ -3908,8 +3919,8 @@ def analytics_dashboard():
         // Load dashboard on page load
         loadDashboard();
 
-        // Auto-refresh every 30 seconds
-        setInterval(loadDashboard, 30000);
+        // Auto-refresh every 30 seconds (DISABLED for debugging)
+        // setInterval(loadDashboard, 30000);
     </script>
             </div><!-- /content-area -->
         </div><!-- /main-layout -->
