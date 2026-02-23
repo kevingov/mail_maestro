@@ -3648,12 +3648,25 @@ def analytics_dashboard():
                 ]);
 
                 if (rampData.status === 'success') {
+                    console.log('✅ Dashboard data loaded successfully');
+
                     updateOverviewStats(rampData);
-                    updateCharts(rampData, cohortData, abTestData);
+
+                    // Wrap charts in try-catch to prevent errors from blocking page
+                    try {
+                        updateCharts(rampData, cohortData, abTestData);
+                        console.log('✅ Charts rendered');
+                    } catch (chartError) {
+                        console.error('❌ Chart error (non-fatal):', chartError);
+                        // Continue even if charts fail
+                    }
+
                     updateTables(cohortData, rampData);
+                    console.log('✅ Tables rendered');
 
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('dashboard').style.display = 'block';
+                    console.log('✅ Dashboard displayed');
                 } else {
                     throw new Error('Failed to load dashboard data');
                 }
@@ -3925,6 +3938,31 @@ def analytics_dashboard():
             </div><!-- /content-area -->
         </div><!-- /main-layout -->
     </div><!-- /app-container -->
+</body>
+</html>
+    """
+
+@app.route('/test')
+def test_page():
+    """Simple test page to verify app is responsive."""
+    return """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Page</title>
+</head>
+<body>
+    <h1>✅ App is Working!</h1>
+    <p>If you can see this, the Flask app is running correctly.</p>
+    <ul>
+        <li><a href="/analytics">Analytics Dashboard</a></li>
+        <li><a href="/prompts">Prompts Manager</a></li>
+        <li><a href="/api/health">API Health Check</a></li>
+    </ul>
+    <script>
+        console.log('✅ Test page loaded successfully');
+        console.log('No infinite loop here!');
+    </script>
 </body>
 </html>
     """
