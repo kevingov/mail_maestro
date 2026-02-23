@@ -801,7 +801,7 @@ def generate_ai_response(email_body, sender_name, recipient_name, conversation_h
         # Conditionally include rule about merchanthelp availability
         if adding_merchanthelp_now:
             # Merchanthelp is being ADDED in this response (first time)
-            merchanthelp_rule = """    7. **Inform that you're looping in support team** - Let them know you're including our merchant support team (merchanthelp@affirm.com) on this thread. Use natural language like "I'm looping in our merchant support team (merchanthelp@affirm.com) on this thread so they can help directly."
+            merchanthelp_rule = """    7. **IMPORTANT: Inform that you're looping in merchanthelp@affirm.com** - You MUST tell them you're including merchanthelp@affirm.com on this thread. Use this exact phrasing: "I'm looping in our merchant support team at merchanthelp@affirm.com on this thread so they can help you directly." DO NOT use "customercare" or any other email - ONLY use "merchanthelp@affirm.com".
     8. **DO NOT suggest emailing merchanthelp@affirm.com directly** - They're being CC'd on this thread.
     9. **Keep under 150 words** and feel natural, not automated"""
         elif merchanthelp_already_ccd:
