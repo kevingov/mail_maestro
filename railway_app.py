@@ -1938,11 +1938,12 @@ def lookup_merchant_cohort(merchant_email):
         cursor = conn.cursor()
 
         # Get most recent outreach email for this merchant
+        # Include NULL email_type (old emails before column was added)
         cursor.execute('''
             SELECT merchant_id, cohort_name, cohort_batch, test_group, ramp_phase, campaign_name
             FROM email_tracking
             WHERE recipient_email = %s
-              AND email_type = 'outreach'
+              AND (email_type = 'outreach' OR email_type IS NULL)
               AND cohort_name IS NOT NULL
             ORDER BY sent_at DESC
             LIMIT 1
