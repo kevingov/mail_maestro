@@ -7085,8 +7085,10 @@ def track_email_send():
         if not recipient_email:
             return jsonify({'error': 'recipient_email is required'}), 400
 
-        # Generate tracking ID
-        tracking_id = str(uuid.uuid4())
+        # Use provided tracking_id or generate a new one
+        tracking_id = data.get('tracking_id')
+        if not tracking_id:
+            tracking_id = str(uuid.uuid4())
 
         # Store in database
         conn = get_db_connection()
