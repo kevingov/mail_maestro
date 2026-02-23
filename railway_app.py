@@ -325,7 +325,7 @@ def init_database():
             )
         ''')
 
-        -- Add response tracking columns to email_tracking if not exists
+        # Add response tracking columns to email_tracking if not exists
         try:
             cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS response_count INTEGER DEFAULT 0')
             cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS first_response_at TIMESTAMP')
@@ -9023,7 +9023,8 @@ def workato_send_new_email():
                 logger.warning(f"⚠️ Could not find <body> tag, using original content")
 
         logger.info(f"🔍 Final formatted email (first 500 chars): {formatted_email[:500]}")
-        logger.info(f"🔍 Checking if formatted_email still contains template: {('<div class=\"logo-container\"' in formatted_email) or ('Affirm</h1>' in formatted_email)}")
+        contains_template = ('<div class="logo-container"' in formatted_email) or ('Affirm</h1>' in formatted_email)
+        logger.info(f"🔍 Checking if formatted_email still contains template: {contains_template}")
 
         # Send email with tracking (including cohort data)
         logger.info(f"🔍 About to call send_email()...")
