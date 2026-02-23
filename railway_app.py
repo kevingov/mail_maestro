@@ -330,6 +330,7 @@ def init_database():
             cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS response_count INTEGER DEFAULT 0')
             cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS first_response_at TIMESTAMP')
             cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS last_response_at TIMESTAMP')
+            cursor.execute("ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS email_type VARCHAR(50) DEFAULT 'outreach'")
             logger.info("✅ Added response tracking columns to email_tracking table")
         except Exception as e:
             logger.debug(f"Response tracking columns check: {e}")
@@ -1234,8 +1235,8 @@ def generate_message(merchant_name, last_activity, merchant_industry, merchant_w
         logger.error(f"❌ Error generating AI response: {e}")
         return f"Ready to go live with Affirm?", f"Hi {merchant_name},\n\nI wanted to check in on your Affirm integration. You've completed the technical setup, and we're here to help you take the final step to go live.\n\nIf you have any questions or need support, feel free to reach out. We're here when you're ready.\n\nBest,\n{sender_name}"
 
-def send_email(to_email, merchant_name, subject_line, email_content, campaign_name=None, base_url="https://web-production-6dfbd.up.railway.app", version_endpoint=None, merchant_id=None, cohort_name=None, cohort_batch=None, test_group=None, ramp_phase=None):
-    """Send email with tracking - supports cohort tracking."""
+def send_email(to_email, merchant_name, subject_line, email_content, campaign_name=None, base_url="https://web-production-6dfbd.up.railway.app", version_endpoint=None, merchant_id=None, cohort_name=None, cohort_batch=None, test_group=None, ramp_phase=None, email_type='outreach'):
+    """Send email with tracking - supports cohort tracking and email type classification."""
     try:
         from email_tracker import EmailTracker
         import time
@@ -1270,7 +1271,8 @@ def send_email(to_email, merchant_name, subject_line, email_content, campaign_na
                     'cohort_name': cohort_name,
                     'cohort_batch': cohort_batch,
                     'test_group': test_group,
-                    'ramp_phase': ramp_phase
+                    'ramp_phase': ramp_phase,
+                    'email_type': email_type
                 },
                 timeout=10
             )
@@ -1891,6 +1893,57 @@ def check_for_merchant_responses():
         import traceback
         logger.error(traceback.format_exc())
         return {'status': 'error', 'message': str(e)}
+
+
+def lookup_merchant_cohort(merchant_email):
+    """
+    Look up a merchant's cohort information from their most recent outreach email.
+    Returns cohort info dict or None if merchant not found.
+    """
+    try:
+        if not DB_AVAILABLE:
+            logger.warning("Database not available for cohort lookup")
+            return None
+
+        conn = get_db_connection()
+        if not conn:
+            logger.warning("Could not connect to database for cohort lookup")
+            return None
+
+        cursor = conn.cursor()
+
+        # Get most recent outreach email for this merchant
+        cursor.execute('''
+            SELECT merchant_id, cohort_name, cohort_batch, test_group, ramp_phase, campaign_name
+            FROM email_tracking
+            WHERE recipient_email = %s
+              AND email_type = 'outreach'
+              AND cohort_name IS NOT NULL
+            ORDER BY sent_at DESC
+            LIMIT 1
+        ''', (merchant_email,))
+
+        result = cursor.fetchone()
+        conn.close()
+
+        if result:
+            cohort_info = {
+                'merchant_id': result[0],
+                'cohort_name': result[1],
+                'cohort_batch': result[2],
+                'test_group': result[3],
+                'ramp_phase': result[4],
+                'campaign_name': result[5]
+            }
+            logger.info(f"✅ Found cohort info for {merchant_email}: {cohort_info['cohort_name']} / {cohort_info['test_group']}")
+            return cohort_info
+        else:
+            logger.info(f"ℹ️ No cohort info found for {merchant_email}")
+            return None
+
+    except Exception as e:
+        logger.error(f"Error looking up merchant cohort: {e}")
+        return None
 
 
 def reply_to_emails_with_accounts(accounts):
@@ -6970,6 +7023,7 @@ def track_email_send():
         test_group = data.get('test_group')
         ramp_phase = data.get('ramp_phase')
         enrolled_at = data.get('enrolled_at')  # Optional - will default to now if not provided
+        email_type = data.get('email_type', 'outreach')  # Default to 'outreach' if not provided
 
         if not recipient_email:
             return jsonify({'error': 'recipient_email is required'}), 400
@@ -6993,12 +7047,12 @@ def track_email_send():
         cursor.execute('''
             INSERT INTO email_tracking (
                 tracking_id, recipient_email, sender_email, subject, campaign_name, status, version_endpoint,
-                merchant_id, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at
+                merchant_id, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at, email_type
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (
             tracking_id, recipient_email, sender_email, subject, campaign_name, 'AI Outbound Email', version_endpoint,
-            merchant_id, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at
+            merchant_id, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at, email_type
         ))
 
         # Also insert/update merchant_cohorts table if cohort info is provided
