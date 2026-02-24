@@ -8164,6 +8164,160 @@ def get_ramp_dashboard():
         logger.error(f"Error getting ramp dashboard: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/analytics/request-types', methods=['GET'])
+def get_request_type_breakdown():
+    """Get breakdown of request types across cohorts."""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 503
+
+        cursor = conn.cursor()
+
+        # Get overall request type distribution
+        cursor.execute('''
+            SELECT
+                request_type,
+                COUNT(*) as count,
+                ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER(), 2) as percentage,
+                AVG(sentiment_score) as avg_sentiment
+            FROM email_tracking
+            WHERE cohort_name IS NOT NULL
+              AND request_type IS NOT NULL
+              AND email_type = 'reply'
+            GROUP BY request_type
+            ORDER BY count DESC
+        ''')
+
+        request_types = []
+        for row in cursor.fetchall():
+            request_types.append({
+                'request_type': row[0],
+                'count': row[1],
+                'percentage': float(row[2]) if row[2] else 0,
+                'avg_sentiment': float(row[3]) if row[3] else 0
+            })
+
+        # Get request type breakdown by cohort
+        cursor.execute('''
+            SELECT
+                cohort_name,
+                request_type,
+                COUNT(*) as count,
+                AVG(sentiment_score) as avg_sentiment
+            FROM email_tracking
+            WHERE cohort_name IS NOT NULL
+              AND request_type IS NOT NULL
+              AND email_type = 'reply'
+            GROUP BY cohort_name, request_type
+            ORDER BY cohort_name, count DESC
+        ''')
+
+        by_cohort = {}
+        for row in cursor.fetchall():
+            cohort = row[0]
+            if cohort not in by_cohort:
+                by_cohort[cohort] = []
+            by_cohort[cohort].append({
+                'request_type': row[1],
+                'count': row[2],
+                'avg_sentiment': float(row[3]) if row[3] else 0
+            })
+
+        conn.close()
+
+        return jsonify({
+            'status': 'success',
+            'overall': request_types,
+            'by_cohort': by_cohort
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting request type breakdown: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/analytics/sentiment-analysis', methods=['GET'])
+def get_sentiment_analysis():
+    """Get sentiment analysis across cohorts."""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 503
+
+        cursor = conn.cursor()
+
+        # Get overall sentiment distribution
+        cursor.execute('''
+            SELECT
+                sentiment,
+                COUNT(*) as count,
+                ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER(), 2) as percentage,
+                AVG(sentiment_score) as avg_score
+            FROM email_tracking
+            WHERE cohort_name IS NOT NULL
+              AND sentiment IS NOT NULL
+              AND email_type = 'reply'
+            GROUP BY sentiment
+            ORDER BY count DESC
+        ''')
+
+        sentiments = []
+        for row in cursor.fetchall():
+            sentiments.append({
+                'sentiment': row[0],
+                'count': row[1],
+                'percentage': float(row[2]) if row[2] else 0,
+                'avg_score': float(row[3]) if row[3] else 0
+            })
+
+        # Get sentiment by cohort and test group
+        cursor.execute('''
+            SELECT
+                cohort_name,
+                test_group,
+                sentiment,
+                COUNT(*) as count,
+                AVG(sentiment_score) as avg_score,
+                MIN(sentiment_score) as min_score,
+                MAX(sentiment_score) as max_score
+            FROM email_tracking
+            WHERE cohort_name IS NOT NULL
+              AND sentiment IS NOT NULL
+              AND email_type = 'reply'
+            GROUP BY cohort_name, test_group, sentiment
+            ORDER BY cohort_name, test_group, sentiment
+        ''')
+
+        by_cohort = []
+        for row in cursor.fetchall():
+            by_cohort.append({
+                'cohort_name': row[0],
+                'test_group': row[1],
+                'sentiment': row[2],
+                'count': row[3],
+                'avg_score': float(row[4]) if row[4] else 0,
+                'min_score': float(row[5]) if row[5] else 0,
+                'max_score': float(row[6]) if row[6] else 0
+            })
+
+        conn.close()
+
+        return jsonify({
+            'status': 'success',
+            'overall': sentiments,
+            'by_cohort': by_cohort
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting sentiment analysis: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/check-responses', methods=['GET', 'POST'])
 def check_responses_endpoint():
     """
