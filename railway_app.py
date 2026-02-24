@@ -331,6 +331,9 @@ def init_database():
             cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS first_response_at TIMESTAMP')
             cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS last_response_at TIMESTAMP')
             cursor.execute("ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS email_type VARCHAR(50) DEFAULT 'outreach'")
+            cursor.execute("ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS request_type VARCHAR(100)")
+            cursor.execute("ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS sentiment VARCHAR(50)")
+            cursor.execute("ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS sentiment_score DECIMAL(3,2)")
             logger.info("✅ Added response tracking columns to email_tracking table")
         except Exception as e:
             logger.debug(f"Response tracking columns check: {e}")
@@ -1010,6 +1013,78 @@ def remove_existing_signature(email_content, sender_name):
     
     return cleaned_content
 
+def classify_email_with_sentiment(email_body, subject=""):
+    """
+    Classify email request type and analyze sentiment using OpenAI API.
+
+    Returns:
+        dict: {
+            'request_type': str,  # e.g., 'Integration Help', 'Activation Issue'
+            'sentiment': str,     # 'positive', 'neutral', 'negative'
+            'sentiment_score': float,  # -1.0 to 1.0
+            'key_topics': list    # Main topics mentioned
+        }
+    """
+    try:
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
+            logger.warning("OpenAI API key not found, skipping classification")
+            return None
+
+        client = OpenAI(api_key=api_key)
+
+        classification_prompt = f"""Analyze the following merchant email and provide:
+1. Request Type (choose ONE that best fits):
+   - Integration Help (technical integration issues, API problems)
+   - Activation Issue (can't activate, account setup problems)
+   - Billing Question (pricing, invoices, payments)
+   - Technical Support (bugs, errors, functionality issues)
+   - General Inquiry (general questions, information requests)
+   - Feature Request (asking for new features or capabilities)
+   - Complaint (expressing dissatisfaction or problems)
+   - Account Management (account changes, settings, permissions)
+   - Documentation Request (asking for guides, documentation)
+
+2. Sentiment (choose ONE):
+   - positive (satisfied, happy, grateful tone)
+   - neutral (informational, matter-of-fact)
+   - negative (frustrated, angry, dissatisfied)
+
+3. Sentiment Score: A number from -1.0 (very negative) to 1.0 (very positive)
+
+4. Key Topics: List 2-3 main topics or issues mentioned
+
+Subject: {subject}
+
+Email Body:
+{email_body[:1000]}
+
+Respond in JSON format:
+{{
+    "request_type": "...",
+    "sentiment": "...",
+    "sentiment_score": 0.0,
+    "key_topics": ["topic1", "topic2"]
+}}"""
+
+        response = client.chat.completions.create(
+            model=os.getenv('OPENAI_MODEL', 'gpt-4o-mini'),
+            messages=[
+                {"role": "system", "content": "You are an expert at analyzing customer service emails. Respond only with valid JSON."},
+                {"role": "user", "content": classification_prompt}
+            ],
+            temperature=0.3,
+            response_format={"type": "json_object"}
+        )
+
+        result = json.loads(response.choices[0].message.content)
+        logger.info(f"📊 Email classified: {result['request_type']} | {result['sentiment']} ({result['sentiment_score']})")
+        return result
+
+    except Exception as e:
+        logger.error(f"❌ Error classifying email: {e}")
+        return None
+
 def generate_message(merchant_name, last_activity, merchant_industry, merchant_website, sender_name, account_description="", account_revenue=0, account_employees=0, account_location="", contact_title="", account_gmv=0, prompt_template=None):
     """
     Creates an Affirm-branded outreach email using AI with detailed Salesforce data.
@@ -1367,7 +1442,7 @@ def send_email(to_email, merchant_name, subject_line, email_content, campaign_na
             'error': str(e)
         }
 
-def send_threaded_email_reply(to_email, subject, reply_content, original_message_id, sender_name, cc_recipients=None, merchant_id=None, cohort_name=None, cohort_batch=None, test_group=None, ramp_phase=None, campaign_name=None):
+def send_threaded_email_reply(to_email, subject, reply_content, original_message_id, sender_name, cc_recipients=None, merchant_id=None, cohort_name=None, cohort_batch=None, test_group=None, ramp_phase=None, campaign_name=None, request_type=None, sentiment=None, sentiment_score=None):
     """
     Send a threaded email reply that maintains the conversation thread.
     Uses SMTP like 2025_hackathon.py for better outbox visibility.
@@ -1421,7 +1496,10 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
                     'cohort_batch': cohort_batch,
                     'test_group': test_group,
                     'ramp_phase': ramp_phase,
-                    'email_type': 'reply'
+                    'email_type': 'reply',
+                    'request_type': request_type,
+                    'sentiment': sentiment,
+                    'sentiment_score': sentiment_score
                 },
                 timeout=10
             )
@@ -2583,6 +2661,15 @@ def reply_to_emails_with_accounts(accounts):
             else:
                 logger.info(f"ℹ️ No cohort info found for {contact_email} - reply will not be cohort-tracked")
 
+            # Classify the incoming merchant email for sentiment and request type
+            classification = classify_email_with_sentiment(email_body, email_subject)
+            request_type = classification.get('request_type') if classification else None
+            sentiment = classification.get('sentiment') if classification else None
+            sentiment_score = classification.get('sentiment_score') if classification else None
+
+            if classification:
+                logger.info(f"📊 Email classified: {request_type} | {sentiment} ({sentiment_score})")
+
             logger.info(f"📧 Sending reply email to {contact_email} for thread {thread_id}")
             email_result = send_threaded_email_reply(
                 to_email=contact_email,
@@ -2596,7 +2683,10 @@ def reply_to_emails_with_accounts(accounts):
                 cohort_batch=cohort_info.get('cohort_batch') if cohort_info else None,
                 test_group=cohort_info.get('test_group') if cohort_info else None,
                 ramp_phase=cohort_info.get('ramp_phase') if cohort_info else None,
-                campaign_name=cohort_info.get('campaign_name') if cohort_info else "AI Email Reply"
+                campaign_name=cohort_info.get('campaign_name') if cohort_info else "AI Email Reply",
+                request_type=request_type,
+                sentiment=sentiment,
+                sentiment_score=sentiment_score
             )
             
             email_status = email_result['status'] if isinstance(email_result, dict) else email_result
@@ -7088,6 +7178,11 @@ def track_email_send():
         enrolled_at = data.get('enrolled_at')  # Optional - will default to now if not provided
         email_type = data.get('email_type', 'outreach')  # Default to 'outreach' if not provided
 
+        # Extract classification fields (for reply emails - describes incoming merchant email)
+        request_type = data.get('request_type')
+        sentiment = data.get('sentiment')
+        sentiment_score = data.get('sentiment_score')
+
         if not recipient_email:
             return jsonify({'error': 'recipient_email is required'}), 400
 
@@ -7112,12 +7207,14 @@ def track_email_send():
         cursor.execute('''
             INSERT INTO email_tracking (
                 tracking_id, recipient_email, sender_email, subject, campaign_name, status, version_endpoint,
-                merchant_id, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at, email_type
+                merchant_id, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at, email_type,
+                request_type, sentiment, sentiment_score
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (
             tracking_id, recipient_email, sender_email, subject, campaign_name, 'AI Outbound Email', version_endpoint,
-            merchant_id, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at, email_type
+            merchant_id, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at, email_type,
+            request_type, sentiment, sentiment_score
         ))
 
         # Also insert/update merchant_cohorts table if cohort info is provided
