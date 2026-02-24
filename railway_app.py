@@ -3778,6 +3778,17 @@ def analytics_dashboard():
                 </div>
             </div>
 
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h3>📋 Request Types</h3>
+                    <canvas id="requestTypesChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>😊 Sentiment Analysis</h3>
+                    <canvas id="sentimentChart"></canvas>
+                </div>
+            </div>
+
             <!-- Cohort Details Table -->
             <div class="table-card">
                 <h3>Cohort Performance Details</h3>
@@ -3843,10 +3854,12 @@ def analytics_dashboard():
                 document.getElementById('error-message').innerHTML = '';
 
                 // Fetch all analytics data
-                const [rampData, cohortData, abTestData] = await Promise.all([
+                const [rampData, cohortData, abTestData, requestTypesData, sentimentData] = await Promise.all([
                     fetch('/api/analytics/ramp-dashboard').then(r => r.json()),
                     fetch('/api/analytics/cohort-performance').then(r => r.json()),
-                    fetch('/api/analytics/ab-test-results').then(r => r.json())
+                    fetch('/api/analytics/ab-test-results').then(r => r.json()),
+                    fetch('/api/analytics/request-types').then(r => r.json()),
+                    fetch('/api/analytics/sentiment-analysis').then(r => r.json())
                 ]);
 
                 if (rampData.status === 'success') {
@@ -3856,7 +3869,7 @@ def analytics_dashboard():
 
                     // Wrap charts in try-catch to prevent errors from blocking page
                     try {
-                        updateCharts(rampData, cohortData, abTestData);
+                        updateCharts(rampData, cohortData, abTestData, requestTypesData, sentimentData);
                         console.log('✅ Charts rendered');
                     } catch (chartError) {
                         console.error('❌ Chart error (non-fatal):', chartError);
@@ -3893,7 +3906,7 @@ def analytics_dashboard():
             document.getElementById('reply-open-rate').textContent = (overall.overall_reply_open_rate || 0).toFixed(1) + '%';
         }
 
-        function updateCharts(rampData, cohortData, abTestData) {
+        function updateCharts(rampData, cohortData, abTestData, requestTypesData, sentimentData) {
             // Destroy existing charts
             if (charts && typeof charts === 'object') {
                 Object.values(charts).forEach(chart => {
@@ -4089,6 +4102,107 @@ def analytics_dashboard():
                     }
                 }
             );
+
+            // Chart 7: Request Types
+            if (requestTypesData && requestTypesData.status === 'success') {
+                const requestTypes = requestTypesData.overall || [];
+                charts.requestTypes = new Chart(
+                    document.getElementById('requestTypesChart'),
+                    {
+                        type: 'doughnut',
+                        data: {
+                            labels: requestTypes.map(r => r.request_type),
+                            datasets: [{
+                                data: requestTypes.map(r => r.count),
+                                backgroundColor: [
+                                    'rgba(99, 102, 241, 0.8)',
+                                    'rgba(16, 185, 129, 0.8)',
+                                    'rgba(251, 191, 36, 0.8)',
+                                    'rgba(239, 68, 68, 0.8)',
+                                    'rgba(168, 85, 247, 0.8)',
+                                    'rgba(236, 72, 153, 0.8)',
+                                    'rgba(34, 211, 238, 0.8)',
+                                    'rgba(132, 204, 22, 0.8)',
+                                    'rgba(249, 115, 22, 0.8)'
+                                ],
+                                borderWidth: 2,
+                                borderColor: '#fff'
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: {
+                                    display: true,
+                                    position: 'right'
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            const label = context.label || '';
+                                            const value = context.parsed || 0;
+                                            const dataset = requestTypes[context.dataIndex];
+                                            const sentiment = dataset.avg_sentiment ? dataset.avg_sentiment.toFixed(2) : '0.00';
+                                            return [
+                                                `${label}: ${value}`,
+                                                `Avg Sentiment: ${sentiment}`
+                                            ];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                );
+            }
+
+            // Chart 8: Sentiment Analysis
+            if (sentimentData && sentimentData.status === 'success') {
+                const sentiments = sentimentData.overall || [];
+                charts.sentiment = new Chart(
+                    document.getElementById('sentimentChart'),
+                    {
+                        type: 'pie',
+                        data: {
+                            labels: sentiments.map(s => s.sentiment.charAt(0).toUpperCase() + s.sentiment.slice(1)),
+                            datasets: [{
+                                data: sentiments.map(s => s.count),
+                                backgroundColor: [
+                                    'rgba(16, 185, 129, 0.8)',   // Positive - green
+                                    'rgba(99, 102, 241, 0.8)',   // Neutral - blue
+                                    'rgba(239, 68, 68, 0.8)'     // Negative - red
+                                ],
+                                borderWidth: 2,
+                                borderColor: '#fff'
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: {
+                                    display: true,
+                                    position: 'right'
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            const label = context.label || '';
+                                            const value = context.parsed || 0;
+                                            const dataset = sentiments[context.dataIndex];
+                                            const percentage = dataset.percentage || 0;
+                                            const avgScore = dataset.avg_score ? dataset.avg_score.toFixed(2) : '0.00';
+                                            return [
+                                                `${label}: ${value} (${percentage}%)`,
+                                                `Avg Score: ${avgScore}`
+                                            ];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                );
+            }
         }
 
         function updateTables(cohortData, rampData) {
