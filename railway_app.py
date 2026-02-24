@@ -3651,6 +3651,11 @@ def analytics_dashboard():
                     <div class="value" id="avg-replies">0</div>
                     <div class="change" id="avg-replies-change"></div>
                 </div>
+                <div class="stat-card">
+                    <div class="label">Reply Open Rate</div>
+                    <div class="value" id="reply-open-rate">0%</div>
+                    <div class="change" id="reply-open-rate-change"></div>
+                </div>
             </div>
 
             <!-- Charts -->
@@ -3795,6 +3800,7 @@ def analytics_dashboard():
             document.getElementById('total-cohorts').textContent = overall.total_cohorts || 0;
             document.getElementById('response-rate').textContent = (overall.overall_response_rate || 0).toFixed(1) + '%';
             document.getElementById('avg-replies').textContent = (overall.avg_replies_per_merchant || 0).toFixed(1);
+            document.getElementById('reply-open-rate').textContent = (overall.overall_reply_open_rate || 0).toFixed(1) + '%';
         }
 
         function updateCharts(rampData, cohortData, abTestData) {
@@ -7827,6 +7833,9 @@ def get_cohort_performance():
                 ROUND(100.0 * SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) /
                       NULLIF(COUNT(*) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL), 0), 2) as response_rate,
                 COUNT(*) FILTER (WHERE email_type = 'reply') as total_replies_sent,
+                SUM(CASE WHEN email_type = 'reply' AND open_count > 0 THEN 1 ELSE 0 END) as replies_opened,
+                ROUND(100.0 * SUM(CASE WHEN email_type = 'reply' AND open_count > 0 THEN 1 ELSE 0 END) /
+                      NULLIF(COUNT(*) FILTER (WHERE email_type = 'reply'), 0), 2) as reply_open_rate,
                 COUNT(DISTINCT merchant_id) FILTER (WHERE merchant_id IS NOT NULL AND email_type = 'outreach') as unique_merchants,
                 ROUND(COUNT(*) FILTER (WHERE email_type = 'reply')::numeric /
                       NULLIF(COUNT(DISTINCT merchant_id) FILTER (WHERE merchant_id IS NOT NULL AND email_type = 'outreach'), 0), 2) as avg_replies_per_merchant
@@ -7852,8 +7861,10 @@ def get_cohort_performance():
                 'emails_with_responses': row[11],
                 'response_rate': float(row[12]) if row[12] else 0,
                 'total_replies_sent': row[13],
-                'unique_merchants': row[14],
-                'avg_replies_per_merchant': float(row[15]) if row[15] else 0
+                'replies_opened': row[14],
+                'reply_open_rate': float(row[15]) if row[15] else 0,
+                'unique_merchants': row[16],
+                'avg_replies_per_merchant': float(row[17]) if row[17] else 0
             })
 
         conn.close()
@@ -7970,6 +7981,9 @@ def get_ramp_dashboard():
                 ROUND(100.0 * SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) /
                       NULLIF(COUNT(*) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL), 0), 2) as overall_response_rate,
                 COUNT(*) FILTER (WHERE email_type = 'reply') as total_replies_sent,
+                SUM(CASE WHEN email_type = 'reply' AND open_count > 0 THEN 1 ELSE 0 END) as total_replies_opened,
+                ROUND(100.0 * SUM(CASE WHEN email_type = 'reply' AND open_count > 0 THEN 1 ELSE 0 END) /
+                      NULLIF(COUNT(*) FILTER (WHERE email_type = 'reply'), 0), 2) as overall_reply_open_rate,
                 ROUND(COUNT(*) FILTER (WHERE email_type = 'reply')::numeric /
                       NULLIF(COUNT(DISTINCT NULLIF(merchant_id, '')) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL), 0), 2) as avg_replies_per_merchant
             FROM email_tracking
@@ -8038,7 +8052,9 @@ def get_ramp_dashboard():
                 'emails_with_responses': overall[6],
                 'overall_response_rate': float(overall[7]) if overall[7] else 0,
                 'total_replies_sent': overall[8],
-                'avg_replies_per_merchant': float(overall[9]) if overall[9] else 0
+                'total_replies_opened': overall[9],
+                'overall_reply_open_rate': float(overall[10]) if overall[10] else 0,
+                'avg_replies_per_merchant': float(overall[11]) if overall[11] else 0
             },
             'by_phase': phases,
             'cohort_summary': cohort_summary
