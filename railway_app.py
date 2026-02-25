@@ -2673,13 +2673,31 @@ def reply_to_emails_with_accounts(accounts, cohort_override=None):
                     logger.info(f"ℹ️ No cohort info found for {contact_email} - reply will not be cohort-tracked")
 
             # Classify the incoming merchant email for sentiment and request type
+            logger.info(f"🤖 Starting email classification for {contact_email}...")
             classification = classify_email_with_sentiment(email_body, email_subject)
-            request_type = classification.get('request_type') if classification else None
-            sentiment = classification.get('sentiment') if classification else None
-            sentiment_score = classification.get('sentiment_score') if classification else None
 
             if classification:
-                logger.info(f"📊 Email classified: {request_type} | {sentiment} ({sentiment_score})")
+                request_type = classification.get('request_type')
+                sentiment = classification.get('sentiment')
+                sentiment_score = classification.get('sentiment_score')
+                logger.info(f"✅ Email classified: {request_type} | {sentiment} ({sentiment_score})")
+                logger.info(f"📋 Full classification: {classification}")
+            else:
+                request_type = None
+                sentiment = None
+                sentiment_score = None
+                logger.warning(f"⚠️ Classification returned None - check OpenAI API availability and logs above")
+
+            # Auto-generate campaign name from cohort info if not provided
+            campaign_name = None
+            if cohort_info:
+                campaign_name = cohort_info.get('campaign_name')
+                # If no campaign_name, generate from cohort info
+                if not campaign_name and cohort_info.get('cohort_name'):
+                    cohort_name_val = cohort_info.get('cohort_name', '')
+                    test_group_val = cohort_info.get('test_group', '')
+                    campaign_name = f"{cohort_name_val}_{test_group_val}_reply" if test_group_val else f"{cohort_name_val}_reply"
+                    logger.info(f"📝 Auto-generated campaign name: {campaign_name}")
 
             logger.info(f"📧 Sending reply email to {contact_email} for thread {thread_id}")
             email_result = send_threaded_email_reply(
@@ -2694,7 +2712,7 @@ def reply_to_emails_with_accounts(accounts, cohort_override=None):
                 cohort_batch=cohort_info.get('cohort_batch') if cohort_info else None,
                 test_group=cohort_info.get('test_group') if cohort_info else None,
                 ramp_phase=cohort_info.get('ramp_phase') if cohort_info else None,
-                campaign_name=cohort_info.get('campaign_name') if cohort_info else "AI Email Reply",
+                campaign_name=campaign_name or "AI Email Reply",
                 request_type=request_type,
                 sentiment=sentiment,
                 sentiment_score=sentiment_score
