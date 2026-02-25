@@ -2058,8 +2058,14 @@ def lookup_merchant_cohort(merchant_email):
         return None
 
 
-def reply_to_emails_with_accounts(accounts):
-    """Process emails for specific accounts provided by Workato - exact copy from 2025_hackathon.py."""
+def reply_to_emails_with_accounts(accounts, cohort_override=None):
+    """
+    Process emails for specific accounts provided by Workato.
+
+    Args:
+        accounts: List of account dicts with 'email' and 'name'
+        cohort_override: Optional dict with cohort info from Workato to override automatic lookup
+    """
     emails_needing_replies = get_emails_needing_replies_with_accounts(accounts)
     responses = []
 
@@ -2654,12 +2660,17 @@ def reply_to_emails_with_accounts(accounts):
             else:
                 logger.info(f"📧 No CC recipients for this reply")
             
-            # Lookup merchant's cohort info for A/B testing tracking
-            cohort_info = lookup_merchant_cohort(contact_email)
-            if cohort_info:
-                logger.info(f"📊 Found cohort for {contact_email}: {cohort_info['cohort_name']} / {cohort_info['test_group']}")
+            # Get merchant's cohort info for A/B testing tracking
+            # Priority: 1) Workato-provided override, 2) Automatic lookup from outreach email
+            if cohort_override:
+                cohort_info = cohort_override
+                logger.info(f"📊 Using Workato-provided cohort for {contact_email}: {cohort_info.get('cohort_name')} / {cohort_info.get('test_group')}")
             else:
-                logger.info(f"ℹ️ No cohort info found for {contact_email} - reply will not be cohort-tracked")
+                cohort_info = lookup_merchant_cohort(contact_email)
+                if cohort_info:
+                    logger.info(f"📊 Auto-lookup found cohort for {contact_email}: {cohort_info['cohort_name']} / {cohort_info['test_group']}")
+                else:
+                    logger.info(f"ℹ️ No cohort info found for {contact_email} - reply will not be cohort-tracked")
 
             # Classify the incoming merchant email for sentiment and request type
             classification = classify_email_with_sentiment(email_body, email_subject)
@@ -8589,22 +8600,30 @@ def debug_openai():
 @app.route('/api/workato/reply-to-emails', methods=['POST'])
 def workato_reply_to_emails():
     """
-    Workato endpoint to process email replies - ULTRA SIMPLE VERSION.
-    
+    Workato endpoint to process email replies - accepts cohort parameters.
+
     Expected input format:
     {
-        "email": "contact@example.com"
+        "email": "contact@example.com",
+
+        // Optional cohort parameters (if not provided, auto-lookup from outreach email):
+        "merchant_id": "SFDC_12345",
+        "cohort_name": "pilot_batch1",
+        "cohort_batch": 1,
+        "test_group": "control",
+        "ramp_phase": "pilot",
+        "campaign_name": "pilot_batch1_control_2026-02"
     }
     """
     try:
         data = request.get_json() if request.is_json else {}
-        
+
         # Debug logging
         print(f"🔍 DEBUG: Received data: {data}")
         print(f"🔍 DEBUG: Data type: {type(data)}")
         print(f"🔍 DEBUG: Is JSON: {request.is_json}")
         print(f"🔍 DEBUG: Raw request data: {request.get_data()}")
-        
+
         # Simple validation - only accept email field
         if not data or 'email' not in data:
             return jsonify({
@@ -8613,25 +8632,38 @@ def workato_reply_to_emails():
                 'timestamp': datetime.datetime.now().isoformat(),
                 'emails_processed': 0
             }), 400
-        
+
         email = data['email']
         if not email or not isinstance(email, str):
             return jsonify({
-                'status': 'error', 
+                'status': 'error',
                 'message': 'Email must be a valid string',
                 'timestamp': datetime.datetime.now().isoformat(),
                 'emails_processed': 0
             }), 400
-        
+
+        # Extract optional cohort parameters from Workato
+        cohort_override = None
+        if any(key in data for key in ['merchant_id', 'cohort_name', 'cohort_batch', 'test_group', 'ramp_phase']):
+            cohort_override = {
+                'merchant_id': data.get('merchant_id'),
+                'cohort_name': data.get('cohort_name'),
+                'cohort_batch': data.get('cohort_batch'),
+                'test_group': data.get('test_group'),
+                'ramp_phase': data.get('ramp_phase'),
+                'campaign_name': data.get('campaign_name')
+            }
+            logger.info(f"📊 Workato provided cohort info: {cohort_override}")
+
         print(f"📧 Workato triggered reply_to_emails at {datetime.datetime.now().isoformat()}")
         print(f"📊 Processing email: {email}")
-        
+
         # Convert single email to account format for the function
         accounts = [{'email': email, 'name': email.split('@')[0].capitalize()}]
-        
-        # Call the function with Workato-provided accounts
+
+        # Call the function with Workato-provided accounts and optional cohort override
         logger.info("🚀 Starting email processing...")
-        result = reply_to_emails_with_accounts(accounts)
+        result = reply_to_emails_with_accounts(accounts, cohort_override=cohort_override)
         logger.info("✅ Email processing completed")
         
         # Format response with actual email and thread details
