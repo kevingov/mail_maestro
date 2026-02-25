@@ -8432,6 +8432,69 @@ def get_sentiment_analysis():
         logger.error(f"Error getting sentiment analysis: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/email-details/<int:record_id>', methods=['GET'])
+def get_email_details(record_id):
+    """Get detailed information about a specific email tracking record."""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 503
+
+        cursor = conn.cursor()
+
+        # Query email tracking record by ID
+        cursor.execute('''
+            SELECT
+                id, tracking_id, recipient_email, sender_email, subject,
+                campaign_name, status, sent_at, open_count, last_opened_at,
+                merchant_id, cohort_name, cohort_batch, test_group, ramp_phase,
+                email_type, request_type, sentiment, sentiment_score
+            FROM email_tracking
+            WHERE id = %s
+        ''', (record_id,))
+
+        row = cursor.fetchone()
+
+        if not row:
+            conn.close()
+            return jsonify({'error': f'Email record {record_id} not found'}), 404
+
+        email_data = {
+            'id': row[0],
+            'tracking_id': row[1],
+            'recipient_email': row[2],
+            'sender_email': row[3],
+            'subject': row[4],
+            'campaign_name': row[5],
+            'status': row[6],
+            'sent_at': row[7].isoformat() if row[7] else None,
+            'open_count': row[8],
+            'last_opened_at': row[9].isoformat() if row[9] else None,
+            'merchant_id': row[10],
+            'cohort_name': row[11],
+            'cohort_batch': row[12],
+            'test_group': row[13],
+            'ramp_phase': row[14],
+            'email_type': row[15],
+            'request_type': row[16],
+            'sentiment': row[17],
+            'sentiment_score': float(row[18]) if row[18] else None
+        }
+
+        conn.close()
+
+        return jsonify({
+            'status': 'success',
+            'email': email_data
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting email details: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/check-responses', methods=['GET', 'POST'])
 def check_responses_endpoint():
     """
