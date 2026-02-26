@@ -3885,6 +3885,32 @@ def analytics_dashboard():
                     </tbody>
                 </table>
             </div>
+
+            <!-- Merchant Performance Table -->
+            <div class="table-card">
+                <h3>📧 Merchant Performance</h3>
+                <table id="merchant-table">
+                    <thead>
+                        <tr>
+                            <th>Merchant Name</th>
+                            <th>Email</th>
+                            <th>Cohort</th>
+                            <th>Test Group</th>
+                            <th>Emails Sent</th>
+                            <th>Opened</th>
+                            <th>Open Rate</th>
+                            <th>Total Opens</th>
+                            <th>Responded</th>
+                            <th>Replies Sent</th>
+                            <th>Last Sentiment</th>
+                            <th>Request Type</th>
+                            <th>Last Email</th>
+                        </tr>
+                    </thead>
+                    <tbody id="merchant-table-body">
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -3907,12 +3933,13 @@ def analytics_dashboard():
                 document.getElementById('error-message').innerHTML = '';
 
                 // Fetch all analytics data
-                const [rampData, cohortData, abTestData, requestTypesData, sentimentData] = await Promise.all([
+                const [rampData, cohortData, abTestData, requestTypesData, sentimentData, merchantData] = await Promise.all([
                     fetch('/api/analytics/ramp-dashboard').then(r => r.json()),
                     fetch('/api/analytics/cohort-performance').then(r => r.json()),
                     fetch('/api/analytics/ab-test-results').then(r => r.json()),
                     fetch('/api/analytics/request-types').then(r => r.json()),
-                    fetch('/api/analytics/sentiment-analysis').then(r => r.json())
+                    fetch('/api/analytics/sentiment-analysis').then(r => r.json()),
+                    fetch('/api/analytics/merchant-performance').then(r => r.json())
                 ]);
 
                 if (rampData.status === 'success') {
@@ -3929,7 +3956,7 @@ def analytics_dashboard():
                         // Continue even if charts fail
                     }
 
-                    updateTables(cohortData, rampData);
+                    updateTables(cohortData, rampData, merchantData);
                     console.log('✅ Tables rendered');
 
                     document.getElementById('loading').style.display = 'none';
@@ -4258,7 +4285,7 @@ def analytics_dashboard():
             }
         }
 
-        function updateTables(cohortData, rampData) {
+        function updateTables(cohortData, rampData, merchantData) {
             // Cohort details table
             const cohortTableBody = document.getElementById('cohort-table-body');
             cohortTableBody.innerHTML = '';
@@ -4299,6 +4326,48 @@ def analytics_dashboard():
                     <td>${phase.unique_merchants}</td>
                 `;
                 phaseTableBody.appendChild(row);
+            });
+
+            // Merchant performance table
+            const merchantTableBody = document.getElementById('merchant-table-body');
+            merchantTableBody.innerHTML = '';
+
+            const merchants = merchantData.merchants || [];
+            merchants.forEach(merchant => {
+                const row = document.createElement('tr');
+
+                // Format sentiment with emoji
+                let sentimentDisplay = '-';
+                if (merchant.last_sentiment) {
+                    const sentimentEmoji = {
+                        'positive': '😊',
+                        'neutral': '😐',
+                        'negative': '😞',
+                        'frustrated': '😤',
+                        'urgent': '⚠️'
+                    };
+                    sentimentDisplay = `${sentimentEmoji[merchant.last_sentiment.toLowerCase()] || ''} ${merchant.last_sentiment}`;
+                }
+
+                // Highlight if they responded
+                const respondedClass = merchant.has_responded === 'Yes' ? 'style="color: #10b981; font-weight: 600;"' : '';
+
+                row.innerHTML = `
+                    <td><strong>${merchant.merchant_name}</strong></td>
+                    <td>${merchant.merchant_email}</td>
+                    <td><span class="badge ${merchant.cohort_name}">${merchant.cohort_name || '-'}</span></td>
+                    <td><span class="badge ${merchant.test_group}">${merchant.test_group || '-'}</span></td>
+                    <td>${merchant.emails_sent}</td>
+                    <td>${merchant.emails_opened}</td>
+                    <td><strong>${merchant.open_rate.toFixed(1)}%</strong></td>
+                    <td>${merchant.total_opens}</td>
+                    <td ${respondedClass}>${merchant.has_responded}</td>
+                    <td>${merchant.replies_sent}</td>
+                    <td>${sentimentDisplay}</td>
+                    <td>${merchant.last_request_type || '-'}</td>
+                    <td>${merchant.last_email_sent ? new Date(merchant.last_email_sent).toLocaleDateString() : '-'}</td>
+                `;
+                merchantTableBody.appendChild(row);
             });
         }
 
@@ -8494,6 +8563,103 @@ def get_sentiment_analysis():
 
     except Exception as e:
         logger.error(f"Error getting sentiment analysis: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/analytics/merchant-performance', methods=['GET'])
+def get_merchant_performance():
+    """Get merchant-level performance metrics."""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 503
+
+        cursor = conn.cursor()
+
+        # Get merchant-level metrics
+        cursor.execute('''
+            WITH merchant_outreach AS (
+                SELECT
+                    COALESCE(merchant_id, recipient_email) as merchant_key,
+                    recipient_email,
+                    MAX(subject) as merchant_name,
+                    cohort_name,
+                    cohort_batch,
+                    test_group,
+                    ramp_phase,
+                    COUNT(*) FILTER (WHERE email_type = 'outreach') as outreach_sent,
+                    COUNT(*) FILTER (WHERE email_type = 'outreach' AND open_count > 0) as outreach_opened,
+                    SUM(COALESCE(open_count, 0)) FILTER (WHERE email_type = 'outreach') as total_opens,
+                    MAX(sent_at) FILTER (WHERE email_type = 'outreach') as last_outreach_sent,
+                    COUNT(*) FILTER (WHERE email_type = 'reply') as replies_sent,
+                    COUNT(*) FILTER (WHERE email_type = 'reply' AND open_count > 0) as replies_opened,
+                    MAX(sentiment) FILTER (WHERE email_type = 'reply') as last_sentiment,
+                    MAX(request_type) FILTER (WHERE email_type = 'reply') as last_request_type
+                FROM email_tracking
+                WHERE cohort_name IS NOT NULL
+                GROUP BY merchant_key, recipient_email, cohort_name, cohort_batch, test_group, ramp_phase
+            )
+            SELECT
+                merchant_key,
+                recipient_email,
+                merchant_name,
+                cohort_name,
+                cohort_batch,
+                test_group,
+                ramp_phase,
+                outreach_sent,
+                outreach_opened,
+                total_opens,
+                CASE WHEN outreach_sent > 0
+                     THEN ROUND(100.0 * outreach_opened / outreach_sent, 1)
+                     ELSE 0
+                END as open_rate,
+                replies_sent,
+                replies_opened,
+                CASE WHEN replies_sent > 0 THEN 'Yes' ELSE 'No' END as has_responded,
+                last_outreach_sent,
+                last_sentiment,
+                last_request_type
+            FROM merchant_outreach
+            ORDER BY last_outreach_sent DESC
+        ''')
+
+        merchants = []
+        for row in cursor.fetchall():
+            merchants.append({
+                'merchant_id': row[0],
+                'merchant_email': row[1],
+                'merchant_name': row[2] or row[1].split('@')[0],  # Use email prefix if no name
+                'cohort_name': row[3],
+                'cohort_batch': row[4],
+                'test_group': row[5],
+                'ramp_phase': row[6],
+                'emails_sent': row[7],
+                'emails_opened': row[8],
+                'total_opens': row[9],
+                'open_rate': float(row[10]) if row[10] else 0,
+                'replies_sent': row[11],
+                'replies_opened': row[12],
+                'has_responded': row[13],
+                'last_email_sent': row[14].isoformat() if row[14] else None,
+                'last_sentiment': row[15],
+                'last_request_type': row[16]
+            })
+
+        conn.close()
+
+        return jsonify({
+            'status': 'success',
+            'merchants': merchants,
+            'total_merchants': len(merchants)
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting merchant performance: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/email-details/<int:record_id>', methods=['GET'])
