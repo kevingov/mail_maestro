@@ -3683,6 +3683,20 @@ def analytics_dashboard():
             color: #831843;
         }
 
+        .cohort-group-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 700;
+            font-size: 15px;
+            padding: 12px;
+            text-align: left;
+            border-top: 2px solid #5a67d8;
+        }
+
+        .cohort-group-header td {
+            border: none !important;
+        }
+
         .loading {
             text-align: center;
             padding: 40px;
@@ -4333,7 +4347,30 @@ def analytics_dashboard():
             merchantTableBody.innerHTML = '';
 
             const merchants = merchantData.merchants || [];
+            let currentCohort = null;
+
             merchants.forEach(merchant => {
+                // Add cohort group header when cohort changes
+                if (merchant.cohort_name !== currentCohort) {
+                    currentCohort = merchant.cohort_name;
+                    const headerRow = document.createElement('tr');
+                    headerRow.className = 'cohort-group-header';
+
+                    // Count merchants in this cohort
+                    const cohortMerchants = merchants.filter(m => m.cohort_name === currentCohort);
+                    const respondedCount = cohortMerchants.filter(m => m.has_responded === 'Yes').length;
+
+                    headerRow.innerHTML = `
+                        <td colspan="13">
+                            📊 ${currentCohort || 'Unknown Cohort'}
+                            <span style="opacity: 0.9; font-weight: 500; margin-left: 16px;">
+                                (${cohortMerchants.length} merchants, ${respondedCount} responded)
+                            </span>
+                        </td>
+                    `;
+                    merchantTableBody.appendChild(headerRow);
+                }
+
                 const row = document.createElement('tr');
 
                 // Format sentiment with emoji
@@ -8623,7 +8660,7 @@ def get_merchant_performance():
                 last_sentiment,
                 last_request_type
             FROM merchant_outreach
-            ORDER BY last_outreach_sent DESC
+            ORDER BY cohort_name, cohort_batch, test_group, last_outreach_sent DESC
         ''')
 
         merchants = []
