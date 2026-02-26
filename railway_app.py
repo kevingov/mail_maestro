@@ -3641,8 +3641,13 @@ def analytics_dashboard():
             font-size: 14px;
         }
 
-        tbody tr:hover {
+        tbody tr:not(.cohort-group-header):hover {
             background: var(--gray-50);
+        }
+
+        .cohort-group-header:hover {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            cursor: default;
         }
 
         .badge {
