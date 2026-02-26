@@ -1026,10 +1026,17 @@ def classify_email_with_sentiment(email_body, subject=""):
         }
     """
     try:
+        logger.info(f"🔍 STEP 1: Checking OpenAI API key...")
         api_key = os.getenv('OPENAI_API_KEY')
         if not api_key:
-            logger.warning("OpenAI API key not found, skipping classification")
+            logger.error("❌ CLASSIFICATION FAILED: OpenAI API key not found in environment variables")
+            logger.error("   Set OPENAI_API_KEY in Railway environment variables")
             return None
+
+        logger.info(f"✅ STEP 2: OpenAI API key found (length: {len(api_key)})")
+        logger.info(f"🤖 STEP 3: Calling OpenAI API for classification...")
+        logger.info(f"   Subject: {subject[:100]}")
+        logger.info(f"   Body preview: {email_body[:200]}")
 
         client = OpenAI(api_key=api_key)
 
@@ -1077,12 +1084,24 @@ Respond in JSON format:
             response_format={"type": "json_object"}
         )
 
+        logger.info(f"✅ STEP 4: OpenAI API responded successfully")
+        logger.info(f"   Model used: {os.getenv('OPENAI_MODEL', 'gpt-4o-mini')}")
+
         result = json.loads(response.choices[0].message.content)
-        logger.info(f"📊 Email classified: {result['request_type']} | {result['sentiment']} ({result['sentiment_score']})")
+        logger.info(f"✅ STEP 5: Successfully parsed JSON response")
+        logger.info(f"📊 CLASSIFICATION RESULT:")
+        logger.info(f"   Request Type: {result.get('request_type')}")
+        logger.info(f"   Sentiment: {result.get('sentiment')}")
+        logger.info(f"   Sentiment Score: {result.get('sentiment_score')}")
+        logger.info(f"   Key Topics: {result.get('key_topics')}")
         return result
 
     except Exception as e:
-        logger.error(f"❌ Error classifying email: {e}")
+        logger.error(f"❌ CLASSIFICATION EXCEPTION at some step:")
+        logger.error(f"   Error type: {type(e).__name__}")
+        logger.error(f"   Error message: {str(e)}")
+        import traceback
+        logger.error(f"   Full traceback: {traceback.format_exc()}")
         return None
 
 def generate_message(merchant_name, last_activity, merchant_industry, merchant_website, sender_name, account_description="", account_revenue=0, account_employees=0, account_location="", contact_title="", account_gmv=0, prompt_template=None):
@@ -1479,6 +1498,10 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
         base_url = "https://web-production-6dfbd.up.railway.app"
 
         logger.info(f"📧 Tracking reply email: {tracking_id} -> {to_email} | cohort: {cohort_name} | test_group: {test_group} | email_type: reply")
+        logger.info(f"🔍 TRACKING STEP 6: Sending classification data to /api/track-send:")
+        logger.info(f"   request_type: {request_type}")
+        logger.info(f"   sentiment: {sentiment}")
+        logger.info(f"   sentiment_score: {sentiment_score}")
 
         try:
             import requests
@@ -7326,6 +7349,14 @@ def track_email_send():
         sentiment = data.get('sentiment')
         sentiment_score = data.get('sentiment_score')
 
+        logger.info(f"🔍 TRACKING STEP 7: /api/track-send received classification data:")
+        logger.info(f"   email_type: {email_type}")
+        logger.info(f"   request_type: {request_type}")
+        logger.info(f"   sentiment: {sentiment}")
+        logger.info(f"   sentiment_score: {sentiment_score}")
+        if email_type == 'reply' and not request_type:
+            logger.warning(f"⚠️ WARNING: Reply email has no classification data!")
+
         if not recipient_email:
             return jsonify({'error': 'recipient_email is required'}), 400
 
@@ -7359,6 +7390,9 @@ def track_email_send():
             merchant_id, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at, email_type,
             request_type, sentiment, sentiment_score
         ))
+
+        logger.info(f"✅ TRACKING STEP 8: Database INSERT completed for tracking_id: {tracking_id}")
+        logger.info(f"   Stored classification: request_type={request_type}, sentiment={sentiment}, sentiment_score={sentiment_score}")
 
         # Also insert/update merchant_cohorts table if cohort info is provided
         if merchant_id and cohort_name:
