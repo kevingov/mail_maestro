@@ -3414,7 +3414,7 @@ def analytics_dashboard():
 
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #000000;
+            background: #f5f5f5;
             margin: 0;
             padding: 0;
             min-height: 100vh;
@@ -3429,13 +3429,13 @@ def analytics_dashboard():
         }
 
         .header-bar {
-            background: #111827;
-            border-bottom: 1px solid #374151;
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
             padding: 16px 24px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
 
         .header-left {
@@ -3447,7 +3447,7 @@ def analytics_dashboard():
         .header-title {
             font-size: 20px;
             font-weight: 600;
-            color: #f9fafb;
+            color: #111827;
         }
 
         .main-layout {
@@ -3458,8 +3458,8 @@ def analytics_dashboard():
 
         .sidebar {
             width: 250px;
-            background: #111827;
-            border-right: 1px solid #374151;
+            background: white;
+            border-right: 1px solid #e5e7eb;
             overflow-y: auto;
             padding: 24px 0;
         }
@@ -3475,7 +3475,7 @@ def analytics_dashboard():
             align-items: center;
             gap: 8px;
             padding: 8px 16px;
-            color: #9ca3af;
+            color: #6b7280;
             text-decoration: none;
             font-size: 14px;
             font-weight: 500;
@@ -3484,13 +3484,13 @@ def analytics_dashboard():
         }
 
         .nav-tab:hover {
-            background: #1f2937;
-            color: #f3f4f6;
+            background: #f3f4f6;
+            color: #374151;
         }
 
         .nav-tab.active {
-            background: #1e3a8a;
-            color: #93c5fd;
+            background: #eff6ff;
+            color: #2563eb;
         }
 
         .nav-tab-icon {
@@ -3500,30 +3500,29 @@ def analytics_dashboard():
         .content-area {
             flex: 1;
             overflow-y: auto;
-            background: #000000;
+            background: #f9fafb;
             padding: 24px;
         }
 
         .header {
-            background: #1f2937;
+            background: white;
             padding: 24px;
             border-radius: 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             margin-bottom: 24px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border: 1px solid #374151;
         }
 
         .header h1 {
             font-size: 28px;
             font-weight: 700;
-            color: #f9fafb;
+            color: var(--gray-900);
         }
 
         .header p {
-            color: #9ca3af;
+            color: var(--gray-600);
             margin-top: 4px;
         }
 
@@ -3551,15 +3550,14 @@ def analytics_dashboard():
         }
 
         .stat-card {
-            background: #1f2937;
+            background: white;
             padding: 24px;
             border-radius: 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.5);
-            border: 1px solid #374151;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
 
         .stat-card .label {
-            color: #9ca3af;
+            color: var(--gray-600);
             font-size: 14px;
             font-weight: 500;
             margin-bottom: 8px;
@@ -3568,7 +3566,7 @@ def analytics_dashboard():
         .stat-card .value {
             font-size: 32px;
             font-weight: 700;
-            color: #f9fafb;
+            color: var(--gray-900);
         }
 
         .stat-card .change {
@@ -3592,34 +3590,31 @@ def analytics_dashboard():
         }
 
         .chart-card {
-            background: #1f2937;
+            background: white;
             padding: 24px;
             border-radius: 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.5);
-            border: 1px solid #374151;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
 
         .chart-card h3 {
             font-size: 18px;
             font-weight: 600;
             margin-bottom: 16px;
-            color: #f9fafb;
+            color: var(--gray-900);
         }
 
         .table-card {
-            background: #1f2937;
+            background: white;
             padding: 24px;
             border-radius: 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             margin-bottom: 24px;
-            border: 1px solid #374151;
         }
 
         .table-card h3 {
             font-size: 18px;
             font-weight: 600;
             margin-bottom: 16px;
-            color: #f9fafb;
         }
 
         table {
@@ -3628,27 +3623,26 @@ def analytics_dashboard():
         }
 
         thead {
-            background: #111827;
+            background: var(--gray-50);
         }
 
         th {
             text-align: left;
             padding: 12px;
             font-weight: 600;
-            color: #f3f4f6;
+            color: var(--gray-700);
             font-size: 14px;
-            border-bottom: 2px solid #374151;
+            border-bottom: 2px solid var(--gray-200);
         }
 
         td {
             padding: 12px;
-            border-bottom: 1px solid #374151;
+            border-bottom: 1px solid var(--gray-200);
             font-size: 14px;
-            color: #d1d5db;
         }
 
         tbody tr:hover {
-            background: #111827;
+            background: var(--gray-50);
         }
 
         .badge {
@@ -3692,11 +3686,11 @@ def analytics_dashboard():
         .loading {
             text-align: center;
             padding: 40px;
-            color: #9ca3af;
+            color: var(--gray-600);
         }
 
         .spinner {
-            border: 3px solid #374151;
+            border: 3px solid var(--gray-200);
             border-top: 3px solid var(--primary);
             border-radius: 50%;
             width: 40px;
@@ -3711,12 +3705,11 @@ def analytics_dashboard():
         }
 
         .error {
-            background: #7f1d1d;
-            color: #fecaca;
+            background: #fee2e2;
+            color: #991b1b;
             padding: 16px;
             border-radius: 8px;
             margin-bottom: 24px;
-            border: 1px solid #991b1b;
         }
         .refresh-btn {
             background: var(--primary);
@@ -3740,7 +3733,7 @@ def analytics_dashboard():
         <!-- Header Bar -->
         <div class="header-bar">
             <div class="header-left">
-                <div class="header-title" style="font-weight: 700; font-size: 18px; color: #f9fafb;">Mail Maestro</div>
+                <div class="header-title" style="font-weight: 700; font-size: 18px; color: #111827;">Mail Maestro</div>
                 <!-- Navigation Tabs -->
                 <div class="header-nav">
                     <a href="/prompts" class="nav-tab">
@@ -4421,13 +4414,13 @@ def prompts_ui():
         }
         
         .header-bar {
-            background: #111827;
-            border-bottom: 1px solid #374151;
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
             padding: 16px 24px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
         
         .header-left {
@@ -4439,7 +4432,7 @@ def prompts_ui():
         .header-title {
             font-size: 20px;
             font-weight: 600;
-            color: #f9fafb;
+            color: #111827;
         }
         
         .header-actions {
@@ -5072,7 +5065,7 @@ def prompts_ui():
     <div class="app-container">
         <div class="header-bar">
             <div class="header-left">
-                <div class="header-title" style="font-weight: 700; font-size: 18px; color: #f9fafb;">Mail Maestro</div>
+                <div class="header-title" style="font-weight: 700; font-size: 18px; color: #111827;">Mail Maestro</div>
                 <!-- Navigation Tabs -->
                 <div class="header-nav">
                     <a href="/prompts" class="nav-tab active">
