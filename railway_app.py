@@ -3593,7 +3593,7 @@ def analytics_dashboard():
 
         .charts-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            grid-template-columns: repeat(3, 1fr);
             gap: 20px;
             margin-bottom: 24px;
         }
@@ -3988,35 +3988,6 @@ def analytics_dashboard():
             <!-- Charts -->
             <div class="charts-grid">
                 <div class="chart-card">
-                    <h3>Open Rate by Cohort</h3>
-                    <canvas id="cohortOpenRateChart"></canvas>
-                </div>
-                <div class="chart-card">
-                    <h3>Emails Sent by Phase</h3>
-                    <canvas id="phaseDistributionChart"></canvas>
-                </div>
-            </div>
-
-            <div class="charts-grid">
-                <div class="chart-card">
-                    <h3>A/B Test Comparison</h3>
-                    <canvas id="abTestChart"></canvas>
-                </div>
-                <div class="chart-card">
-                    <h3>Merchant Count by Cohort</h3>
-                    <canvas id="merchantCountChart"></canvas>
-                </div>
-            </div>
-
-            <div class="charts-grid">
-                <div class="chart-card">
-                    <h3>Response Rate by Cohort</h3>
-                    <canvas id="responseRateChart"></canvas>
-                </div>
-            </div>
-
-            <div class="charts-grid">
-                <div class="chart-card">
                     <h3>📋 Request Types</h3>
                     <canvas id="requestTypesChart"></canvas>
                 </div>
@@ -4024,6 +3995,52 @@ def analytics_dashboard():
                     <h3>😊 Sentiment Analysis</h3>
                     <canvas id="sentimentChart"></canvas>
                 </div>
+                <div class="chart-card">
+                    <h3>Open Rate by Cohort</h3>
+                    <canvas id="cohortOpenRateChart"></canvas>
+                </div>
+            </div>
+
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h3>Emails Sent by Phase</h3>
+                    <canvas id="phaseDistributionChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>Merchant Count by Cohort</h3>
+                    <canvas id="merchantCountChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>Response Rate by Cohort</h3>
+                    <canvas id="responseRateChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Merchant Performance Table -->
+            <div class="table-card">
+                <h3>📧 Merchant Performance</h3>
+                <table id="merchant-table">
+                    <thead>
+                        <tr>
+                            <th>Merchant Name</th>
+                            <th>Email</th>
+                            <th>Cohort</th>
+                            <th>Test Group</th>
+                            <th>Emails Sent</th>
+                            <th>Opened</th>
+                            <th>Open Rate</th>
+                            <th>Total Opens</th>
+                            <th>Responded</th>
+                            <th>Replies Sent</th>
+                            <th>Last Sentiment</th>
+                            <th>Request Type</th>
+                            <th>Last Email</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="merchant-table-body">
+                    </tbody>
+                </table>
             </div>
 
             <!-- Cohort Details Table -->
@@ -4066,33 +4083,6 @@ def analytics_dashboard():
                         </tr>
                     </thead>
                     <tbody id="phase-table-body">
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Merchant Performance Table -->
-            <div class="table-card">
-                <h3>📧 Merchant Performance</h3>
-                <table id="merchant-table">
-                    <thead>
-                        <tr>
-                            <th>Merchant Name</th>
-                            <th>Email</th>
-                            <th>Cohort</th>
-                            <th>Test Group</th>
-                            <th>Emails Sent</th>
-                            <th>Opened</th>
-                            <th>Open Rate</th>
-                            <th>Total Opens</th>
-                            <th>Responded</th>
-                            <th>Replies Sent</th>
-                            <th>Last Sentiment</th>
-                            <th>Request Type</th>
-                            <th>Last Email</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="merchant-table-body">
                     </tbody>
                 </table>
             </div>
@@ -4262,48 +4252,7 @@ def analytics_dashboard():
                 }
             );
 
-            // Chart 3: A/B Test Comparison
-            const abTests = abTestData.test_results || [];
-            charts.abTest = new Chart(
-                document.getElementById('abTestChart'),
-                {
-                    type: 'bar',
-                    data: {
-                        labels: abTests.map(t => t.test_group),
-                        datasets: [{
-                            label: 'Open Rate (%)',
-                            data: abTests.map(t => t.open_rate),
-                            backgroundColor: abTests.map(t =>
-                                t.test_group === 'control' ? 'rgba(156, 163, 175, 0.8)' :
-                                t.test_group === 'variant_a' ? 'rgba(129, 140, 248, 0.8)' :
-                                'rgba(244, 114, 182, 0.8)'
-                            ),
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                max: 100,
-                                ticks: {
-                                    callback: function(value) {
-                                        return value + '%';
-                                    }
-                                }
-                            }
-                        },
-                        plugins: {
-                            legend: {
-                                display: false
-                            }
-                        }
-                    }
-                }
-            );
-
-            // Chart 4: Merchant Count by Cohort
+            // Chart 3: Merchant Count by Cohort
             const cohortSummary = rampData.cohort_summary || [];
             charts.merchantCount = new Chart(
                 document.getElementById('merchantCountChart'),
