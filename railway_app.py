@@ -220,6 +220,13 @@ def init_database():
             logger.info("✅ Added cohort tracking columns to email_tracking table")
         except Exception as e:
             logger.debug(f"Cohort tracking columns check: {e}")
+
+        # Add email body column to store email content
+        try:
+            cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS email_body TEXT')
+            logger.info("✅ Added email_body column to email_tracking table")
+        except Exception as e:
+            logger.debug(f"Email body column check: {e}")
         
         # Email opens table
         cursor.execute('''
@@ -1367,7 +1374,8 @@ def send_email(to_email, merchant_name, subject_line, email_content, campaign_na
                     'cohort_batch': cohort_batch,
                     'test_group': test_group,
                     'ramp_phase': ramp_phase,
-                    'email_type': email_type
+                    'email_type': email_type,
+                    'email_body': email_content
                 },
                 timeout=10
             )
@@ -1523,7 +1531,8 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
                     'email_type': 'reply',
                     'request_type': request_type,
                     'sentiment': sentiment,
-                    'sentiment_score': sentiment_score
+                    'sentiment_score': sentiment_score,
+                    'email_body': reply_content
                 },
                 timeout=10
             )
@@ -4663,6 +4672,17 @@ def analytics_dashboard():
                     </div>`;
                 }
 
+                // Email body display
+                let emailBodyDisplay = '';
+                if (email.email_body) {
+                    // Remove HTML tags for display, or show as HTML
+                    const bodyText = email.email_body.substring(0, 500); // Limit length
+                    const showMore = email.email_body.length > 500 ? '...' : '';
+                    emailBodyDisplay = `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
+                        <div style="font-size: 13px; color: #374151; line-height: 1.6; white-space: pre-wrap;">${bodyText}${showMore}</div>
+                    </div>`;
+                }
+
                 html += `
                     <div class="email-thread-item ${emailType}">
                         <div class="email-thread-header">
@@ -4678,6 +4698,7 @@ def analytics_dashboard():
                             <span>📅 Campaign: ${email.campaign_name || '-'}</span>
                         </div>
                         ${sentimentBadge}${requestTypeBadge}
+                        ${emailBodyDisplay}
                     </div>
                 `;
             });
@@ -7733,6 +7754,9 @@ def track_email_send():
         sentiment = data.get('sentiment')
         sentiment_score = data.get('sentiment_score')
 
+        # Extract email body/content
+        email_body = data.get('email_body', '')
+
         logger.info(f"🔍 TRACKING STEP 7: /api/track-send received classification data:")
         logger.info(f"   email_type: {email_type}")
         logger.info(f"   request_type: {request_type}")
@@ -7766,13 +7790,13 @@ def track_email_send():
             INSERT INTO email_tracking (
                 tracking_id, recipient_email, sender_email, subject, campaign_name, status, version_endpoint,
                 merchant_id, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at, email_type,
-                request_type, sentiment, sentiment_score
+                request_type, sentiment, sentiment_score, email_body
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (
             tracking_id, recipient_email, sender_email, subject, campaign_name, 'AI Outbound Email', version_endpoint,
             merchant_id, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at, email_type,
-            request_type, sentiment, sentiment_score
+            request_type, sentiment, sentiment_score, email_body
         ))
 
         logger.info(f"✅ TRACKING STEP 8: Database INSERT completed for tracking_id: {tracking_id}")
@@ -9058,7 +9082,7 @@ def get_merchant_thread(merchant_email):
                 id, tracking_id, recipient_email, sender_email, subject,
                 campaign_name, status, sent_at, open_count, last_opened_at,
                 email_type, request_type, sentiment, sentiment_score,
-                cohort_name, test_group
+                cohort_name, test_group, email_body
             FROM email_tracking
             WHERE recipient_email = %s
             ORDER BY sent_at ASC
@@ -9082,7 +9106,8 @@ def get_merchant_thread(merchant_email):
                 'sentiment': row[12],
                 'sentiment_score': float(row[13]) if row[13] else None,
                 'cohort_name': row[14],
-                'test_group': row[15]
+                'test_group': row[15],
+                'email_body': row[16]
             })
 
         conn.close()
