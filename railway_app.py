@@ -3758,6 +3758,152 @@ def analytics_dashboard():
         .refresh-btn:hover {
             background: var(--primary-dark);
         }
+
+        /* Side Panel */
+        .side-panel {
+            position: fixed;
+            top: 0;
+            right: -600px;
+            width: 600px;
+            height: 100vh;
+            background: white;
+            box-shadow: -2px 0 8px rgba(0,0,0,0.15);
+            transition: right 0.3s ease-in-out;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .side-panel.open {
+            right: 0;
+        }
+
+        .side-panel-header {
+            padding: 24px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f9fafb;
+        }
+
+        .side-panel-header h2 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1f2937;
+            margin: 0;
+        }
+
+        .side-panel-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #6b7280;
+            padding: 4px 8px;
+            line-height: 1;
+        }
+
+        .side-panel-close:hover {
+            color: #1f2937;
+        }
+
+        .side-panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+
+        .email-thread-item {
+            margin-bottom: 24px;
+            padding: 16px;
+            background: #f9fafb;
+            border-radius: 8px;
+            border-left: 4px solid #e5e7eb;
+        }
+
+        .email-thread-item.outreach {
+            border-left-color: #6366f1;
+        }
+
+        .email-thread-item.reply {
+            border-left-color: #10b981;
+        }
+
+        .email-thread-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .email-thread-type {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #6b7280;
+            letter-spacing: 0.5px;
+        }
+
+        .email-thread-date {
+            font-size: 12px;
+            color: #6b7280;
+        }
+
+        .email-thread-subject {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1f2937;
+            margin-bottom: 8px;
+        }
+
+        .email-thread-meta {
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 8px;
+        }
+
+        .email-thread-stats {
+            display: flex;
+            gap: 16px;
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 8px;
+        }
+
+        .view-thread-btn {
+            background: #6366f1;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .view-thread-btn:hover {
+            background: #4f46e5;
+        }
+
+        .panel-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.3);
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s, visibility 0.3s;
+            z-index: 999;
+        }
+
+        .panel-overlay.open {
+            opacity: 1;
+            visibility: visible;
+        }
     </style>
 </head>
 <body>
@@ -3934,12 +4080,27 @@ def analytics_dashboard():
                             <th>Last Sentiment</th>
                             <th>Request Type</th>
                             <th>Last Email</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="merchant-table-body">
                     </tbody>
                 </table>
             </div>
+        </div>
+    </div>
+
+    <!-- Side Panel Overlay -->
+    <div class="panel-overlay" id="panelOverlay" onclick="closeSidePanel()"></div>
+
+    <!-- Side Panel -->
+    <div class="side-panel" id="sidePanel">
+        <div class="side-panel-header">
+            <h2 id="sidePanelTitle">Email Thread</h2>
+            <button class="side-panel-close" onclick="closeSidePanel()">×</button>
+        </div>
+        <div class="side-panel-content" id="sidePanelContent">
+            <p style="color: #6b7280;">Loading...</p>
         </div>
     </div>
 
@@ -4376,7 +4537,7 @@ def analytics_dashboard():
                     const respondedCount = cohortMerchants.filter(m => m.has_responded === 'Yes').length;
 
                     headerRow.innerHTML = `
-                        <td colspan="13">
+                        <td colspan="14">
                             📊 ${currentCohort || 'Unknown Cohort'}
                             <span style="opacity: 0.9; font-weight: 500; margin-left: 16px;">
                                 (${cohortMerchants.length} merchants, ${respondedCount} responded)
@@ -4418,9 +4579,110 @@ def analytics_dashboard():
                     <td>${sentimentDisplay}</td>
                     <td>${merchant.last_request_type || '-'}</td>
                     <td>${merchant.last_email_sent ? new Date(merchant.last_email_sent).toLocaleDateString() : '-'}</td>
+                    <td><button class="view-thread-btn" onclick="openMerchantThread('${merchant.merchant_email}', '${merchant.merchant_name}')">View Thread</button></td>
                 `;
                 merchantTableBody.appendChild(row);
             });
+        }
+
+        // Side Panel Functions
+        function openSidePanel() {
+            document.getElementById('sidePanel').classList.add('open');
+            document.getElementById('panelOverlay').classList.add('open');
+        }
+
+        function closeSidePanel() {
+            document.getElementById('sidePanel').classList.remove('open');
+            document.getElementById('panelOverlay').classList.remove('open');
+        }
+
+        async function openMerchantThread(merchantEmail, merchantName) {
+            openSidePanel();
+            document.getElementById('sidePanelTitle').textContent = `Email Thread - ${merchantName}`;
+            document.getElementById('sidePanelContent').innerHTML = '<p style="color: #6b7280;">Loading email thread...</p>';
+
+            try {
+                const response = await fetch(`/api/merchant-thread/${encodeURIComponent(merchantEmail)}`);
+                const data = await response.json();
+
+                if (data.status === 'success' && data.emails) {
+                    displayEmailThread(data.emails, merchantEmail);
+                } else {
+                    document.getElementById('sidePanelContent').innerHTML =
+                        '<p style="color: #ef4444;">Error loading email thread</p>';
+                }
+            } catch (error) {
+                console.error('Error fetching merchant thread:', error);
+                document.getElementById('sidePanelContent').innerHTML =
+                    '<p style="color: #ef4444;">Error loading email thread: ' + error.message + '</p>';
+            }
+        }
+
+        function displayEmailThread(emails, merchantEmail) {
+            const content = document.getElementById('sidePanelContent');
+
+            if (emails.length === 0) {
+                content.innerHTML = '<p style="color: #6b7280;">No emails found for this merchant.</p>';
+                return;
+            }
+
+            let html = `<div style="margin-bottom: 16px; color: #6b7280; font-size: 13px;">
+                ${emails.length} email${emails.length !== 1 ? 's' : ''} in thread
+            </div>`;
+
+            emails.forEach(email => {
+                const emailType = email.email_type || 'outreach';
+                const typeLabel = emailType === 'reply' ? '📥 AI Reply' : '📤 Outreach';
+                const sentDate = new Date(email.sent_at);
+                const formattedDate = sentDate.toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit'
+                });
+
+                let sentimentBadge = '';
+                if (email.sentiment) {
+                    const sentimentEmoji = {
+                        'positive': '😊',
+                        'neutral': '😐',
+                        'negative': '😞',
+                        'frustrated': '😤',
+                        'urgent': '⚠️'
+                    };
+                    sentimentBadge = `<div style="display: inline-block; padding: 4px 8px; background: #f3f4f6; border-radius: 4px; font-size: 11px; margin-top: 8px;">
+                        ${sentimentEmoji[email.sentiment.toLowerCase()] || ''} ${email.sentiment}
+                    </div>`;
+                }
+
+                let requestTypeBadge = '';
+                if (email.request_type) {
+                    requestTypeBadge = `<div style="display: inline-block; padding: 4px 8px; background: #eff6ff; color: #1e40af; border-radius: 4px; font-size: 11px; margin-top: 8px; margin-left: 8px;">
+                        ${email.request_type}
+                    </div>`;
+                }
+
+                html += `
+                    <div class="email-thread-item ${emailType}">
+                        <div class="email-thread-header">
+                            <span class="email-thread-type">${typeLabel}</span>
+                            <span class="email-thread-date">${formattedDate}</span>
+                        </div>
+                        <div class="email-thread-subject">${email.subject || 'No subject'}</div>
+                        <div class="email-thread-meta">
+                            ${emailType === 'reply' ? 'To' : 'From'}: ${email.sender_email || merchantEmail}
+                        </div>
+                        <div class="email-thread-stats">
+                            <span>📊 Opens: ${email.open_count || 0}</span>
+                            <span>📅 Campaign: ${email.campaign_name || '-'}</span>
+                        </div>
+                        ${sentimentBadge}${requestTypeBadge}
+                    </div>
+                `;
+            });
+
+            content.innerHTML = html;
         }
 
         // Load dashboard on page load
@@ -8775,6 +9037,67 @@ def get_email_details(record_id):
 
     except Exception as e:
         logger.error(f"Error getting email details: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/merchant-thread/<merchant_email>', methods=['GET'])
+def get_merchant_thread(merchant_email):
+    """Get email thread for a specific merchant."""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 503
+
+        cursor = conn.cursor()
+
+        # Get all emails (outreach and replies) for this merchant
+        cursor.execute('''
+            SELECT
+                id, tracking_id, recipient_email, sender_email, subject,
+                campaign_name, status, sent_at, open_count, last_opened_at,
+                email_type, request_type, sentiment, sentiment_score,
+                cohort_name, test_group
+            FROM email_tracking
+            WHERE recipient_email = %s
+            ORDER BY sent_at ASC
+        ''', (merchant_email,))
+
+        emails = []
+        for row in cursor.fetchall():
+            emails.append({
+                'id': row[0],
+                'tracking_id': row[1],
+                'recipient_email': row[2],
+                'sender_email': row[3],
+                'subject': row[4],
+                'campaign_name': row[5],
+                'status': row[6],
+                'sent_at': row[7].isoformat() if row[7] else None,
+                'open_count': row[8],
+                'last_opened_at': row[9].isoformat() if row[9] else None,
+                'email_type': row[10],
+                'request_type': row[11],
+                'sentiment': row[12],
+                'sentiment_score': float(row[13]) if row[13] else None,
+                'cohort_name': row[14],
+                'test_group': row[15]
+            })
+
+        conn.close()
+
+        return jsonify({
+            'status': 'success',
+            'merchant_email': merchant_email,
+            'emails': emails,
+            'total_emails': len(emails)
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting merchant thread: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/check-responses', methods=['GET', 'POST'])
