@@ -4630,6 +4630,9 @@ def analytics_dashboard():
         function displayEmailThread(emails, merchantEmail) {
             const content = document.getElementById('sidePanelContent');
 
+            console.log('📧 EMAIL BODY DEBUG - STEP 5: displayEmailThread called');
+            console.log('   Total emails:', emails.length);
+
             if (emails.length === 0) {
                 content.innerHTML = '<p style="color: #6b7280;">No emails found for this merchant.</p>';
                 return;
@@ -4639,7 +4642,13 @@ def analytics_dashboard():
                 ${emails.length} email${emails.length !== 1 ? 's' : ''} in thread
             </div>`;
 
-            emails.forEach(email => {
+            emails.forEach((email, index) => {
+                console.log(`📧 EMAIL BODY DEBUG - Email ${index + 1}:`, {
+                    id: email.id,
+                    type: email.email_type,
+                    hasBody: !!email.email_body,
+                    bodyLength: email.email_body ? email.email_body.length : 0
+                });
                 const emailType = email.email_type || 'outreach';
                 const typeLabel = emailType === 'reply' ? '📥 AI Reply' : '📤 Outreach';
                 const sentDate = new Date(email.sent_at);
@@ -7757,6 +7766,13 @@ def track_email_send():
         # Extract email body/content
         email_body = data.get('email_body', '')
 
+        logger.info(f"📧 EMAIL BODY DEBUG - STEP 1: Received email_body")
+        logger.info(f"   Length: {len(email_body) if email_body else 0} characters")
+        if email_body:
+            logger.info(f"   First 150 chars: {email_body[:150]}")
+        else:
+            logger.warning(f"   ⚠️ email_body is empty or None!")
+
         logger.info(f"🔍 TRACKING STEP 7: /api/track-send received classification data:")
         logger.info(f"   email_type: {email_type}")
         logger.info(f"   request_type: {request_type}")
@@ -7801,6 +7817,8 @@ def track_email_send():
 
         logger.info(f"✅ TRACKING STEP 8: Database INSERT completed for tracking_id: {tracking_id}")
         logger.info(f"   Stored classification: request_type={request_type}, sentiment={sentiment}, sentiment_score={sentiment_score}")
+        logger.info(f"📧 EMAIL BODY DEBUG - STEP 2: Stored email_body in database")
+        logger.info(f"   Email body length stored: {len(email_body) if email_body else 0} characters")
 
         # Also insert/update merchant_cohorts table if cohort info is provided
         if merchant_id and cohort_name:
@@ -9090,6 +9108,15 @@ def get_merchant_thread(merchant_email):
 
         emails = []
         for row in cursor.fetchall():
+            email_body = row[16]
+            logger.info(f"📧 EMAIL BODY DEBUG - STEP 3: Retrieved email from DB")
+            logger.info(f"   Email ID: {row[0]}, Type: {row[10]}")
+            logger.info(f"   Email body length: {len(email_body) if email_body else 0} characters")
+            if email_body:
+                logger.info(f"   First 100 chars: {email_body[:100]}")
+            else:
+                logger.warning(f"   ⚠️ Email body is NULL or empty in database!")
+
             emails.append({
                 'id': row[0],
                 'tracking_id': row[1],
@@ -9107,10 +9134,12 @@ def get_merchant_thread(merchant_email):
                 'sentiment_score': float(row[13]) if row[13] else None,
                 'cohort_name': row[14],
                 'test_group': row[15],
-                'email_body': row[16]
+                'email_body': email_body
             })
 
         conn.close()
+
+        logger.info(f"📧 EMAIL BODY DEBUG - STEP 4: Returning {len(emails)} emails for {merchant_email}")
 
         return jsonify({
             'status': 'success',
