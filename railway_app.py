@@ -3423,107 +3423,97 @@ def analytics_dashboard():
 
         .app-container {
             display: flex;
-            flex-direction: column;
             height: 100vh;
             overflow: hidden;
         }
 
-        .header-bar {
-            background: white;
-            border-bottom: 1px solid #e5e7eb;
-            padding: 16px 24px;
+        /* Left Sidebar */
+        .sidebar {
+            width: 72px;
+            background: #2c3e50;
             display: flex;
+            flex-direction: column;
             align-items: center;
-            justify-content: space-between;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 20px 0;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.1);
         }
 
-        .header-left {
+        .sidebar-brand {
+            font-size: 24px;
+            margin-bottom: 40px;
+            color: white;
+        }
+
+        .sidebar-nav {
             display: flex;
+            flex-direction: column;
+            gap: 24px;
+            width: 100%;
             align-items: center;
-            gap: 16px;
         }
 
-        .header-title {
-            font-size: 20px;
-            font-weight: 600;
-            color: #111827;
-        }
-
-        .main-layout {
+        .nav-item {
             display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            padding: 12px;
+            color: #95a5a6;
+            text-decoration: none;
+            font-size: 11px;
+            font-weight: 500;
+            transition: all 0.2s;
+            cursor: pointer;
+            border-radius: 8px;
+        }
+
+        .nav-item:hover {
+            color: white;
+            background: rgba(255,255,255,0.1);
+        }
+
+        .nav-item.active {
+            color: white;
+            background: rgba(255,255,255,0.15);
+        }
+
+        .nav-item-icon {
+            font-size: 24px;
+        }
+
+        /* Main Content */
+        .main-content {
             flex: 1;
+            display: flex;
+            flex-direction: column;
             overflow: hidden;
         }
 
-        .sidebar {
-            width: 250px;
+        .content-header {
             background: white;
-            border-right: 1px solid #e5e7eb;
-            overflow-y: auto;
-            padding: 24px 0;
+            padding: 24px 40px;
+            border-bottom: 1px solid #e5e7eb;
         }
 
-        .header-nav {
-            display: flex;
-            gap: 4px;
-            margin-left: 24px;
-        }
-
-        .nav-tab {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 16px;
-            color: #6b7280;
-            text-decoration: none;
-            font-size: 14px;
-            font-weight: 500;
-            border-radius: 8px;
-            transition: all 0.2s;
-        }
-
-        .nav-tab:hover {
-            background: #f3f4f6;
-            color: #374151;
-        }
-
-        .nav-tab.active {
-            background: #eff6ff;
-            color: #2563eb;
-        }
-
-        .nav-tab-icon {
-            font-size: 16px;
+        .content-header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin: 0;
         }
 
         .content-area {
             flex: 1;
             overflow-y: auto;
-            background: #f9fafb;
-            padding: 24px;
+            background: #f5f5f5;
+            padding: 32px 40px;
         }
 
-        .header {
-            background: white;
-            padding: 24px;
-            border-radius: 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        .page-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2c3e50;
             margin-bottom: 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .header h1 {
-            font-size: 28px;
-            font-weight: 700;
-            color: var(--gray-900);
-        }
-
-        .header p {
-            color: var(--gray-600);
-            margin-top: 4px;
         }
 
         .refresh-btn {
@@ -3535,38 +3525,47 @@ def analytics_dashboard():
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s;
+            font-size: 14px;
+            margin-bottom: 24px;
         }
 
         .refresh-btn:hover {
             background: #4f46e5;
-            transform: translateY(-1px);
         }
 
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
             margin-bottom: 24px;
         }
 
         .stat-card {
             background: white;
             padding: 24px;
-            border-radius: 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border-radius: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+            border: 1px solid #e5e7eb;
+            transition: box-shadow 0.2s;
+        }
+
+        .stat-card:hover {
+            box-shadow: 0 4px 6px rgba(0,0,0,0.08);
         }
 
         .stat-card .label {
-            color: var(--gray-600);
-            font-size: 14px;
+            color: #6b7280;
+            font-size: 13px;
             font-weight: 500;
             margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .stat-card .value {
-            font-size: 32px;
+            font-size: 28px;
             font-weight: 700;
-            color: var(--gray-900);
+            color: #1f2937;
         }
 
         .stat-card .change {
@@ -3585,36 +3584,49 @@ def analytics_dashboard():
         .charts-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
-            gap: 20px;
+            gap: 24px;
             margin-bottom: 24px;
         }
 
         .chart-card {
             background: white;
-            padding: 24px;
-            border-radius: 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 28px;
+            border-radius: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+            border: 1px solid #e5e7eb;
+            transition: box-shadow 0.2s;
+        }
+
+        .chart-card:hover {
+            box-shadow: 0 4px 6px rgba(0,0,0,0.08);
         }
 
         .chart-card h3 {
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 600;
-            margin-bottom: 16px;
-            color: var(--gray-900);
+            margin-bottom: 20px;
+            color: #1f2937;
         }
 
         .table-card {
             background: white;
-            padding: 24px;
-            border-radius: 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 28px;
+            border-radius: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+            border: 1px solid #e5e7eb;
             margin-bottom: 24px;
+            transition: box-shadow 0.2s;
+        }
+
+        .table-card:hover {
+            box-shadow: 0 4px 6px rgba(0,0,0,0.08);
         }
 
         .table-card h3 {
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 600;
-            margin-bottom: 16px;
+            margin-bottom: 20px;
+            color: #1f2937;
         }
 
         table {
@@ -3749,31 +3761,28 @@ def analytics_dashboard():
 </head>
 <body>
     <div class="app-container">
-        <!-- Header Bar -->
-        <div class="header-bar">
-            <div class="header-left">
-                <div class="header-title" style="font-weight: 700; font-size: 18px; color: #111827;">Mail Maestro</div>
-                <!-- Navigation Tabs -->
-                <div class="header-nav">
-                    <a href="/prompts" class="nav-tab">
-                        <span class="nav-tab-icon">📝</span>
-                        Prompts
-                    </a>
-                    <a href="/analytics" class="nav-tab active">
-                        <span class="nav-tab-icon">📊</span>
-                        Analytics
-                    </a>
-                </div>
-            </div>
-            <div class="header-actions">
-                <button class="refresh-btn" onclick="loadDashboard()">🔄 Refresh Data</button>
+        <!-- Left Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-brand">✉️</div>
+            <div class="sidebar-nav">
+                <a href="/prompts" class="nav-item">
+                    <span class="nav-item-icon">📝</span>
+                    <span>Prompts</span>
+                </a>
+                <a href="/analytics" class="nav-item active">
+                    <span class="nav-item-icon">📊</span>
+                    <span>Analytics</span>
+                </a>
             </div>
         </div>
 
-        <!-- Main Layout -->
-        <div class="main-layout">
-            <!-- Content Area (no sidebar for analytics) -->
-            <div class="content-area" style="padding: 24px; max-width: 1600px; margin: 0 auto;">
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="content-header">
+                <h1>Analytics Dashboard</h1>
+            </div>
+            <div class="content-area">
+                <button class="refresh-btn" onclick="loadDashboard()">🔄 Refresh Data</button>
                 <div id="error-message"></div>
                 <div id="loading" class="loading">
                     <div class="spinner"></div>
@@ -4420,7 +4429,7 @@ def analytics_dashboard():
         // setInterval(loadDashboard, 30000);
     </script>
             </div><!-- /content-area -->
-        </div><!-- /main-layout -->
+        </div><!-- /main-content -->
     </div><!-- /app-container -->
 </body>
 </html>
