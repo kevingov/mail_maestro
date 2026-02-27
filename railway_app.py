@@ -3536,15 +3536,15 @@ def analytics_dashboard():
 
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 24px;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 16px;
             margin-bottom: 24px;
         }
 
         .stat-card {
             background: white;
-            padding: 24px;
-            border-radius: 16px;
+            padding: 16px;
+            border-radius: 12px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.06);
             border: 1px solid #e5e7eb;
             transition: box-shadow 0.2s;
@@ -3556,15 +3556,15 @@ def analytics_dashboard():
 
         .stat-card .label {
             color: #6b7280;
-            font-size: 13px;
+            font-size: 11px;
             font-weight: 500;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
 
         .stat-card .value {
-            font-size: 28px;
+            font-size: 22px;
             font-weight: 700;
             color: #1f2937;
         }
@@ -3584,15 +3584,15 @@ def analytics_dashboard():
 
         .charts-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
-            gap: 24px;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
             margin-bottom: 24px;
         }
 
         .chart-card {
             background: white;
-            padding: 28px;
-            border-radius: 16px;
+            padding: 20px;
+            border-radius: 12px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.06);
             border: 1px solid #e5e7eb;
             transition: box-shadow 0.2s;
@@ -3603,16 +3603,16 @@ def analytics_dashboard():
         }
 
         .chart-card h3 {
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 600;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
             color: #1f2937;
         }
 
         .table-card {
             background: white;
-            padding: 28px;
-            border-radius: 16px;
+            padding: 20px;
+            border-radius: 12px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.06);
             border: 1px solid #e5e7eb;
             margin-bottom: 24px;
@@ -3624,9 +3624,9 @@ def analytics_dashboard():
         }
 
         .table-card h3 {
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 600;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
             color: #1f2937;
         }
 
@@ -3641,17 +3641,17 @@ def analytics_dashboard():
 
         th {
             text-align: left;
-            padding: 12px;
+            padding: 10px 12px;
             font-weight: 600;
             color: var(--gray-700);
-            font-size: 14px;
+            font-size: 12px;
             border-bottom: 2px solid var(--gray-200);
         }
 
         td {
-            padding: 12px;
+            padding: 10px 12px;
             border-bottom: 1px solid var(--gray-200);
-            font-size: 14px;
+            font-size: 13px;
         }
 
         tbody tr:not(.cohort-group-header):hover {
