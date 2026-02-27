@@ -3996,23 +3996,8 @@ def analytics_dashboard():
                     <canvas id="sentimentChart"></canvas>
                 </div>
                 <div class="chart-card">
-                    <h3>Open Rate by Cohort</h3>
-                    <canvas id="cohortOpenRateChart"></canvas>
-                </div>
-            </div>
-
-            <div class="charts-grid">
-                <div class="chart-card">
-                    <h3>Emails Sent by Phase</h3>
-                    <canvas id="phaseDistributionChart"></canvas>
-                </div>
-                <div class="chart-card">
-                    <h3>Merchant Count by Cohort</h3>
-                    <canvas id="merchantCountChart"></canvas>
-                </div>
-                <div class="chart-card">
-                    <h3>Response Rate by Cohort</h3>
-                    <canvas id="responseRateChart"></canvas>
+                    <h3>📊 Open & Response Rate by Cohort</h3>
+                    <canvas id="cohortPerformanceChart"></canvas>
                 </div>
             </div>
 
@@ -4186,107 +4171,10 @@ def analytics_dashboard():
             }
             charts = {};
 
-            // Chart 1: Open Rate by Cohort
+            // Chart 1: Combined Open & Response Rate by Cohort
             const cohorts = cohortData.cohorts || [];
-            charts.cohortOpenRate = new Chart(
-                document.getElementById('cohortOpenRateChart'),
-                {
-                    type: 'bar',
-                    data: {
-                        labels: cohorts.map(c => c.cohort_name),
-                        datasets: [{
-                            label: 'Open Rate (%)',
-                            data: cohorts.map(c => c.open_rate),
-                            backgroundColor: 'rgba(99, 102, 241, 0.8)',
-                            borderColor: 'rgba(99, 102, 241, 1)',
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                max: 100,
-                                ticks: {
-                                    callback: function(value) {
-                                        return value + '%';
-                                    }
-                                }
-                            }
-                        },
-                        plugins: {
-                            legend: {
-                                display: false
-                            }
-                        }
-                    }
-                }
-            );
-
-            // Chart 2: Emails by Phase
-            const phases = rampData.by_phase || [];
-            charts.phaseDistribution = new Chart(
-                document.getElementById('phaseDistributionChart'),
-                {
-                    type: 'doughnut',
-                    data: {
-                        labels: phases.map(p => p.ramp_phase),
-                        datasets: [{
-                            data: phases.map(p => p.emails_sent),
-                            backgroundColor: [
-                                'rgba(59, 130, 246, 0.8)',
-                                'rgba(245, 158, 11, 0.8)',
-                                'rgba(16, 185, 129, 0.8)'
-                            ]
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        plugins: {
-                            legend: {
-                                position: 'bottom'
-                            }
-                        }
-                    }
-                }
-            );
-
-            // Chart 3: Merchant Count by Cohort
-            const cohortSummary = rampData.cohort_summary || [];
-            charts.merchantCount = new Chart(
-                document.getElementById('merchantCountChart'),
-                {
-                    type: 'bar',
-                    data: {
-                        labels: cohortSummary.map(c => c.cohort_name),
-                        datasets: [{
-                            label: 'Merchant Count',
-                            data: cohortSummary.map(c => c.merchant_count),
-                            backgroundColor: 'rgba(16, 185, 129, 0.8)',
-                            borderColor: 'rgba(16, 185, 129, 1)',
-                            borderWidth: 1
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        scales: {
-                            y: {
-                                beginAtZero: true
-                            }
-                        },
-                        plugins: {
-                            legend: {
-                                display: false
-                            }
-                        }
-                    }
-                }
-            );
-
-            // Chart 5: Response Rate by Cohort
-            charts.responseRate = new Chart(
-                document.getElementById('responseRateChart'),
+            charts.cohortPerformance = new Chart(
+                document.getElementById('cohortPerformanceChart'),
                 {
                     type: 'bar',
                     data: {
