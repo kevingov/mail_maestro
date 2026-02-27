@@ -4655,68 +4655,97 @@ def prompts_ui():
             min-height: 100vh;
             line-height: 1.6;
         }
-        
+
         .app-container {
             display: flex;
-            flex-direction: column;
             height: 100vh;
             overflow: hidden;
         }
-        
-        .header-bar {
+
+        /* Left Icon Sidebar */
+        .sidebar {
+            width: 72px;
             background: white;
-            border-bottom: 1px solid #e5e7eb;
-            padding: 16px 24px;
             display: flex;
+            flex-direction: column;
             align-items: center;
-            justify-content: space-between;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 20px 0;
+            box-shadow: 2px 0 4px rgba(0,0,0,0.06);
+            border-right: 1px solid #e5e7eb;
         }
-        
-        .header-left {
+
+        .sidebar-brand {
+            font-size: 24px;
+            margin-bottom: 40px;
+            color: #6366f1;
+        }
+
+        .sidebar-nav {
             display: flex;
+            flex-direction: column;
+            gap: 24px;
+            width: 100%;
             align-items: center;
-            gap: 16px;
         }
-        
-        .header-title {
-            font-size: 20px;
-            font-weight: 600;
-            color: #111827;
-        }
-        
-        .header-actions {
+
+        .nav-item {
             display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: 12px;
-        }
-        
-        .icon-btn {
-            width: 36px;
-            height: 36px;
-            border: none;
-            background: transparent;
-            border-radius: 6px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            gap: 4px;
+            padding: 12px;
             color: #6b7280;
+            text-decoration: none;
+            font-size: 11px;
+            font-weight: 500;
             transition: all 0.2s;
+            cursor: pointer;
+            border-radius: 8px;
         }
-        
-        .icon-btn:hover {
+
+        .nav-item:hover {
+            color: #1f2937;
             background: #f3f4f6;
-            color: #111827;
         }
-        
+
+        .nav-item.active {
+            color: #6366f1;
+            background: #eff6ff;
+        }
+
+        .nav-item-icon {
+            font-size: 24px;
+        }
+
+        /* Main Wrapper */
+        .main-wrapper {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .content-header {
+            background: white;
+            padding: 24px 40px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .content-header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin: 0;
+        }
+
         .main-layout {
             display: flex;
             flex: 1;
             overflow: hidden;
         }
-        
-        .sidebar {
+
+        /* Version Management Sidebar */
+        .version-sidebar {
             width: 280px;
             background: white;
             border-right: 1px solid #e5e7eb;
@@ -4724,7 +4753,7 @@ def prompts_ui():
             padding: 24px;
         }
         
-        .sidebar-search {
+        .version-sidebar-search {
             width: 100%;
             padding: 10px 12px;
             border: 1px solid #e5e7eb;
@@ -5313,30 +5342,30 @@ def prompts_ui():
 </head>
 <body>
     <div class="app-container">
-        <div class="header-bar">
-            <div class="header-left">
-                <div class="header-title" style="font-weight: 700; font-size: 18px; color: #111827;">Mail Maestro</div>
-                <!-- Navigation Tabs -->
-                <div class="header-nav">
-                    <a href="/prompts" class="nav-tab active">
-                        <span class="nav-tab-icon">📝</span>
-                        Prompts
-                    </a>
-                    <a href="/analytics" class="nav-tab">
-                        <span class="nav-tab-icon">📊</span>
-                        Analytics
-                    </a>
-                </div>
-            </div>
-            <div class="header-actions">
-                <button class="icon-btn" title="Download">⬇</button>
-                <button class="icon-btn" title="Settings">⚙</button>
+        <!-- Left Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-brand">✉️</div>
+            <div class="sidebar-nav">
+                <a href="/prompts" class="nav-item active">
+                    <span class="nav-item-icon">📝</span>
+                    <span>Prompts</span>
+                </a>
+                <a href="/analytics" class="nav-item">
+                    <span class="nav-item-icon">📊</span>
+                    <span>Analytics</span>
+                </a>
             </div>
         </div>
 
-        <div class="main-layout">
-            <div class="sidebar">
-                <input type="text" class="sidebar-search" placeholder="Search...">
+        <!-- Main Wrapper -->
+        <div class="main-wrapper">
+            <div class="content-header">
+                <h1>Prompt Management</h1>
+            </div>
+
+            <div class="main-layout">
+            <div class="version-sidebar">
+                <input type="text" class="version-sidebar-search" placeholder="Search...">
 
                 <div class="sidebar-section">
                     <div class="sidebar-section-title">Prompt Types</div>
@@ -5542,9 +5571,10 @@ def prompts_ui():
                     </div>
                 </div>
             </div>
-        </div>
-    </div>
-    
+        </div> <!-- end main-layout -->
+        </div> <!-- end main-wrapper -->
+    </div> <!-- end app-container -->
+
     <!-- Edit Modal -->
     <div class="modal" id="edit-modal">
         <div class="modal-content">
