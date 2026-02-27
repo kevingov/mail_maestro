@@ -3430,18 +3430,19 @@ def analytics_dashboard():
         /* Left Sidebar */
         .sidebar {
             width: 72px;
-            background: #2c3e50;
+            background: white;
             display: flex;
             flex-direction: column;
             align-items: center;
             padding: 20px 0;
-            box-shadow: 2px 0 8px rgba(0,0,0,0.1);
+            box-shadow: 2px 0 4px rgba(0,0,0,0.06);
+            border-right: 1px solid #e5e7eb;
         }
 
         .sidebar-brand {
             font-size: 24px;
             margin-bottom: 40px;
-            color: white;
+            color: #6366f1;
         }
 
         .sidebar-nav {
@@ -3458,7 +3459,7 @@ def analytics_dashboard():
             align-items: center;
             gap: 4px;
             padding: 12px;
-            color: #95a5a6;
+            color: #6b7280;
             text-decoration: none;
             font-size: 11px;
             font-weight: 500;
@@ -3468,13 +3469,13 @@ def analytics_dashboard():
         }
 
         .nav-item:hover {
-            color: white;
-            background: rgba(255,255,255,0.1);
+            color: #1f2937;
+            background: #f3f4f6;
         }
 
         .nav-item.active {
-            color: white;
-            background: rgba(255,255,255,0.15);
+            color: #6366f1;
+            background: #eff6ff;
         }
 
         .nav-item-icon {
