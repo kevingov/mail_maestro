@@ -4294,52 +4294,69 @@ def analytics_dashboard():
                 }
             );
 
-            // Chart 7: Request Types
+            // Chart 7: Request Types by Cohort
             if (requestTypesData && requestTypesData.status === 'success') {
-                const requestTypes = requestTypesData.overall || [];
+                const byCohort = requestTypesData.by_cohort || {};
+                const cohortNames = Object.keys(byCohort);
+
+                // Get all unique request types
+                const allRequestTypes = new Set();
+                cohortNames.forEach(cohort => {
+                    byCohort[cohort].forEach(item => allRequestTypes.add(item.request_type));
+                });
+                const requestTypesList = Array.from(allRequestTypes);
+
+                // Color palette for request types
+                const requestTypeColors = {
+                    'technical_issue': 'rgba(239, 68, 68, 0.8)',
+                    'feature_request': 'rgba(99, 102, 241, 0.8)',
+                    'account_question': 'rgba(251, 191, 36, 0.8)',
+                    'integration_help': 'rgba(16, 185, 129, 0.8)',
+                    'billing_question': 'rgba(168, 85, 247, 0.8)',
+                    'general_inquiry': 'rgba(236, 72, 153, 0.8)',
+                    'feedback': 'rgba(34, 211, 238, 0.8)',
+                    'complaint': 'rgba(249, 115, 22, 0.8)'
+                };
+
+                // Create datasets - one per request type
+                const datasets = requestTypesList.map(requestType => {
+                    return {
+                        label: requestType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                        data: cohortNames.map(cohort => {
+                            const item = byCohort[cohort].find(i => i.request_type === requestType);
+                            return item ? item.count : 0;
+                        }),
+                        backgroundColor: requestTypeColors[requestType] || 'rgba(156, 163, 175, 0.8)'
+                    };
+                });
+
                 charts.requestTypes = new Chart(
                     document.getElementById('requestTypesChart'),
                     {
-                        type: 'doughnut',
+                        type: 'bar',
                         data: {
-                            labels: requestTypes.map(r => r.request_type),
-                            datasets: [{
-                                data: requestTypes.map(r => r.count),
-                                backgroundColor: [
-                                    'rgba(99, 102, 241, 0.8)',
-                                    'rgba(16, 185, 129, 0.8)',
-                                    'rgba(251, 191, 36, 0.8)',
-                                    'rgba(239, 68, 68, 0.8)',
-                                    'rgba(168, 85, 247, 0.8)',
-                                    'rgba(236, 72, 153, 0.8)',
-                                    'rgba(34, 211, 238, 0.8)',
-                                    'rgba(132, 204, 22, 0.8)',
-                                    'rgba(249, 115, 22, 0.8)'
-                                ],
-                                borderWidth: 2,
-                                borderColor: '#fff'
-                            }]
+                            labels: cohortNames,
+                            datasets: datasets
                         },
                         options: {
                             responsive: true,
+                            scales: {
+                                x: {
+                                    stacked: true
+                                },
+                                y: {
+                                    stacked: true,
+                                    beginAtZero: true
+                                }
+                            },
                             plugins: {
                                 legend: {
                                     display: true,
                                     position: 'right'
                                 },
                                 tooltip: {
-                                    callbacks: {
-                                        label: function(context) {
-                                            const label = context.label || '';
-                                            const value = context.parsed || 0;
-                                            const dataset = requestTypes[context.dataIndex];
-                                            const sentiment = dataset.avg_sentiment ? dataset.avg_sentiment.toFixed(2) : '0.00';
-                                            return [
-                                                `${label}: ${value}`,
-                                                `Avg Sentiment: ${sentiment}`
-                                            ];
-                                        }
-                                    }
+                                    mode: 'index',
+                                    intersect: false
                                 }
                             }
                         }
@@ -4347,9 +4364,9 @@ def analytics_dashboard():
                 );
             }
 
-            // Chart 8: Sentiment Analysis
+            // Chart 8: Sentiment Analysis by Cohort
             if (sentimentData && sentimentData.status === 'success') {
-                const sentiments = sentimentData.overall || [];
+                const byCohort = sentimentData.by_cohort || [];
 
                 // Map colors by sentiment name
                 const sentimentColors = {
@@ -4360,40 +4377,49 @@ def analytics_dashboard():
                     'urgent': 'rgba(234, 179, 8, 0.8)'         // Yellow
                 };
 
+                // Get unique cohorts and sentiments
+                const cohortNames = [...new Set(byCohort.map(item => item.cohort_name))];
+                const sentimentTypes = [...new Set(byCohort.map(item => item.sentiment))];
+
+                // Create datasets - one per sentiment type
+                const datasets = sentimentTypes.map(sentiment => {
+                    return {
+                        label: sentiment.charAt(0).toUpperCase() + sentiment.slice(1),
+                        data: cohortNames.map(cohort => {
+                            const items = byCohort.filter(item => item.cohort_name === cohort && item.sentiment === sentiment);
+                            return items.reduce((sum, item) => sum + item.count, 0);
+                        }),
+                        backgroundColor: sentimentColors[sentiment.toLowerCase()] || 'rgba(156, 163, 175, 0.8)'
+                    };
+                });
+
                 charts.sentiment = new Chart(
                     document.getElementById('sentimentChart'),
                     {
-                        type: 'pie',
+                        type: 'bar',
                         data: {
-                            labels: sentiments.map(s => s.sentiment.charAt(0).toUpperCase() + s.sentiment.slice(1)),
-                            datasets: [{
-                                data: sentiments.map(s => s.count),
-                                backgroundColor: sentiments.map(s => sentimentColors[s.sentiment.toLowerCase()] || 'rgba(156, 163, 175, 0.8)'),
-                                borderWidth: 2,
-                                borderColor: '#fff'
-                            }]
+                            labels: cohortNames,
+                            datasets: datasets
                         },
                         options: {
                             responsive: true,
+                            scales: {
+                                x: {
+                                    stacked: true
+                                },
+                                y: {
+                                    stacked: true,
+                                    beginAtZero: true
+                                }
+                            },
                             plugins: {
                                 legend: {
                                     display: true,
                                     position: 'right'
                                 },
                                 tooltip: {
-                                    callbacks: {
-                                        label: function(context) {
-                                            const label = context.label || '';
-                                            const value = context.parsed || 0;
-                                            const dataset = sentiments[context.dataIndex];
-                                            const percentage = dataset.percentage || 0;
-                                            const avgScore = dataset.avg_score ? dataset.avg_score.toFixed(2) : '0.00';
-                                            return [
-                                                `${label}: ${value} (${percentage}%)`,
-                                                `Avg Score: ${avgScore}`
-                                            ];
-                                        }
-                                    }
+                                    mode: 'index',
+                                    intersect: false
                                 }
                             }
                         }
