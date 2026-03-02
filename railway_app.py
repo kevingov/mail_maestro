@@ -8931,11 +8931,38 @@ def get_merchant_performance():
         cursor = conn.cursor()
 
         # Get merchant-level metrics
+        # Identify merchant email: for outreach/reply it's recipient_email, for inbound it's sender_email
         cursor.execute('''
-            WITH merchant_outreach AS (
+            WITH merchant_emails AS (
                 SELECT
-                    COALESCE(merchant_id, recipient_email) as merchant_key,
-                    recipient_email,
+                    CASE
+                        WHEN email_type IN ('outreach', 'reply') THEN recipient_email
+                        WHEN email_type = 'inbound' THEN sender_email
+                        ELSE recipient_email
+                    END as merchant_email,
+                    COALESCE(merchant_id,
+                        CASE
+                            WHEN email_type IN ('outreach', 'reply') THEN recipient_email
+                            WHEN email_type = 'inbound' THEN sender_email
+                            ELSE recipient_email
+                        END) as merchant_key,
+                    subject,
+                    cohort_name,
+                    cohort_batch,
+                    test_group,
+                    ramp_phase,
+                    email_type,
+                    open_count,
+                    sent_at,
+                    sentiment,
+                    request_type
+                FROM email_tracking
+                WHERE cohort_name IS NOT NULL
+            ),
+            merchant_stats AS (
+                SELECT
+                    merchant_key,
+                    merchant_email,
                     MAX(subject) as merchant_name,
                     cohort_name,
                     cohort_batch,
@@ -8947,15 +8974,15 @@ def get_merchant_performance():
                     MAX(sent_at) FILTER (WHERE email_type = 'outreach') as last_outreach_sent,
                     COUNT(*) FILTER (WHERE email_type = 'reply') as replies_sent,
                     COUNT(*) FILTER (WHERE email_type = 'reply' AND open_count > 0) as replies_opened,
-                    MAX(sentiment) FILTER (WHERE email_type = 'reply') as last_sentiment,
-                    MAX(request_type) FILTER (WHERE email_type = 'reply') as last_request_type
-                FROM email_tracking
-                WHERE cohort_name IS NOT NULL
-                GROUP BY merchant_key, recipient_email, cohort_name, cohort_batch, test_group, ramp_phase
+                    COUNT(*) FILTER (WHERE email_type = 'inbound') as inbound_received,
+                    MAX(sentiment) FILTER (WHERE email_type = 'inbound') as last_sentiment,
+                    MAX(request_type) FILTER (WHERE email_type = 'inbound') as last_request_type
+                FROM merchant_emails
+                GROUP BY merchant_key, merchant_email, cohort_name, cohort_batch, test_group, ramp_phase
             )
             SELECT
                 merchant_key,
-                recipient_email,
+                merchant_email,
                 merchant_name,
                 cohort_name,
                 cohort_batch,
@@ -8970,11 +8997,11 @@ def get_merchant_performance():
                 END as open_rate,
                 replies_sent,
                 replies_opened,
-                CASE WHEN replies_sent > 0 THEN 'Yes' ELSE 'No' END as has_responded,
+                CASE WHEN inbound_received > 0 THEN 'Yes' ELSE 'No' END as has_responded,
                 last_outreach_sent,
                 last_sentiment,
                 last_request_type
-            FROM merchant_outreach
+            FROM merchant_stats
             ORDER BY cohort_name, cohort_batch, test_group, last_outreach_sent DESC
         ''')
 
