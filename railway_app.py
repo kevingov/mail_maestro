@@ -1470,6 +1470,34 @@ def send_email(to_email, merchant_name, subject_line, email_content, campaign_na
             'error': str(e)
         }
 
+def strip_html_tags(html_content):
+    """
+    Strip HTML tags and return plain text content.
+    """
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html_content, 'html.parser')
+        # Get text and clean up whitespace
+        text = soup.get_text(separator=' ', strip=True)
+        # Replace multiple spaces with single space
+        import re
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
+    except ImportError:
+        # Fallback if BeautifulSoup not available - use regex
+        import re
+        # Remove HTML tags
+        text = re.sub(r'<[^>]+>', ' ', html_content)
+        # Decode HTML entities
+        text = text.replace('&nbsp;', ' ')
+        text = text.replace('&amp;', '&')
+        text = text.replace('&lt;', '<')
+        text = text.replace('&gt;', '>')
+        text = text.replace('&quot;', '"')
+        # Clean up whitespace
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
+
 def send_threaded_email_reply(to_email, subject, reply_content, original_message_id, sender_name, cc_recipients=None, merchant_id=None, cohort_name=None, cohort_batch=None, test_group=None, ramp_phase=None, campaign_name=None, request_type=None, sentiment=None, sentiment_score=None):
     """
     Send a threaded email reply that maintains the conversation thread.
@@ -1512,6 +1540,10 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
         logger.info(f"   sentiment: {sentiment}")
         logger.info(f"   sentiment_score: {sentiment_score}")
 
+        # Strip HTML tags from reply content for clean text storage
+        plain_text_body = strip_html_tags(reply_content)
+        logger.info(f"📝 Stripped HTML from reply body: {len(reply_content)} chars (HTML) -> {len(plain_text_body)} chars (plain text)")
+
         try:
             import requests
             response = requests.post(
@@ -1532,7 +1564,7 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
                     'request_type': request_type,
                     'sentiment': sentiment,
                     'sentiment_score': sentiment_score,
-                    'email_body': reply_content
+                    'email_body': plain_text_body
                 },
                 timeout=10
             )
