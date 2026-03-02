@@ -4275,6 +4275,16 @@ def analytics_dashboard():
             // Chart 8: Sentiment Analysis
             if (sentimentData && sentimentData.status === 'success') {
                 const sentiments = sentimentData.overall || [];
+
+                // Map colors by sentiment name
+                const sentimentColors = {
+                    'positive': 'rgba(16, 185, 129, 0.8)',    // Green
+                    'negative': 'rgba(239, 68, 68, 0.8)',      // Red
+                    'neutral': 'rgba(234, 179, 8, 0.8)',       // Yellow
+                    'frustrated': 'rgba(249, 115, 22, 0.8)',   // Orange
+                    'urgent': 'rgba(234, 179, 8, 0.8)'         // Yellow
+                };
+
                 charts.sentiment = new Chart(
                     document.getElementById('sentimentChart'),
                     {
@@ -4283,11 +4293,7 @@ def analytics_dashboard():
                             labels: sentiments.map(s => s.sentiment.charAt(0).toUpperCase() + s.sentiment.slice(1)),
                             datasets: [{
                                 data: sentiments.map(s => s.count),
-                                backgroundColor: [
-                                    'rgba(16, 185, 129, 0.8)',   // Positive - green
-                                    'rgba(99, 102, 241, 0.8)',   // Neutral - blue
-                                    'rgba(239, 68, 68, 0.8)'     // Negative - red
-                                ],
+                                backgroundColor: sentiments.map(s => sentimentColors[s.sentiment.toLowerCase()] || 'rgba(156, 163, 175, 0.8)'),
                                 borderWidth: 2,
                                 borderColor: '#fff'
                             }]
