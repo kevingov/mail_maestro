@@ -9012,6 +9012,7 @@ def get_merchant_thread(merchant_email):
         cursor = conn.cursor()
 
         # Get all emails (outreach and replies) for this merchant
+        # Check both recipient_email and sender_email (case-insensitive) to catch all related emails
         cursor.execute('''
             SELECT
                 id, tracking_id, recipient_email, sender_email, subject,
@@ -9019,9 +9020,10 @@ def get_merchant_thread(merchant_email):
                 email_type, request_type, sentiment, sentiment_score,
                 cohort_name, test_group, email_body
             FROM email_tracking
-            WHERE recipient_email = %s
-            ORDER BY sent_at ASC
-        ''', (merchant_email,))
+            WHERE LOWER(recipient_email) = LOWER(%s)
+               OR LOWER(sender_email) = LOWER(%s)
+            ORDER BY sent_at DESC
+        ''', (merchant_email, merchant_email))
 
         emails = []
         for row in cursor.fetchall():
