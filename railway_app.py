@@ -2764,6 +2764,44 @@ def reply_to_emails_with_accounts(accounts, cohort_override=None):
                     campaign_name = f"{cohort_name_val}_{test_group_val}_reply" if test_group_val else f"{cohort_name_val}_reply"
                     logger.info(f"📝 Auto-generated campaign name: {campaign_name}")
 
+            # Track the merchant's inbound email (the message we're replying to)
+            logger.info(f"📥 Tracking merchant's inbound email from {contact_email}")
+            try:
+                import requests
+                inbound_tracking_id = str(uuid.uuid4())
+
+                # Extract plain text from merchant's email (strip any HTML)
+                merchant_email_plain = strip_html_tags(email_body) if email_body else email_body
+
+                inbound_response = requests.post(
+                    "https://web-production-6dfbd.up.railway.app/api/track-send",
+                    json={
+                        'tracking_id': inbound_tracking_id,
+                        'recipient_email': os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com'),  # Jake receives it
+                        'sender_email': contact_email,  # Merchant sends it
+                        'subject': email_subject,
+                        'campaign_name': campaign_name or "Merchant Inbound",
+                        'version_endpoint': 'inbound',
+                        'merchant_id': cohort_info.get('merchant_id') if cohort_info else None,
+                        'cohort_name': cohort_info.get('cohort_name') if cohort_info else None,
+                        'cohort_batch': cohort_info.get('cohort_batch') if cohort_info else None,
+                        'test_group': cohort_info.get('test_group') if cohort_info else None,
+                        'ramp_phase': cohort_info.get('ramp_phase') if cohort_info else None,
+                        'email_type': 'inbound',  # New email type for merchant responses
+                        'request_type': request_type,
+                        'sentiment': sentiment,
+                        'sentiment_score': sentiment_score,
+                        'email_body': merchant_email_plain
+                    },
+                    timeout=10
+                )
+                if inbound_response.status_code == 200:
+                    logger.info(f"✅ Merchant inbound email tracked: {inbound_tracking_id}")
+                else:
+                    logger.error(f"❌ Failed to track inbound email: {inbound_response.status_code}")
+            except Exception as track_error:
+                logger.error(f"❌ Could not track merchant inbound email: {track_error}")
+
             logger.info(f"📧 Sending reply email to {contact_email} for thread {thread_id}")
             email_result = send_threaded_email_reply(
                 to_email=contact_email,
@@ -3871,6 +3909,11 @@ def analytics_dashboard():
             border-left-color: #10b981;
         }
 
+        .email-thread-item.inbound {
+            border-left-color: #f59e0b;
+            background: #fffbeb;
+        }
+
         .email-thread-header {
             display: flex;
             justify-content: space-between;
@@ -4525,7 +4568,9 @@ def analytics_dashboard():
                     bodyLength: email.email_body ? email.email_body.length : 0
                 });
                 const emailType = email.email_type || 'outreach';
-                const typeLabel = emailType === 'reply' ? '📥 AI Reply' : '📤 Outreach';
+                const typeLabel = emailType === 'inbound' ? '📨 Merchant Response' :
+                                  emailType === 'reply' ? '📥 AI Reply' :
+                                  '📤 Outreach';
                 const sentDate = new Date(email.sent_at);
                 const formattedDate = sentDate.toLocaleString('en-US', {
                     month: 'short',
