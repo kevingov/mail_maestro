@@ -4521,12 +4521,24 @@ def analytics_dashboard():
                 // Email body display
                 let emailBodyDisplay = '';
                 if (email.email_body) {
-                    // Remove HTML tags for display, or show as HTML
-                    const bodyText = email.email_body.substring(0, 500); // Limit length
-                    const showMore = email.email_body.length > 500 ? '...' : '';
+                    // Strip HTML tags and extract clean text
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = email.email_body;
+                    let cleanText = tempDiv.textContent || tempDiv.innerText || '';
+
+                    // Clean up extra whitespace
+                    cleanText = cleanText.replace(/\s+/g, ' ').trim();
+
+                    // Limit to 500 characters
+                    const bodyText = cleanText.substring(0, 500);
+                    const showMore = cleanText.length > 500 ? '...' : '';
+
                     emailBodyDisplay = `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e7eb;">
                         <div style="font-size: 13px; color: #374151; line-height: 1.6; white-space: pre-wrap;">${bodyText}${showMore}</div>
                     </div>`;
+                } else {
+                    // Debug: show when email body is missing
+                    console.log(`⚠️ No email_body for email ID ${email.id}, type: ${email.email_type}`);
                 }
 
                 html += `
