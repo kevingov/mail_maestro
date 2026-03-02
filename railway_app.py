@@ -4306,27 +4306,35 @@ def analytics_dashboard():
                 });
                 const requestTypesList = Array.from(allRequestTypes);
 
-                // Color palette for request types
-                const requestTypeColors = {
-                    'technical_issue': 'rgba(239, 68, 68, 0.8)',
-                    'feature_request': 'rgba(99, 102, 241, 0.8)',
-                    'account_question': 'rgba(251, 191, 36, 0.8)',
-                    'integration_help': 'rgba(16, 185, 129, 0.8)',
-                    'billing_question': 'rgba(168, 85, 247, 0.8)',
-                    'general_inquiry': 'rgba(236, 72, 153, 0.8)',
-                    'feedback': 'rgba(34, 211, 238, 0.8)',
-                    'complaint': 'rgba(249, 115, 22, 0.8)'
-                };
+                // Color palette for request types (defined colors)
+                const predefinedColors = [
+                    'rgba(239, 68, 68, 0.8)',      // Red
+                    'rgba(99, 102, 241, 0.8)',     // Indigo
+                    'rgba(251, 191, 36, 0.8)',     // Amber
+                    'rgba(16, 185, 129, 0.8)',     // Emerald
+                    'rgba(168, 85, 247, 0.8)',     // Purple
+                    'rgba(236, 72, 153, 0.8)',     // Pink
+                    'rgba(34, 211, 238, 0.8)',     // Cyan
+                    'rgba(249, 115, 22, 0.8)',     // Orange
+                    'rgba(132, 204, 22, 0.8)',     // Lime
+                    'rgba(244, 114, 182, 0.8)',    // Fuchsia
+                    'rgba(59, 130, 246, 0.8)',     // Blue
+                    'rgba(234, 88, 12, 0.8)'       // Orange Red
+                ];
 
                 // Create datasets - one per request type
-                const datasets = requestTypesList.map(requestType => {
+                const datasets = requestTypesList.map((requestType, index) => {
+                    // Assign color from predefined palette, cycling if needed
+                    const color = predefinedColors[index % predefinedColors.length];
+
                     return {
                         label: requestType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
                         data: cohortNames.map(cohort => {
                             const item = byCohort[cohort].find(i => i.request_type === requestType);
                             return item ? item.count : 0;
                         }),
-                        backgroundColor: requestTypeColors[requestType] || 'rgba(156, 163, 175, 0.8)'
+                        backgroundColor: color,
+                        borderWidth: 0
                     };
                 });
 
