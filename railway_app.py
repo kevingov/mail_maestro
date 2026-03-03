@@ -7328,7 +7328,7 @@ def handle_versioned_send_new_email(version_letter):
 
         email_result = send_email(
             to_email=contact_email,
-            merchant_name=contact_name,
+            merchant_name=account_name,  # Use account_name (company name), not contact_name (person name)
             subject_line=subject_line,
             email_content=formatted_email,
             campaign_name="MSS Signed But Not Activated Campaign",
@@ -10392,7 +10392,7 @@ def workato_send_new_email():
         logger.info(f"🔍 About to call send_email()...")
         email_result = send_email(
             to_email=contact_email,
-            merchant_name=contact_name,
+            merchant_name=account_name,  # Use account_name (company name), not contact_name (person name)
             subject_line=subject_line,
             email_content=formatted_email,
             campaign_name=campaign_name,  # Use dynamic campaign name from Workato or generated from cohort
