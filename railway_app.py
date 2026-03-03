@@ -8946,7 +8946,6 @@ def get_merchant_performance():
                             WHEN email_type = 'inbound' THEN sender_email
                             ELSE recipient_email
                         END) as merchant_key,
-                    subject,
                     cohort_name,
                     cohort_batch,
                     test_group,
@@ -8963,7 +8962,6 @@ def get_merchant_performance():
                 SELECT
                     merchant_key,
                     merchant_email,
-                    MAX(subject) as merchant_name,
                     cohort_name,
                     cohort_batch,
                     test_group,
@@ -8981,28 +8979,32 @@ def get_merchant_performance():
                 GROUP BY merchant_key, merchant_email, cohort_name, cohort_batch, test_group, ramp_phase
             )
             SELECT
-                merchant_key,
-                merchant_email,
-                merchant_name,
-                cohort_name,
-                cohort_batch,
-                test_group,
-                ramp_phase,
-                outreach_sent,
-                outreach_opened,
-                total_opens,
-                CASE WHEN outreach_sent > 0
-                     THEN ROUND(100.0 * outreach_opened / outreach_sent, 1)
+                ms.merchant_key,
+                ms.merchant_email,
+                COALESCE(mc.merchant_name, SPLIT_PART(ms.merchant_email, '@', 1)) as merchant_name,
+                ms.cohort_name,
+                ms.cohort_batch,
+                ms.test_group,
+                ms.ramp_phase,
+                ms.outreach_sent,
+                ms.outreach_opened,
+                ms.total_opens,
+                CASE WHEN ms.outreach_sent > 0
+                     THEN ROUND(100.0 * ms.outreach_opened / ms.outreach_sent, 1)
                      ELSE 0
                 END as open_rate,
-                replies_sent,
-                replies_opened,
-                CASE WHEN inbound_received > 0 THEN 'Yes' ELSE 'No' END as has_responded,
-                last_outreach_sent,
-                last_sentiment,
-                last_request_type
-            FROM merchant_stats
-            ORDER BY cohort_name, cohort_batch, test_group, last_outreach_sent DESC
+                ms.replies_sent,
+                ms.replies_opened,
+                CASE WHEN ms.inbound_received > 0 THEN 'Yes' ELSE 'No' END as has_responded,
+                ms.last_outreach_sent,
+                ms.last_sentiment,
+                ms.last_request_type
+            FROM merchant_stats ms
+            LEFT JOIN merchant_cohorts mc ON ms.merchant_key = mc.merchant_id
+                AND ms.cohort_name = mc.cohort_name
+                AND ms.cohort_batch = mc.cohort_batch
+                AND ms.test_group = mc.test_group
+            ORDER BY ms.cohort_name, ms.cohort_batch, ms.test_group, ms.last_outreach_sent DESC
         ''')
 
         merchants = []
