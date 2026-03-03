@@ -2801,7 +2801,8 @@ def reply_to_emails_with_accounts(accounts, cohort_override=None, account_name=N
                         'request_type': request_type,
                         'sentiment': sentiment,
                         'sentiment_score': sentiment_score,
-                        'email_body': merchant_email_plain
+                        'email_body': merchant_email_plain,
+                        'account_name': account_name  # Pass merchant name for inbound tracking
                     },
                     timeout=10
                 )
