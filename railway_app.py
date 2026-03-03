@@ -1382,7 +1382,8 @@ def send_email(to_email, merchant_name, subject_line, email_content, campaign_na
                     'test_group': test_group,
                     'ramp_phase': ramp_phase,
                     'email_type': email_type,
-                    'email_body': email_content
+                    'email_body': email_content,
+                    'account_name': merchant_name  # Pass merchant_name to tracking
                 },
                 timeout=10
             )
@@ -1505,7 +1506,7 @@ def strip_html_tags(html_content):
         text = re.sub(r'\s+', ' ', text)
         return text.strip()
 
-def send_threaded_email_reply(to_email, subject, reply_content, original_message_id, sender_name, cc_recipients=None, merchant_id=None, cohort_name=None, cohort_batch=None, test_group=None, ramp_phase=None, campaign_name=None, request_type=None, sentiment=None, sentiment_score=None):
+def send_threaded_email_reply(to_email, subject, reply_content, original_message_id, sender_name, cc_recipients=None, merchant_id=None, cohort_name=None, cohort_batch=None, test_group=None, ramp_phase=None, campaign_name=None, request_type=None, sentiment=None, sentiment_score=None, merchant_name=None):
     """
     Send a threaded email reply that maintains the conversation thread.
     Uses SMTP like 2025_hackathon.py for better outbox visibility.
@@ -1571,7 +1572,8 @@ def send_threaded_email_reply(to_email, subject, reply_content, original_message
                     'request_type': request_type,
                     'sentiment': sentiment,
                     'sentiment_score': sentiment_score,
-                    'email_body': plain_text_body
+                    'email_body': plain_text_body,
+                    'account_name': merchant_name  # Pass merchant name to tracking
                 },
                 timeout=10
             )
@@ -2130,13 +2132,14 @@ def lookup_merchant_cohort(merchant_email):
         return None
 
 
-def reply_to_emails_with_accounts(accounts, cohort_override=None):
+def reply_to_emails_with_accounts(accounts, cohort_override=None, account_name=None):
     """
     Process emails for specific accounts provided by Workato.
 
     Args:
         accounts: List of account dicts with 'email' and 'name'
         cohort_override: Optional dict with cohort info from Workato to override automatic lookup
+        account_name: Optional merchant name from Workato (contact_name or account_name)
     """
     emails_needing_replies = get_emails_needing_replies_with_accounts(accounts)
     responses = []
@@ -2825,7 +2828,8 @@ def reply_to_emails_with_accounts(accounts, cohort_override=None):
                 campaign_name=campaign_name or "AI Email Reply",
                 request_type=request_type,
                 sentiment=sentiment,
-                sentiment_score=sentiment_score
+                sentiment_score=sentiment_score,
+                merchant_name=account_name  # Pass merchant name from Workato
             )
             
             email_status = email_result['status'] if isinstance(email_result, dict) else email_result
@@ -9333,6 +9337,9 @@ def workato_reply_to_emails():
                 'emails_processed': 0
             }), 400
 
+        # Extract merchant name from Workato (same as send-new-email)
+        account_name = data.get('contact_name') or data.get('account_name') or data.get('merchant_name')
+
         # Extract optional cohort parameters from Workato
         cohort_override = None
         if any(key in data for key in ['merchant_id', 'cohort_name', 'cohort_batch', 'test_group', 'ramp_phase']):
@@ -9354,7 +9361,7 @@ def workato_reply_to_emails():
 
         # Call the function with Workato-provided accounts and optional cohort override
         logger.info("🚀 Starting email processing...")
-        result = reply_to_emails_with_accounts(accounts, cohort_override=cohort_override)
+        result = reply_to_emails_with_accounts(accounts, cohort_override=cohort_override, account_name=account_name)
         logger.info("✅ Email processing completed")
         
         # Format response with actual email and thread details
