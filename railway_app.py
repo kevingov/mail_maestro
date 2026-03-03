@@ -227,7 +227,14 @@ def init_database():
             logger.info("✅ Added email_body column to email_tracking table")
         except Exception as e:
             logger.debug(f"Email body column check: {e}")
-        
+
+        # Add merchant_name column to store merchant/contact name
+        try:
+            cursor.execute('ALTER TABLE email_tracking ADD COLUMN IF NOT EXISTS merchant_name VARCHAR(255)')
+            logger.info("✅ Added merchant_name column to email_tracking table")
+        except Exception as e:
+            logger.debug(f"Merchant name column check: {e}")
+
         # Email opens table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS email_opens (
@@ -7762,12 +7769,18 @@ def track_email_send():
         # Extract email body/content
         email_body = data.get('email_body', '')
 
+        # Extract merchant/contact name (Workato should send this)
+        contact_name = data.get('contact_name') or data.get('account_name') or data.get('merchant_name')
+
         logger.info(f"📧 EMAIL BODY DEBUG - STEP 1: Received email_body")
         logger.info(f"   Length: {len(email_body) if email_body else 0} characters")
         if email_body:
             logger.info(f"   First 150 chars: {email_body[:150]}")
         else:
             logger.warning(f"   ⚠️ email_body is empty or None!")
+
+        if contact_name:
+            logger.info(f"👤 Merchant/Contact Name: {contact_name}")
 
         logger.info(f"🔍 TRACKING STEP 7: /api/track-send received classification data:")
         logger.info(f"   email_type: {email_type}")
@@ -7802,13 +7815,13 @@ def track_email_send():
             INSERT INTO email_tracking (
                 tracking_id, recipient_email, sender_email, subject, campaign_name, status, version_endpoint,
                 merchant_id, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at, email_type,
-                request_type, sentiment, sentiment_score, email_body
+                request_type, sentiment, sentiment_score, email_body, merchant_name
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (
             tracking_id, recipient_email, sender_email, subject, campaign_name, 'AI Outbound Email', version_endpoint,
             merchant_id, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at, email_type,
-            request_type, sentiment, sentiment_score, email_body
+            request_type, sentiment, sentiment_score, email_body, contact_name
         ))
 
         logger.info(f"✅ TRACKING STEP 8: Database INSERT completed for tracking_id: {tracking_id}")
@@ -7822,16 +7835,17 @@ def track_email_send():
                 # Use ON CONFLICT to update if merchant already exists
                 cursor.execute('''
                     INSERT INTO merchant_cohorts (
-                        merchant_id, merchant_email, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at
+                        merchant_id, merchant_email, merchant_name, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, COALESCE(%s, CURRENT_TIMESTAMP))
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, COALESCE(%s, CURRENT_TIMESTAMP))
                     ON CONFLICT (merchant_id) DO UPDATE SET
+                        merchant_name = COALESCE(EXCLUDED.merchant_name, merchant_cohorts.merchant_name),
                         cohort_name = EXCLUDED.cohort_name,
                         cohort_batch = EXCLUDED.cohort_batch,
                         test_group = EXCLUDED.test_group,
                         ramp_phase = EXCLUDED.ramp_phase,
                         updated_at = CURRENT_TIMESTAMP
-                ''', (merchant_id, recipient_email, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at))
+                ''', (merchant_id, recipient_email, contact_name, cohort_name, cohort_batch, test_group, ramp_phase, enrolled_at))
                 logger.info(f"✅ Updated merchant_cohorts for {merchant_id}")
             except Exception as cohort_error:
                 logger.warning(f"⚠️ Could not update merchant_cohorts: {cohort_error}")
@@ -8946,6 +8960,7 @@ def get_merchant_performance():
                             WHEN email_type = 'inbound' THEN sender_email
                             ELSE recipient_email
                         END) as merchant_key,
+                    merchant_name,
                     cohort_name,
                     cohort_batch,
                     test_group,
@@ -8962,6 +8977,7 @@ def get_merchant_performance():
                 SELECT
                     merchant_key,
                     merchant_email,
+                    MAX(merchant_name) as merchant_name,
                     cohort_name,
                     cohort_batch,
                     test_group,
@@ -8981,7 +8997,7 @@ def get_merchant_performance():
             SELECT
                 ms.merchant_key,
                 ms.merchant_email,
-                COALESCE(mc.merchant_name, SPLIT_PART(ms.merchant_email, '@', 1)) as merchant_name,
+                COALESCE(ms.merchant_name, mc.merchant_name, SPLIT_PART(ms.merchant_email, '@', 1)) as merchant_name,
                 ms.cohort_name,
                 ms.cohort_batch,
                 ms.test_group,
