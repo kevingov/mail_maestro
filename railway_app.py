@@ -11384,6 +11384,64 @@ def workato_dump_email_tracking():
             'timestamp': datetime.datetime.now().isoformat()
         }), 500
 
+@app.route('/api/admin/update-truglow-name', methods=['POST'])
+def admin_update_truglow_name():
+    """Update TruGlow merchant name from email to proper business name."""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 503
+
+        cursor = conn.cursor()
+
+        # Update all emails with merchant_name = 'truglowpnw@gmail.com' to 'TruGlow Wellness & Aesthetics'
+        cursor.execute('''
+            UPDATE email_tracking
+            SET merchant_name = %s
+            WHERE merchant_name = %s
+        ''', ('TruGlow Wellness & Aesthetics', 'truglowpnw@gmail.com'))
+
+        updated_count = cursor.rowcount
+        conn.commit()
+
+        # Verify the updates
+        cursor.execute('''
+            SELECT id, merchant_name, recipient_email, sender_email, email_type
+            FROM email_tracking
+            WHERE merchant_name = %s
+            ORDER BY id
+        ''', ('TruGlow Wellness & Aesthetics',))
+
+        updated_records = []
+        for row in cursor.fetchall():
+            updated_records.append({
+                'id': row[0],
+                'merchant_name': row[1],
+                'recipient_email': row[2],
+                'sender_email': row[3],
+                'email_type': row[4]
+            })
+
+        conn.close()
+
+        logger.info(f"✅ Updated TruGlow merchant name: {updated_count} records")
+
+        return jsonify({
+            'status': 'success',
+            'message': 'TruGlow merchant name updated to "TruGlow Wellness & Aesthetics"',
+            'updated_count': updated_count,
+            'updated_records': updated_records
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating TruGlow merchant name: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/admin/update-merchant-names', methods=['POST'])
 def admin_update_merchant_names():
     """Temporary admin endpoint to update merchant names for grouping."""
