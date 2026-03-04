@@ -9046,28 +9046,49 @@ def get_merchant_performance():
             WITH merchant_emails AS (
                 SELECT
                     -- Normalize email by extracting just the email part (remove display names like "Name <email>")
-                    REGEXP_REPLACE(
+                    -- Use COALESCE: try to extract from angle brackets, otherwise use the full email
+                    COALESCE(
+                        NULLIF(
+                            SUBSTRING(
+                                CASE
+                                    WHEN email_type IN ('outreach', 'reply') THEN recipient_email
+                                    WHEN email_type = 'inbound' THEN sender_email
+                                    ELSE recipient_email
+                                END
+                                FROM '<([^>]+)>'
+                            ),
+                            ''
+                        ),
                         CASE
                             WHEN email_type IN ('outreach', 'reply') THEN recipient_email
                             WHEN email_type = 'inbound' THEN sender_email
                             ELSE recipient_email
-                        END,
-                        '.*<(.+)>.*', '\1'
+                        END
                     ) as merchant_email_normalized,
                     CASE
                         WHEN email_type IN ('outreach', 'reply') THEN recipient_email
                         WHEN email_type = 'inbound' THEN sender_email
                         ELSE recipient_email
                     END as merchant_email_raw,
-                    COALESCE(merchant_id,
-                        REGEXP_REPLACE(
-                            CASE
-                                WHEN email_type IN ('outreach', 'reply') THEN recipient_email
-                                WHEN email_type = 'inbound' THEN sender_email
-                                ELSE recipient_email
-                            END,
-                            '.*<(.+)>.*', '\1'
-                        )) as merchant_key,
+                    COALESCE(
+                        merchant_id,
+                        NULLIF(
+                            SUBSTRING(
+                                CASE
+                                    WHEN email_type IN ('outreach', 'reply') THEN recipient_email
+                                    WHEN email_type = 'inbound' THEN sender_email
+                                    ELSE recipient_email
+                                END
+                                FROM '<([^>]+)>'
+                            ),
+                            ''
+                        ),
+                        CASE
+                            WHEN email_type IN ('outreach', 'reply') THEN recipient_email
+                            WHEN email_type = 'inbound' THEN sender_email
+                            ELSE recipient_email
+                        END
+                    ) as merchant_key,
                     merchant_name,
                     cohort_name,
                     cohort_batch,
