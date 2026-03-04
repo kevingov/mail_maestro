@@ -8748,8 +8748,8 @@ def get_ramp_dashboard():
                 SUM(CASE WHEN email_type = 'reply' AND open_count > 0 THEN 1 ELSE 0 END) as total_replies_opened,
                 ROUND(100.0 * SUM(CASE WHEN email_type = 'reply' AND open_count > 0 THEN 1 ELSE 0 END) /
                       NULLIF(COUNT(*) FILTER (WHERE email_type = 'reply'), 0), 2) as overall_reply_open_rate,
-                ROUND(COUNT(*) FILTER (WHERE email_type = 'reply')::numeric /
-                      NULLIF(COUNT(DISTINCT NULLIF(merchant_id, '')) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL), 0), 2) as avg_replies_per_merchant
+                ROUND(COUNT(*) FILTER (WHERE email_type = 'inbound')::numeric /
+                      NULLIF(COUNT(DISTINCT sender_email) FILTER (WHERE email_type = 'inbound'), 0), 2) as avg_replies_per_merchant
             FROM email_tracking
             WHERE cohort_name IS NOT NULL
               AND cohort_name != 'pilot_batch1'
