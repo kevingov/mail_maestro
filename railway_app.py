@@ -353,6 +353,26 @@ def init_database():
         except Exception as e:
             logger.debug(f"Response tracking columns check: {e}")
 
+        # Snowflake data ingestion table (flexible JSON storage)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS snowflake_data (
+                id SERIAL PRIMARY KEY,
+                data_type VARCHAR(100) NOT NULL,
+                record_data JSONB NOT NULL,
+                ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        logger.info("✅ Created snowflake_data table for data ingestion")
+
+        # Add index on data_type for faster queries
+        try:
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_snowflake_data_type ON snowflake_data(data_type)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_snowflake_ingested_at ON snowflake_data(ingested_at)')
+            logger.info("✅ Added indexes to snowflake_data table")
+        except Exception as e:
+            logger.debug(f"Snowflake data indexes check: {e}")
+
         conn.commit()
         conn.close()
         logger.info("✅ PostgreSQL database initialized")
@@ -11523,6 +11543,96 @@ def admin_update_merchant_names():
         import traceback
         logger.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/workato/ingest-snowflake-data', methods=['POST'])
+def ingest_snowflake_data():
+    """
+    Endpoint to ingest large Snowflake data (e.g., churn data) from Workato.
+    Handles up to 500k+ records with batch processing.
+
+    Expected input:
+    {
+        "data_type": "churn",  // or other data types
+        "records": [
+            {
+                // Your Snowflake query fields here
+                // Example: merchant_id, account_name, churn_date, etc.
+            }
+        ]
+    }
+    """
+    try:
+        start_time = datetime.datetime.now()
+        data = request.get_json()
+
+        if not data or 'records' not in data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Missing "records" field in request body'
+            }), 400
+
+        records = data.get('records', [])
+        data_type = data.get('data_type', 'unknown')
+
+        if not isinstance(records, list):
+            return jsonify({
+                'status': 'error',
+                'message': '"records" must be an array'
+            }), 400
+
+        logger.info(f"📥 Receiving Snowflake data ingestion: {len(records)} records of type '{data_type}'")
+
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 503
+
+        cursor = conn.cursor()
+
+        # Store raw JSON data in a flexible table
+        # You can customize this based on your actual Snowflake schema
+        inserted_count = 0
+        batch_size = 1000  # Process in batches for efficiency
+
+        for i in range(0, len(records), batch_size):
+            batch = records[i:i + batch_size]
+
+            # Insert batch using PostgreSQL's JSON support
+            for record in batch:
+                cursor.execute('''
+                    INSERT INTO snowflake_data (data_type, record_data, ingested_at)
+                    VALUES (%s, %s, %s)
+                ''', (data_type, json.dumps(record), datetime.datetime.now()))
+                inserted_count += 1
+
+            # Commit every batch to avoid long transactions
+            conn.commit()
+            logger.info(f"✅ Processed batch {i//batch_size + 1}: {inserted_count}/{len(records)} records")
+
+        conn.close()
+
+        elapsed_time = (datetime.datetime.now() - start_time).total_seconds()
+
+        logger.info(f"🎉 Snowflake data ingestion complete: {inserted_count} records in {elapsed_time:.2f}s")
+
+        return jsonify({
+            'status': 'success',
+            'message': f'Successfully ingested {inserted_count} {data_type} records',
+            'records_processed': inserted_count,
+            'elapsed_seconds': round(elapsed_time, 2),
+            'timestamp': datetime.datetime.now().isoformat()
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Error ingesting Snowflake data: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
