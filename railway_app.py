@@ -9105,7 +9105,7 @@ def get_merchant_performance():
             ),
             merchant_stats AS (
                 SELECT
-                    merchant_key,
+                    MAX(merchant_key) as merchant_key,
                     merchant_email_normalized as merchant_email,
                     MAX(merchant_name) as merchant_name,
                     cohort_name,
@@ -9122,7 +9122,7 @@ def get_merchant_performance():
                     MAX(sentiment) FILTER (WHERE email_type = 'inbound') as last_sentiment,
                     MAX(request_type) FILTER (WHERE email_type = 'inbound') as last_request_type
                 FROM merchant_emails
-                GROUP BY merchant_key, merchant_email_normalized, cohort_name, cohort_batch, test_group, ramp_phase
+                GROUP BY merchant_email_normalized, cohort_name, cohort_batch, test_group, ramp_phase
             )
             SELECT
                 ms.merchant_key,
