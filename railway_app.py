@@ -11372,6 +11372,73 @@ def workato_dump_email_tracking():
             'timestamp': datetime.datetime.now().isoformat()
         }), 500
 
+@app.route('/api/admin/update-merchant-names', methods=['POST'])
+def admin_update_merchant_names():
+    """Temporary admin endpoint to update merchant names for grouping."""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 503
+
+        cursor = conn.cursor()
+
+        # Update emails 729, 728, 719 to truglowpnw@gmail.com
+        cursor.execute('''
+            UPDATE email_tracking
+            SET merchant_name = %s
+            WHERE id IN (729, 728, 719)
+        ''', ('truglowpnw@gmail.com',))
+        truglow_updated = cursor.rowcount
+
+        # Update emails 727, 726, 725, 724, 718 to Melanin Valley, LLC
+        cursor.execute('''
+            UPDATE email_tracking
+            SET merchant_name = %s
+            WHERE id IN (727, 726, 725, 724, 718)
+        ''', ('Melanin Valley, LLC',))
+        melanin_updated = cursor.rowcount
+
+        conn.commit()
+
+        # Verify the updates
+        cursor.execute('''
+            SELECT id, merchant_name, recipient_email, sender_email, email_type
+            FROM email_tracking
+            WHERE id IN (729, 728, 719, 727, 726, 725, 724, 718)
+            ORDER BY id
+        ''')
+
+        updated_records = []
+        for row in cursor.fetchall():
+            updated_records.append({
+                'id': row[0],
+                'merchant_name': row[1],
+                'recipient_email': row[2],
+                'sender_email': row[3],
+                'email_type': row[4]
+            })
+
+        conn.close()
+
+        logger.info(f"✅ Updated merchant names: {truglow_updated} truglowpnw records, {melanin_updated} Melanin Valley records")
+
+        return jsonify({
+            'status': 'success',
+            'message': 'Merchant names updated successfully',
+            'truglow_updated': truglow_updated,
+            'melanin_updated': melanin_updated,
+            'updated_records': updated_records
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating merchant names: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
