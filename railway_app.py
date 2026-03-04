@@ -9169,9 +9169,14 @@ def get_merchant_performance():
                 ms.cohort_name,  -- Group by cohort
                 ms.cohort_batch,  -- Then by batch
                 ms.test_group,  -- Then by test group
-                (CASE WHEN ms.inbound_received > 0 THEN 0 ELSE 1 END),  -- Within cohort: replied merchants first
-                ms.outreach_opened DESC,  -- Within cohort: then by opens (most opens first)
-                ms.last_outreach_sent DESC  -- Within cohort: then by send date (most recent first)
+                -- Sort by response/open status: responded first, then opened, then unopened
+                (CASE
+                    WHEN ms.inbound_received > 0 THEN 0  -- Responded merchants first
+                    WHEN ms.outreach_opened > 0 THEN 1   -- Then merchants who opened
+                    ELSE 2                                -- Then merchants who didn't open
+                END),
+                ms.total_opens DESC,  -- Within each group: sort by total opens descending
+                ms.last_outreach_sent DESC  -- Tie breaker: most recent first
         ''')
 
         merchants = []
