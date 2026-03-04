@@ -7,7 +7,8 @@ import os
 import psycopg2
 from flask import Flask, Response, request, jsonify
 import logging
-from io import BytesIO
+from io import BytesIO, StringIO
+import csv
 from PIL import Image
 import uuid
 import datetime
@@ -11550,35 +11551,68 @@ def ingest_snowflake_data():
     Endpoint to ingest large Snowflake data (e.g., churn data) from Workato.
     Handles up to 500k+ records with batch processing.
 
-    Expected input:
+    Accepts either:
+    1. CSV file upload (multipart/form-data with 'file' field)
+    2. JSON payload with records array
+
+    CSV upload example:
+    - Content-Type: multipart/form-data
+    - file: churn_model.csv
+    - data_type: churn (optional form field)
+
+    JSON payload example:
     {
-        "data_type": "churn",  // or other data types
-        "records": [
-            {
-                // Your Snowflake query fields here
-                // Example: merchant_id, account_name, churn_date, etc.
-            }
-        ]
+        "data_type": "churn",
+        "records": [...]
     }
     """
     try:
         start_time = datetime.datetime.now()
-        data = request.get_json()
+        records = []
+        data_type = 'unknown'
 
-        if not data or 'records' not in data:
-            return jsonify({
-                'status': 'error',
-                'message': 'Missing "records" field in request body'
-            }), 400
+        # Check if CSV file was uploaded
+        if 'file' in request.files:
+            csv_file = request.files['file']
+            data_type = request.form.get('data_type', 'churn')
 
-        records = data.get('records', [])
-        data_type = data.get('data_type', 'unknown')
+            if not csv_file or csv_file.filename == '':
+                return jsonify({
+                    'status': 'error',
+                    'message': 'No file selected'
+                }), 400
 
-        if not isinstance(records, list):
-            return jsonify({
-                'status': 'error',
-                'message': '"records" must be an array'
-            }), 400
+            # Read and parse CSV
+            try:
+                # Read file as string
+                stream = StringIO(csv_file.stream.read().decode("UTF8"), newline=None)
+                csv_reader = csv.DictReader(stream)
+                records = list(csv_reader)
+                logger.info(f"📄 Parsed CSV file: {len(records)} records")
+            except Exception as csv_error:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Error parsing CSV: {str(csv_error)}'
+                }), 400
+
+        # Otherwise expect JSON
+        else:
+            data = request.get_json()
+
+            if not data or 'records' not in data:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Missing "records" field in JSON body or "file" in form-data'
+                }), 400
+
+            records = data.get('records', [])
+            data_type = data.get('data_type', 'unknown')
+
+            if not isinstance(records, list):
+                return jsonify({
+                    'status': 'error',
+                    'message': '"records" must be an array'
+                }), 400
 
         logger.info(f"📥 Receiving Snowflake data ingestion: {len(records)} records of type '{data_type}'")
 
