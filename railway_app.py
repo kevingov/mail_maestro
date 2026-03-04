@@ -8587,6 +8587,7 @@ def get_cohort_performance():
                       NULLIF(COUNT(DISTINCT merchant_id) FILTER (WHERE merchant_id IS NOT NULL AND email_type = 'outreach'), 0), 2) as avg_replies_per_merchant
             FROM email_tracking
             WHERE cohort_name IS NOT NULL
+              AND cohort_name != 'pilot_batch1'
             GROUP BY cohort_name, cohort_batch, COALESCE(test_group, 'none'), COALESCE(ramp_phase, 'none')
             ORDER BY cohort_batch NULLS LAST, cohort_name, test_group
         ''')
@@ -8735,6 +8736,7 @@ def get_ramp_dashboard():
                       NULLIF(COUNT(DISTINCT NULLIF(merchant_id, '')) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL), 0), 2) as avg_replies_per_merchant
             FROM email_tracking
             WHERE cohort_name IS NOT NULL
+              AND cohort_name != 'pilot_batch1'
         ''')
         overall = cursor.fetchone()
 
@@ -8748,6 +8750,7 @@ def get_ramp_dashboard():
                 COUNT(DISTINCT NULLIF(merchant_id, '')) as unique_merchants
             FROM email_tracking
             WHERE cohort_name IS NOT NULL
+              AND cohort_name != 'pilot_batch1'
             GROUP BY COALESCE(ramp_phase, 'none')
             ORDER BY
                 CASE COALESCE(ramp_phase, 'none')
@@ -8836,6 +8839,7 @@ def get_request_type_breakdown():
                     cohort_name
                 FROM email_tracking
                 WHERE cohort_name IS NOT NULL
+                  AND cohort_name != 'pilot_batch1'
                   AND request_type IS NOT NULL
                   AND email_type = 'inbound'
                 ORDER BY sender_email, request_type, sent_at DESC
@@ -8869,6 +8873,7 @@ def get_request_type_breakdown():
                     sentiment_score
                 FROM email_tracking
                 WHERE cohort_name IS NOT NULL
+                  AND cohort_name != 'pilot_batch1'
                   AND request_type IS NOT NULL
                   AND email_type = 'inbound'
                 ORDER BY cohort_name, sender_email, request_type, sent_at DESC
@@ -8929,6 +8934,7 @@ def get_sentiment_analysis():
                     cohort_name
                 FROM email_tracking
                 WHERE cohort_name IS NOT NULL
+                  AND cohort_name != 'pilot_batch1'
                   AND sentiment IS NOT NULL
                   AND email_type = 'inbound'
                 ORDER BY sender_email, sentiment, sent_at DESC
@@ -8963,6 +8969,7 @@ def get_sentiment_analysis():
                     sentiment_score
                 FROM email_tracking
                 WHERE cohort_name IS NOT NULL
+                  AND cohort_name != 'pilot_batch1'
                   AND sentiment IS NOT NULL
                   AND email_type = 'inbound'
                 ORDER BY cohort_name, test_group, sender_email, sentiment, sent_at DESC
@@ -9045,6 +9052,7 @@ def get_merchant_performance():
                     request_type
                 FROM email_tracking
                 WHERE cohort_name IS NOT NULL
+                  AND cohort_name != 'pilot_batch1'
             ),
             merchant_stats AS (
                 SELECT
