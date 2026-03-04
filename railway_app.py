@@ -4077,7 +4077,7 @@ def analytics_dashboard():
                     <div class="change" id="emails-change"></div>
                 </div>
                 <div class="stat-card">
-                    <div class="label">Overall Open Rate</div>
+                    <div class="label">Cold Outreach Open Rate</div>
                     <div class="value" id="open-rate">0%</div>
                     <div class="change" id="open-rate-change"></div>
                 </div>
