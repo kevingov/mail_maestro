@@ -8561,34 +8561,48 @@ def get_cohort_performance():
         # Get performance metrics grouped by cohort and test group
         # Only show emails with cohort data (exclude uncategorized)
         # Separate outreach emails from reply emails for accurate A/B testing
+        # Calculate response_rate from inbound emails instead of response_count column
         cursor.execute('''
+            WITH cohort_stats AS (
+                SELECT
+                    cohort_name,
+                    cohort_batch,
+                    COALESCE(test_group, 'none') as test_group,
+                    COALESCE(ramp_phase, 'none') as ramp_phase,
+                    COUNT(*) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as outreach_emails_sent,
+                    SUM(CASE WHEN (email_type = 'outreach' OR email_type IS NULL) AND open_count > 0 THEN 1 ELSE 0 END) as emails_opened,
+                    AVG(open_count) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as avg_opens_per_email,
+                    MIN(sent_at) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as first_email_sent,
+                    MAX(sent_at) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as last_email_sent,
+                    COUNT(*) FILTER (WHERE email_type = 'reply') as total_replies_sent,
+                    SUM(CASE WHEN email_type = 'reply' AND open_count > 0 THEN 1 ELSE 0 END) as replies_opened,
+                    COUNT(DISTINCT merchant_id) FILTER (WHERE merchant_id IS NOT NULL AND email_type = 'outreach') as unique_merchants,
+                    COUNT(DISTINCT sender_email) FILTER (WHERE email_type = 'inbound') as merchants_who_responded
+                FROM email_tracking
+                WHERE cohort_name IS NOT NULL
+                  AND cohort_name != 'pilot_batch1'
+                GROUP BY cohort_name, cohort_batch, COALESCE(test_group, 'none'), COALESCE(ramp_phase, 'none')
+            )
             SELECT
                 cohort_name,
                 cohort_batch,
-                COALESCE(test_group, 'none') as test_group,
-                COALESCE(ramp_phase, 'none') as ramp_phase,
-                COUNT(*) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as outreach_emails_sent,
-                SUM(CASE WHEN (email_type = 'outreach' OR email_type IS NULL) AND open_count > 0 THEN 1 ELSE 0 END) as emails_opened,
-                ROUND(100.0 * SUM(CASE WHEN (email_type = 'outreach' OR email_type IS NULL) AND open_count > 0 THEN 1 ELSE 0 END) /
-                      NULLIF(COUNT(*) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL), 0), 2) as open_rate,
-                AVG(open_count) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as avg_opens_per_email,
-                MIN(sent_at) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as first_email_sent,
-                MAX(sent_at) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as last_email_sent,
-                SUM(COALESCE(response_count, 0)) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as total_responses,
-                SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as emails_with_responses,
-                ROUND(100.0 * SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) /
-                      NULLIF(COUNT(*) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL), 0), 2) as response_rate,
-                COUNT(*) FILTER (WHERE email_type = 'reply') as total_replies_sent,
-                SUM(CASE WHEN email_type = 'reply' AND open_count > 0 THEN 1 ELSE 0 END) as replies_opened,
-                ROUND(100.0 * SUM(CASE WHEN email_type = 'reply' AND open_count > 0 THEN 1 ELSE 0 END) /
-                      NULLIF(COUNT(*) FILTER (WHERE email_type = 'reply'), 0), 2) as reply_open_rate,
-                COUNT(DISTINCT merchant_id) FILTER (WHERE merchant_id IS NOT NULL AND email_type = 'outreach') as unique_merchants,
-                ROUND(COUNT(*) FILTER (WHERE email_type = 'reply')::numeric /
-                      NULLIF(COUNT(DISTINCT merchant_id) FILTER (WHERE merchant_id IS NOT NULL AND email_type = 'outreach'), 0), 2) as avg_replies_per_merchant
-            FROM email_tracking
-            WHERE cohort_name IS NOT NULL
-              AND cohort_name != 'pilot_batch1'
-            GROUP BY cohort_name, cohort_batch, COALESCE(test_group, 'none'), COALESCE(ramp_phase, 'none')
+                test_group,
+                ramp_phase,
+                outreach_emails_sent,
+                emails_opened,
+                ROUND(100.0 * emails_opened / NULLIF(outreach_emails_sent, 0), 2) as open_rate,
+                avg_opens_per_email,
+                first_email_sent,
+                last_email_sent,
+                merchants_who_responded as total_responses,
+                merchants_who_responded as emails_with_responses,
+                ROUND(100.0 * merchants_who_responded / NULLIF(outreach_emails_sent, 0), 2) as response_rate,
+                total_replies_sent,
+                replies_opened,
+                ROUND(100.0 * replies_opened / NULLIF(total_replies_sent, 0), 2) as reply_open_rate,
+                unique_merchants,
+                ROUND(total_replies_sent::numeric / NULLIF(unique_merchants, 0), 2) as avg_replies_per_merchant
+            FROM cohort_stats
             ORDER BY cohort_batch NULLS LAST, cohort_name, test_group
         ''')
 
@@ -8716,6 +8730,7 @@ def get_ramp_dashboard():
         cursor = conn.cursor()
 
         # Overall metrics - Only cohort emails, separate outreach from replies
+        # Calculate response_rate from inbound emails instead of response_count column
         cursor.execute('''
             SELECT
                 COUNT(*) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as total_outreach_emails,
@@ -8724,9 +8739,9 @@ def get_ramp_dashboard():
                       NULLIF(COUNT(*) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL), 0), 2) as overall_open_rate,
                 COUNT(DISTINCT NULLIF(merchant_id, '')) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as unique_merchants,
                 COUNT(DISTINCT cohort_name) as total_cohorts,
-                SUM(COALESCE(response_count, 0)) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as total_responses,
-                SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) as emails_with_responses,
-                ROUND(100.0 * SUM(CASE WHEN response_count > 0 THEN 1 ELSE 0 END) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL) /
+                COUNT(DISTINCT sender_email) FILTER (WHERE email_type = 'inbound') as total_responses,
+                COUNT(DISTINCT sender_email) FILTER (WHERE email_type = 'inbound') as emails_with_responses,
+                ROUND(100.0 * COUNT(DISTINCT sender_email) FILTER (WHERE email_type = 'inbound') /
                       NULLIF(COUNT(*) FILTER (WHERE email_type = 'outreach' OR email_type IS NULL), 0), 2) as overall_response_rate,
                 COUNT(*) FILTER (WHERE email_type = 'reply') as total_replies_sent,
                 SUM(CASE WHEN email_type = 'reply' AND open_count > 0 THEN 1 ELSE 0 END) as total_replies_opened,
