@@ -8826,17 +8826,26 @@ def get_request_type_breakdown():
 
         cursor = conn.cursor()
 
-        # Get overall request type distribution
+        # Get overall request type distribution (count unique merchants, not individual emails)
         cursor.execute('''
+            WITH merchant_responses AS (
+                SELECT DISTINCT ON (sender_email, request_type)
+                    sender_email,
+                    request_type,
+                    sentiment_score,
+                    cohort_name
+                FROM email_tracking
+                WHERE cohort_name IS NOT NULL
+                  AND request_type IS NOT NULL
+                  AND email_type = 'inbound'
+                ORDER BY sender_email, request_type, sent_at DESC
+            )
             SELECT
                 request_type,
-                COUNT(*) as count,
-                ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER(), 2) as percentage,
+                COUNT(DISTINCT sender_email) as count,
+                ROUND(100.0 * COUNT(DISTINCT sender_email) / SUM(COUNT(DISTINCT sender_email)) OVER(), 2) as percentage,
                 AVG(sentiment_score) as avg_sentiment
-            FROM email_tracking
-            WHERE cohort_name IS NOT NULL
-              AND request_type IS NOT NULL
-              AND email_type = 'reply'
+            FROM merchant_responses
             GROUP BY request_type
             ORDER BY count DESC
         ''')
@@ -8850,17 +8859,26 @@ def get_request_type_breakdown():
                 'avg_sentiment': float(row[3]) if row[3] else 0
             })
 
-        # Get request type breakdown by cohort
+        # Get request type breakdown by cohort (count unique merchants per cohort)
         cursor.execute('''
+            WITH merchant_responses AS (
+                SELECT DISTINCT ON (cohort_name, sender_email, request_type)
+                    cohort_name,
+                    sender_email,
+                    request_type,
+                    sentiment_score
+                FROM email_tracking
+                WHERE cohort_name IS NOT NULL
+                  AND request_type IS NOT NULL
+                  AND email_type = 'inbound'
+                ORDER BY cohort_name, sender_email, request_type, sent_at DESC
+            )
             SELECT
                 cohort_name,
                 request_type,
-                COUNT(*) as count,
+                COUNT(DISTINCT sender_email) as count,
                 AVG(sentiment_score) as avg_sentiment
-            FROM email_tracking
-            WHERE cohort_name IS NOT NULL
-              AND request_type IS NOT NULL
-              AND email_type = 'reply'
+            FROM merchant_responses
             GROUP BY cohort_name, request_type
             ORDER BY cohort_name, count DESC
         ''')
@@ -8901,17 +8919,26 @@ def get_sentiment_analysis():
 
         cursor = conn.cursor()
 
-        # Get overall sentiment distribution
+        # Get overall sentiment distribution (count unique merchants, not individual emails)
         cursor.execute('''
+            WITH merchant_responses AS (
+                SELECT DISTINCT ON (sender_email, sentiment)
+                    sender_email,
+                    sentiment,
+                    sentiment_score,
+                    cohort_name
+                FROM email_tracking
+                WHERE cohort_name IS NOT NULL
+                  AND sentiment IS NOT NULL
+                  AND email_type = 'inbound'
+                ORDER BY sender_email, sentiment, sent_at DESC
+            )
             SELECT
                 sentiment,
-                COUNT(*) as count,
-                ROUND(100.0 * COUNT(*) / SUM(COUNT(*)) OVER(), 2) as percentage,
+                COUNT(DISTINCT sender_email) as count,
+                ROUND(100.0 * COUNT(DISTINCT sender_email) / SUM(COUNT(DISTINCT sender_email)) OVER(), 2) as percentage,
                 AVG(sentiment_score) as avg_score
-            FROM email_tracking
-            WHERE cohort_name IS NOT NULL
-              AND sentiment IS NOT NULL
-              AND email_type = 'reply'
+            FROM merchant_responses
             GROUP BY sentiment
             ORDER BY count DESC
         ''')
@@ -8925,20 +8952,30 @@ def get_sentiment_analysis():
                 'avg_score': float(row[3]) if row[3] else 0
             })
 
-        # Get sentiment by cohort and test group
+        # Get sentiment by cohort and test group (count unique merchants per cohort)
         cursor.execute('''
+            WITH merchant_responses AS (
+                SELECT DISTINCT ON (cohort_name, test_group, sender_email, sentiment)
+                    cohort_name,
+                    test_group,
+                    sender_email,
+                    sentiment,
+                    sentiment_score
+                FROM email_tracking
+                WHERE cohort_name IS NOT NULL
+                  AND sentiment IS NOT NULL
+                  AND email_type = 'inbound'
+                ORDER BY cohort_name, test_group, sender_email, sentiment, sent_at DESC
+            )
             SELECT
                 cohort_name,
                 test_group,
                 sentiment,
-                COUNT(*) as count,
+                COUNT(DISTINCT sender_email) as count,
                 AVG(sentiment_score) as avg_score,
                 MIN(sentiment_score) as min_score,
                 MAX(sentiment_score) as max_score
-            FROM email_tracking
-            WHERE cohort_name IS NOT NULL
-              AND sentiment IS NOT NULL
-              AND email_type = 'reply'
+            FROM merchant_responses
             GROUP BY cohort_name, test_group, sentiment
             ORDER BY cohort_name, test_group, sentiment
         ''')
