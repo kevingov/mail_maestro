@@ -2808,6 +2808,37 @@ def reply_to_emails_with_accounts(accounts, cohort_override=None, account_name=N
                 )
                 if inbound_response.status_code == 200:
                     logger.info(f"✅ Merchant inbound email tracked: {inbound_tracking_id}")
+
+                    # Update response_count on the original outreach email
+                    try:
+                        conn_update = get_db_connection()
+                        if conn_update:
+                            cursor_update = conn_update.cursor()
+                            # Find the most recent outreach email to this merchant and update it
+                            cursor_update.execute('''
+                                UPDATE email_tracking
+                                SET response_count = response_count + 1,
+                                    first_response_at = COALESCE(first_response_at, NOW()),
+                                    last_response_at = NOW()
+                                WHERE id = (
+                                    SELECT id
+                                    FROM email_tracking
+                                    WHERE recipient_email = %s
+                                      AND email_type = 'outreach'
+                                      AND cohort_name IS NOT NULL
+                                    ORDER BY sent_at DESC
+                                    LIMIT 1
+                                )
+                            ''', (contact_email,))
+                            rows_updated = cursor_update.rowcount
+                            conn_update.commit()
+                            conn_update.close()
+                            if rows_updated > 0:
+                                logger.info(f"✅ Updated response_count for outreach email to {contact_email}")
+                            else:
+                                logger.warning(f"⚠️ No outreach email found to update response_count for {contact_email}")
+                    except Exception as update_error:
+                        logger.error(f"❌ Could not update response_count: {update_error}")
                 else:
                     logger.error(f"❌ Failed to track inbound email: {inbound_response.status_code}")
             except Exception as track_error:
