@@ -4067,6 +4067,11 @@ def analytics_dashboard():
             <!-- Stats Overview -->
             <div class="stats-grid">
                 <div class="stat-card">
+                    <div class="label">Unique Merchants</div>
+                    <div class="value" id="unique-merchants">0</div>
+                    <div class="change" id="merchants-change"></div>
+                </div>
+                <div class="stat-card">
                     <div class="label">Total Emails Sent</div>
                     <div class="value" id="total-emails">0</div>
                     <div class="change" id="emails-change"></div>
@@ -4075,16 +4080,6 @@ def analytics_dashboard():
                     <div class="label">Overall Open Rate</div>
                     <div class="value" id="open-rate">0%</div>
                     <div class="change" id="open-rate-change"></div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Unique Merchants</div>
-                    <div class="value" id="unique-merchants">0</div>
-                    <div class="change" id="merchants-change"></div>
-                </div>
-                <div class="stat-card">
-                    <div class="label">Active Cohorts</div>
-                    <div class="value" id="total-cohorts">0</div>
-                    <div class="change" id="cohorts-change"></div>
                 </div>
                 <div class="stat-card">
                     <div class="label">Response Rate</div>
@@ -4272,7 +4267,6 @@ def analytics_dashboard():
             document.getElementById('total-emails').textContent = overall.total_outreach_emails || 0;
             document.getElementById('open-rate').textContent = (overall.overall_open_rate || 0).toFixed(1) + '%';
             document.getElementById('unique-merchants').textContent = overall.unique_merchants || 0;
-            document.getElementById('total-cohorts').textContent = overall.total_cohorts || 0;
             document.getElementById('response-rate').textContent = (overall.overall_response_rate || 0).toFixed(1) + '%';
             document.getElementById('avg-replies').textContent = (overall.avg_replies_per_merchant || 0).toFixed(1);
             document.getElementById('reply-open-rate').textContent = (overall.overall_reply_open_rate || 0).toFixed(1) + '%';
