@@ -8577,7 +8577,8 @@ def get_cohort_performance():
                     COUNT(*) FILTER (WHERE email_type = 'reply') as total_replies_sent,
                     SUM(CASE WHEN email_type = 'reply' AND open_count > 0 THEN 1 ELSE 0 END) as replies_opened,
                     COUNT(DISTINCT merchant_id) FILTER (WHERE merchant_id IS NOT NULL AND email_type = 'outreach') as unique_merchants,
-                    COUNT(DISTINCT sender_email) FILTER (WHERE email_type = 'inbound') as merchants_who_responded
+                    COUNT(DISTINCT sender_email) FILTER (WHERE email_type = 'inbound') as merchants_who_responded,
+                    COUNT(*) FILTER (WHERE email_type = 'inbound') as total_inbound_emails
                 FROM email_tracking
                 WHERE cohort_name IS NOT NULL
                   AND cohort_name != 'pilot_batch1'
@@ -8601,7 +8602,7 @@ def get_cohort_performance():
                 replies_opened,
                 ROUND(100.0 * replies_opened / NULLIF(total_replies_sent, 0), 2) as reply_open_rate,
                 unique_merchants,
-                ROUND(total_replies_sent::numeric / NULLIF(unique_merchants, 0), 2) as avg_replies_per_merchant
+                ROUND(total_inbound_emails::numeric / NULLIF(merchants_who_responded, 0), 2) as avg_replies_per_merchant
             FROM cohort_stats
             ORDER BY cohort_batch NULLS LAST, cohort_name, test_group
         ''')
