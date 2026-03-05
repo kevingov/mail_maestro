@@ -4108,7 +4108,7 @@ def analytics_dashboard():
                     <div class="change" id="response-rate-change"></div>
                 </div>
                 <div class="stat-card">
-                    <div class="label">Avg Replies/Merchant</div>
+                    <div class="label">Avg Replies/Responded Merchant</div>
                     <div class="value" id="avg-replies">0</div>
                     <div class="change" id="avg-replies-change"></div>
                 </div>
@@ -4178,7 +4178,7 @@ def analytics_dashboard():
                             <th>Responses</th>
                             <th>Response Rate</th>
                             <th>Replies Sent</th>
-                            <th>Avg Replies</th>
+                            <th>Avg Replies (Responded)</th>
                             <th>Avg Opens</th>
                             <th>First Email</th>
                         </tr>
