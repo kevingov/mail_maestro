@@ -4598,7 +4598,7 @@ def analytics_dashboard():
                     <td>${sentimentDisplay}</td>
                     <td>${merchant.last_request_type || '-'}</td>
                     <td>${merchant.last_email_sent ? new Date(merchant.last_email_sent).toLocaleDateString() : '-'}</td>
-                    <td><button class="view-thread-btn" onclick="openMerchantThread('${merchant.merchant_email}', '${merchant.merchant_name}')">View Thread</button></td>
+                    <td><button class="view-thread-btn" onclick="openMerchantThread('${merchant.merchant_id}', '${merchant.merchant_name}', '${merchant.merchant_email}')">View Thread</button></td>
                 `;
                 merchantTableBody.appendChild(row);
             });
@@ -4615,13 +4615,13 @@ def analytics_dashboard():
             document.getElementById('panelOverlay').classList.remove('open');
         }
 
-        async function openMerchantThread(merchantEmail, merchantName) {
+        async function openMerchantThread(merchantId, merchantName, merchantEmail) {
             openSidePanel();
             document.getElementById('sidePanelTitle').textContent = `Email Thread - ${merchantName}`;
             document.getElementById('sidePanelContent').innerHTML = '<p style="color: #6b7280;">Loading email thread...</p>';
 
             try {
-                const response = await fetch(`/api/merchant-thread/${encodeURIComponent(merchantEmail)}`);
+                const response = await fetch(`/api/merchant-thread/${encodeURIComponent(merchantId)}`);
                 const data = await response.json();
 
                 if (data.status === 'success' && data.emails) {
@@ -9278,9 +9278,9 @@ def get_email_details(record_id):
         logger.error(f"Error getting email details: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/merchant-thread/<merchant_email>', methods=['GET'])
-def get_merchant_thread(merchant_email):
-    """Get email thread for a specific merchant."""
+@app.route('/api/merchant-thread/<merchant_identifier>', methods=['GET'])
+def get_merchant_thread(merchant_identifier):
+    """Get email thread for a specific merchant using merchant_id or email."""
     try:
         if not DB_AVAILABLE:
             return jsonify({'error': 'Database not available'}), 503
@@ -9291,8 +9291,8 @@ def get_merchant_thread(merchant_email):
 
         cursor = conn.cursor()
 
-        # Get all emails (outreach and replies) for this merchant
-        # Check both recipient_email and sender_email (case-insensitive) to catch all related emails
+        # Get all emails (outreach, reply, and inbound) for this merchant
+        # Match by merchant_id (preferred) or by email as fallback
         cursor.execute('''
             SELECT
                 id, tracking_id, recipient_email, sender_email, subject,
@@ -9300,10 +9300,18 @@ def get_merchant_thread(merchant_email):
                 email_type, request_type, sentiment, sentiment_score,
                 cohort_name, test_group, email_body
             FROM email_tracking
-            WHERE LOWER(recipient_email) = LOWER(%s)
-               OR LOWER(sender_email) = LOWER(%s)
+            WHERE
+                -- Match by merchant_id (most reliable)
+                merchant_id = %s
+                OR
+                -- Fallback: match by email for older records without merchant_id
+                LOWER(recipient_email) = LOWER(%s)
+                OR LOWER(sender_email) = LOWER(%s)
+                OR LOWER(recipient_email) LIKE LOWER(%s)
+                OR LOWER(sender_email) LIKE LOWER(%s)
             ORDER BY sent_at DESC
-        ''', (merchant_email, merchant_email))
+        ''', (merchant_identifier, merchant_identifier, merchant_identifier,
+              f'%<{merchant_identifier}>%', f'%<{merchant_identifier}>%'))
 
         emails = []
         for row in cursor.fetchall():
@@ -9338,11 +9346,15 @@ def get_merchant_thread(merchant_email):
 
         conn.close()
 
-        logger.info(f"📧 EMAIL BODY DEBUG - STEP 4: Returning {len(emails)} emails for {merchant_email}")
+        logger.info(f"📧 EMAIL BODY DEBUG - STEP 4: Returning {len(emails)} emails for {merchant_identifier}")
+        logger.info(f"📧 Email types found: {[e.get('email_type') for e in emails]}")
+        logger.info(f"📧 Inbound emails: {sum(1 for e in emails if e.get('email_type') == 'inbound')}")
+        logger.info(f"📧 Outreach emails: {sum(1 for e in emails if e.get('email_type') == 'outreach')}")
+        logger.info(f"📧 Reply emails: {sum(1 for e in emails if e.get('email_type') == 'reply')}")
 
         return jsonify({
             'status': 'success',
-            'merchant_email': merchant_email,
+            'merchant_identifier': merchant_identifier,
             'emails': emails,
             'total_emails': len(emails)
         })
@@ -9351,6 +9363,55 @@ def get_merchant_thread(merchant_email):
         logger.error(f"Error getting merchant thread: {e}")
         import traceback
         logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/debug-merchant/<merchant_email>', methods=['GET'])
+def debug_merchant_emails(merchant_email):
+    """Debug endpoint to see all raw email data for a merchant."""
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 503
+
+        cursor = conn.cursor()
+
+        # Get ALL emails that might be related (very broad search)
+        cursor.execute('''
+            SELECT
+                id, email_type, recipient_email, sender_email, subject, sent_at,
+                cohort_name, test_group
+            FROM email_tracking
+            WHERE LOWER(recipient_email) LIKE %s
+               OR LOWER(sender_email) LIKE %s
+            ORDER BY sent_at DESC
+        ''', (f'%{merchant_email.lower()}%', f'%{merchant_email.lower()}%'))
+
+        emails = []
+        for row in cursor.fetchall():
+            emails.append({
+                'id': row[0],
+                'email_type': row[1],
+                'recipient_email': row[2],
+                'sender_email': row[3],
+                'subject': row[4],
+                'sent_at': row[5].isoformat() if row[5] else None,
+                'cohort_name': row[6],
+                'test_group': row[7]
+            })
+
+        conn.close()
+
+        return jsonify({
+            'merchant_email': merchant_email,
+            'total_found': len(emails),
+            'emails': emails
+        })
+
+    except Exception as e:
+        logger.error(f"Error in debug endpoint: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/check-responses', methods=['GET', 'POST'])
