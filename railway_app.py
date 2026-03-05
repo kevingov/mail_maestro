@@ -4598,7 +4598,7 @@ def analytics_dashboard():
                     <td>${sentimentDisplay}</td>
                     <td>${merchant.last_request_type || '-'}</td>
                     <td>${merchant.last_email_sent ? new Date(merchant.last_email_sent).toLocaleDateString() : '-'}</td>
-                    <td><button class="view-thread-btn" onclick="openMerchantThread('${merchant.merchant_id}', '${merchant.merchant_name}', '${merchant.merchant_email}')">View Thread</button></td>
+                    <td><button class="view-thread-btn" onclick="openMerchantThread('${merchant.merchant_email}', '${merchant.merchant_name}')">View Thread</button></td>
                 `;
                 merchantTableBody.appendChild(row);
             });
@@ -4615,13 +4615,13 @@ def analytics_dashboard():
             document.getElementById('panelOverlay').classList.remove('open');
         }
 
-        async function openMerchantThread(merchantId, merchantName, merchantEmail) {
+        async function openMerchantThread(merchantEmail, merchantName) {
             openSidePanel();
             document.getElementById('sidePanelTitle').textContent = `Email Thread - ${merchantName}`;
             document.getElementById('sidePanelContent').innerHTML = '<p style="color: #6b7280;">Loading email thread...</p>';
 
             try {
-                const response = await fetch(`/api/merchant-thread/${encodeURIComponent(merchantId)}`);
+                const response = await fetch(`/api/merchant-thread/${encodeURIComponent(merchantEmail)}`);
                 const data = await response.json();
 
                 if (data.status === 'success' && data.emails) {
@@ -9278,9 +9278,9 @@ def get_email_details(record_id):
         logger.error(f"Error getting email details: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/merchant-thread/<merchant_identifier>', methods=['GET'])
-def get_merchant_thread(merchant_identifier):
-    """Get email thread for a specific merchant using merchant_id or email."""
+@app.route('/api/merchant-thread/<merchant_email>', methods=['GET'])
+def get_merchant_thread(merchant_email):
+    """Get email thread for a specific merchant using email with normalization."""
     try:
         if not DB_AVAILABLE:
             return jsonify({'error': 'Database not available'}), 503
@@ -9292,7 +9292,7 @@ def get_merchant_thread(merchant_identifier):
         cursor = conn.cursor()
 
         # Get all emails (outreach, reply, and inbound) for this merchant
-        # Match by merchant_id (preferred) or by email as fallback
+        # Use email normalization logic to extract emails from formats like "Name <email@example.com>"
         cursor.execute('''
             SELECT
                 id, tracking_id, recipient_email, sender_email, subject,
@@ -9301,17 +9301,37 @@ def get_merchant_thread(merchant_identifier):
                 cohort_name, test_group, email_body
             FROM email_tracking
             WHERE
-                -- Match by merchant_id (most reliable)
-                merchant_id = %s
+                -- For outreach/reply emails, check if merchant is the recipient
+                (email_type IN ('outreach', 'reply') AND (
+                    LOWER(recipient_email) = LOWER(%s)
+                    OR LOWER(COALESCE(
+                        NULLIF(SUBSTRING(recipient_email FROM '<([^>]+)>'), ''),
+                        recipient_email
+                    )) = LOWER(%s)
+                ))
                 OR
-                -- Fallback: match by email for older records without merchant_id
-                LOWER(recipient_email) = LOWER(%s)
-                OR LOWER(sender_email) = LOWER(%s)
-                OR LOWER(recipient_email) LIKE LOWER(%s)
-                OR LOWER(sender_email) LIKE LOWER(%s)
+                -- For inbound emails, check if merchant is the sender
+                (email_type = 'inbound' AND (
+                    LOWER(sender_email) = LOWER(%s)
+                    OR LOWER(COALESCE(
+                        NULLIF(SUBSTRING(sender_email FROM '<([^>]+)>'), ''),
+                        sender_email
+                    )) = LOWER(%s)
+                ))
+                OR
+                -- Catch any emails where merchant appears in either field (fallback for edge cases)
+                (email_type IS NULL AND (
+                    LOWER(COALESCE(
+                        NULLIF(SUBSTRING(recipient_email FROM '<([^>]+)>'), ''),
+                        recipient_email
+                    )) = LOWER(%s)
+                    OR LOWER(COALESCE(
+                        NULLIF(SUBSTRING(sender_email FROM '<([^>]+)>'), ''),
+                        sender_email
+                    )) = LOWER(%s)
+                ))
             ORDER BY sent_at DESC
-        ''', (merchant_identifier, merchant_identifier, merchant_identifier,
-              f'%<{merchant_identifier}>%', f'%<{merchant_identifier}>%'))
+        ''', (merchant_email, merchant_email, merchant_email, merchant_email, merchant_email, merchant_email))
 
         emails = []
         for row in cursor.fetchall():
@@ -9346,7 +9366,7 @@ def get_merchant_thread(merchant_identifier):
 
         conn.close()
 
-        logger.info(f"📧 EMAIL BODY DEBUG - STEP 4: Returning {len(emails)} emails for {merchant_identifier}")
+        logger.info(f"📧 EMAIL BODY DEBUG - STEP 4: Returning {len(emails)} emails for {merchant_email}")
         logger.info(f"📧 Email types found: {[e.get('email_type') for e in emails]}")
         logger.info(f"📧 Inbound emails: {sum(1 for e in emails if e.get('email_type') == 'inbound')}")
         logger.info(f"📧 Outreach emails: {sum(1 for e in emails if e.get('email_type') == 'outreach')}")
@@ -9354,7 +9374,7 @@ def get_merchant_thread(merchant_identifier):
 
         return jsonify({
             'status': 'success',
-            'merchant_identifier': merchant_identifier,
+            'merchant_email': merchant_email,
             'emails': emails,
             'total_emails': len(emails)
         })
