@@ -13272,10 +13272,21 @@ def twilio_gather_input():
 
         logger.info(f"🤖 AI Response: {ai_response}")
 
+        # Generate ElevenLabs audio for AI response
+        ai_audio_url = None
+        if ELEVENLABS_AVAILABLE and ELEVENLABS_API_KEY:
+            ai_audio_url = generate_elevenlabs_audio(ai_response)
+
         # Create TwiML response
         response = VoiceResponse()
-        logger.info("🔊 Speaking AI response with Google Neural voice")
-        response.say(ai_response, voice='Google.en-US-Neural2-C', language='en-US')
+
+        # Use ElevenLabs audio if available
+        if ai_audio_url:
+            logger.info("🎙️ Using ElevenLabs audio for AI response")
+            response.play(ai_audio_url)
+        else:
+            logger.info("🔊 Speaking AI response with Google Neural voice")
+            response.say(ai_response, voice='Google.en-US-Neural2-C', language='en-US')
 
         # Continue gathering input
         gather = Gather(
@@ -13285,11 +13296,31 @@ def twilio_gather_input():
             timeout=5,
             speech_timeout='auto'
         )
-        gather.say("Is there anything else I can help you with?", voice='Google.en-US-Neural2-C', language='en-US')
+
+        # Generate ElevenLabs audio for follow-up question
+        followup_text = "Is there anything else I can help you with?"
+        followup_audio_url = None
+        if ELEVENLABS_AVAILABLE and ELEVENLABS_API_KEY:
+            followup_audio_url = generate_elevenlabs_audio(followup_text)
+
+        if followup_audio_url:
+            gather.play(followup_audio_url)
+        else:
+            gather.say(followup_text, voice='Google.en-US-Neural2-C', language='en-US')
+
         response.append(gather)
 
         # Option to end call
-        response.say("Thank you for your time. Have a great day!", voice='Google.en-US-Neural2-C', language='en-US')
+        goodbye_text = "Thank you for your time. Have a great day!"
+        goodbye_audio_url = None
+        if ELEVENLABS_AVAILABLE and ELEVENLABS_API_KEY:
+            goodbye_audio_url = generate_elevenlabs_audio(goodbye_text)
+
+        if goodbye_audio_url:
+            response.play(goodbye_audio_url)
+        else:
+            response.say(goodbye_text, voice='Google.en-US-Neural2-C', language='en-US')
+
         response.hangup()
 
         logger.info("📞 Gather response sent to Twilio")
