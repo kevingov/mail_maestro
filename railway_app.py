@@ -32,7 +32,7 @@ from openai import OpenAI
 # Twilio and ElevenLabs imports
 try:
     from twilio.rest import Client as TwilioClient
-    from twilio.twiml.voice_response import VoiceResponse, Gather
+    from twilio.twiml.voice_response import VoiceResponse, Gather, Connect, Stream
     TWILIO_AVAILABLE = True
 except ImportError:
     TWILIO_AVAILABLE = False
@@ -75,6 +75,7 @@ TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")  # Your Twilio phone numb
 # ElevenLabs configuration
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "cgSgspJ2msm6clMCkdW9")  # Custom voice
+ELEVENLABS_AGENT_ID = os.getenv("ELEVENLABS_AGENT_ID", "agent_2301kkc365g8eh7899yqv4ab6j7a")  # Conversational AI agent
 
 # Initialize ElevenLabs if available
 if ELEVENLABS_AVAILABLE and ELEVENLABS_API_KEY:
@@ -13160,87 +13161,48 @@ def initiate_call():
 @app.route('/api/twilio/voice', methods=['POST', 'GET'])
 def twilio_voice_handler():
     """
-    TwiML endpoint for handling the initial call connection.
+    TwiML endpoint - Connects call to ElevenLabs Conversational AI agent.
+    Uses native Twilio + ElevenLabs integration for smooth conversations.
     """
     try:
-        logger.info("📞 ==> Voice handler called - Starting call flow")
+        logger.info("📞 ==> Voice handler called - Connecting to ElevenLabs agent")
 
         # Get merchant info from query parameters
         merchant_email = request.args.get('merchant_email', request.values.get('merchant_email'))
-        merchant_name = request.args.get('merchant_name', request.values.get('merchant_name', 'there'))
+        merchant_name = request.args.get('merchant_name', request.values.get('merchant_name', 'Merchant'))
         merchant_id = request.args.get('merchant_id', request.values.get('merchant_id'))
 
-        logger.info(f"📞 Merchant info: {merchant_name} ({merchant_email})")
+        logger.info(f"📞 Merchant: {merchant_name} ({merchant_email})")
+        logger.info(f"🤖 Connecting to ElevenLabs agent: {ELEVENLABS_AGENT_ID}")
 
-        # Get merchant context for RAG
-        logger.info("📞 Fetching merchant context from database...")
-        context = get_merchant_context(merchant_email=merchant_email, merchant_id=merchant_id)
-        logger.info(f"📞 Context retrieved: {len(context.get('emails', []))} emails found")
-
-        # Generate AI greeting
-        logger.info("📞 Generating AI greeting with OpenAI...")
-        greeting = generate_ai_response(context)
-        logger.info(f"📞 AI greeting generated: '{greeting[:100]}...'")
-
-        # Check if ElevenLabs is available and generate audio
-        audio_url = None
-        if ELEVENLABS_AVAILABLE and ELEVENLABS_API_KEY:
-            logger.info("🎤 ElevenLabs is configured - attempting to generate audio")
-            audio_url = generate_elevenlabs_audio(greeting)
-            if audio_url:
-                logger.info(f"✅ ElevenLabs audio generated and hosted at: {audio_url}")
-            else:
-                logger.warning("⚠️ ElevenLabs generation failed - using Twilio TTS")
-        else:
-            logger.info("ℹ️ ElevenLabs not configured - using Twilio TTS")
-
-        # Create TwiML response
+        # Create TwiML to connect to ElevenLabs Conversational AI
         response = VoiceResponse()
 
-        # Use ElevenLabs audio if available, otherwise use Twilio TTS
-        if audio_url:
-            logger.info("🎙️ Using ElevenLabs audio")
-            response.play(audio_url)
-        else:
-            # Use enhanced Twilio voice (Google Neural - sounds much more natural)
-            logger.info("🔊 Using Twilio voice: Google.en-US-Neural2-C (natural female voice)")
-            response.say(greeting, voice='Google.en-US-Neural2-C', language='en-US')
+        connect = response.connect()
 
-        # Gather input from merchant
-        gather = Gather(
-            input='speech',
-            action=f'/api/twilio/gather-input?merchant_email={merchant_email}&merchant_name={merchant_name}&merchant_id={merchant_id}',
-            method='POST',
-            timeout=5,
-            speech_timeout='auto'
+        # Stream audio to ElevenLabs WebSocket
+        stream = connect.stream(
+            url=f'wss://api.elevenlabs.io/v1/convai/conversation?agent_id={ELEVENLABS_AGENT_ID}',
+            name='ElevenLabs Conversational AI'
         )
 
-        # Generate follow-up prompt with ElevenLabs if available
-        followup_text = "Please tell me how I can help you today."
-        followup_audio_url = None
-        if ELEVENLABS_AVAILABLE and ELEVENLABS_API_KEY:
-            followup_audio_url = generate_elevenlabs_audio(followup_text)
+        # Add custom parameters for merchant context
+        stream.parameter(name='merchant_email', value=merchant_email or 'unknown')
+        stream.parameter(name='merchant_name', value=merchant_name)
+        stream.parameter(name='merchant_id', value=merchant_id or 'unknown')
 
-        if followup_audio_url:
-            gather.play(followup_audio_url)
-        else:
-            gather.say(followup_text, voice='Google.en-US-Neural2-C', language='en-US')
+        logger.info("✅ TwiML response: Streaming to ElevenLabs agent")
 
-        response.append(gather)
-
-        # If no input, redirect
-        response.redirect('/api/twilio/voice')
-
-        logger.info("📞 TwiML response generated successfully")
-
-        # Log the actual TwiML being sent
         twiml_str = str(response)
         logger.info(f"📄 TwiML Response:\n{twiml_str}")
 
         return Response(twiml_str, mimetype='text/xml')
 
     except Exception as e:
-        logger.error(f"Error in voice handler: {e}")
+        logger.error(f"❌ Error connecting to ElevenLabs: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+
         response = VoiceResponse()
         response.say("I apologize, we're experiencing technical difficulties. Please email us at support@affirm.com")
         response.hangup()
