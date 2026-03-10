@@ -13218,12 +13218,12 @@ def initiate_call():
         # Create Twilio client
         twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
-        # Route directly to ElevenLabs agent webhook
-        # IMPORTANT: Don't add query parameters - ElevenLabs webhooks don't accept them
-        # The agent will get context by calling the get-merchant-context webhook tool
-        webhook_url = elevenlabs_webhook_url
+        # Route to our proxy endpoint which forwards to ElevenLabs with authentication
+        # Our proxy adds the API key and agent_id before forwarding to ElevenLabs
+        webhook_url = f"{app_url}/api/twilio/elevenlabs-proxy"
 
-        logger.info(f"📡 ElevenLabs webhook URL: {webhook_url}")
+        logger.info(f"📡 Proxy webhook URL: {webhook_url}")
+        logger.info(f"📡 Will forward to ElevenLabs: {elevenlabs_webhook_url}")
         logger.info(f"📡 Note: Agent will call get-merchant-context webhook with phone {normalized_phone}")
 
         # Get app URL for status callbacks
@@ -13283,6 +13283,79 @@ def initiate_call():
         import traceback
         logger.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/twilio/elevenlabs-proxy', methods=['POST', 'GET'])
+def elevenlabs_outbound_proxy():
+    """
+    Proxy endpoint for ElevenLabs outbound calls.
+
+    This endpoint receives Twilio's webhook call and forwards it to ElevenLabs
+    with proper authentication (API key + agent ID).
+
+    Flow:
+    1. Twilio places call and posts here when answered
+    2. We add ElevenLabs authentication
+    3. Forward request to ElevenLabs outbound-call endpoint
+    4. ElevenLabs returns TwiML
+    5. We return TwiML to Twilio
+    """
+    try:
+        logger.info("📞 ========== ELEVENLABS PROXY CALLED ==========")
+        logger.info(f"📞 Request from Twilio")
+
+        # Get all Twilio parameters
+        twilio_params = dict(request.values)
+        logger.info(f"📞 Twilio params: {twilio_params}")
+
+        # Build ElevenLabs outbound call URL
+        elevenlabs_url = "https://api.elevenlabs.io/v1/convai/twilio/outbound-call"
+
+        # Add authentication and agent ID as query parameters
+        elevenlabs_url += f"?agent_id={ELEVENLABS_AGENT_ID}"
+
+        logger.info(f"📡 Forwarding to ElevenLabs: {elevenlabs_url}")
+
+        # Forward request to ElevenLabs with authentication
+        headers = {
+            'xi-api-key': ELEVENLABS_API_KEY,
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+
+        import requests
+        response = requests.post(
+            elevenlabs_url,
+            data=twilio_params,
+            headers=headers,
+            timeout=10
+        )
+
+        logger.info(f"✅ ElevenLabs response status: {response.status_code}")
+        logger.info(f"📄 ElevenLabs response:\n{response.text[:500]}")
+
+        if response.status_code == 200:
+            # Return ElevenLabs TwiML to Twilio
+            return Response(response.text, mimetype='application/xml')
+        else:
+            logger.error(f"❌ ElevenLabs error: {response.status_code} - {response.text}")
+            # Fallback error response
+            from twilio.twiml.voice_response import VoiceResponse
+            fallback = VoiceResponse()
+            fallback.say("I apologize, we're experiencing technical difficulties. Please email us at support@affirm.com")
+            fallback.hangup()
+            return Response(str(fallback), mimetype='application/xml')
+
+    except Exception as e:
+        logger.error(f"❌ Error in ElevenLabs proxy: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+
+        # Fallback error response
+        from twilio.twiml.voice_response import VoiceResponse
+        fallback = VoiceResponse()
+        fallback.say("I apologize, we're experiencing technical difficulties.")
+        fallback.hangup()
+        return Response(str(fallback), mimetype='application/xml')
+
 
 @app.route('/api/twilio/voice', methods=['POST', 'GET'])
 def twilio_voice_handler():
