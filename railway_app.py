@@ -12815,9 +12815,10 @@ def generate_elevenlabs_audio(text):
         filepath = os.path.join(audio_dir, filename)
 
         # Save audio bytes to file
+        # ElevenLabs generate() returns an iterator, collect all chunks first
+        audio_bytes = b''.join(audio)
         with open(filepath, 'wb') as f:
-            for chunk in audio:
-                f.write(chunk)
+            f.write(audio_bytes)
 
         # Generate public URL
         base_url = os.getenv('BASE_URL', 'https://web-production-6dfbd.up.railway.app')
