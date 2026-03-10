@@ -497,6 +497,24 @@ def init_database():
         except Exception as e:
             logger.debug(f"Knowledge base indexes check: {e}")
 
+        # Add embeddings column for semantic search
+        try:
+            cursor.execute('''
+                ALTER TABLE knowledge_base
+                ADD COLUMN IF NOT EXISTS embedding vector(1536)
+            ''')
+            logger.info("✅ Added embedding column to knowledge_base table")
+        except Exception as e:
+            # If pgvector not installed, add as text array instead
+            try:
+                cursor.execute('''
+                    ALTER TABLE knowledge_base
+                    ADD COLUMN IF NOT EXISTS embedding TEXT
+                ''')
+                logger.info("✅ Added embedding column (text) to knowledge_base table")
+            except Exception as e2:
+                logger.debug(f"Embedding column check: {e2}")
+
         # Insert initial Affirm knowledge base entries
         try:
             cursor.execute('''
@@ -12565,6 +12583,138 @@ def ingest_snowflake_data():
 # TWILIO + ELEVENLABS PHONE CALL ENDPOINTS
 # ============================================================================
 
+def generate_embedding(text):
+    """
+    Generate OpenAI embedding for semantic search.
+    Returns a 1536-dimensional vector.
+    """
+    try:
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        response = client.embeddings.create(
+            model="text-embedding-3-small",
+            input=text
+        )
+        return response.data[0].embedding
+    except Exception as e:
+        logger.error(f"Error generating embedding: {e}")
+        return None
+
+def cosine_similarity(vec1, vec2):
+    """
+    Calculate cosine similarity between two vectors.
+    Returns a score from -1 to 1 (higher = more similar).
+    """
+    import json
+    import math
+
+    # Parse vectors if they're stored as JSON strings
+    if isinstance(vec1, str):
+        vec1 = json.loads(vec1)
+    if isinstance(vec2, str):
+        vec2 = json.loads(vec2)
+
+    # Calculate dot product and magnitudes
+    dot_product = sum(a * b for a, b in zip(vec1, vec2))
+    magnitude1 = math.sqrt(sum(a * a for a in vec1))
+    magnitude2 = math.sqrt(sum(b * b for b in vec2))
+
+    if magnitude1 == 0 or magnitude2 == 0:
+        return 0
+
+    return dot_product / (magnitude1 * magnitude2)
+
+def search_knowledge_base_semantic(query, merchant_context=None, limit=10):
+    """
+    Search knowledge base using semantic similarity.
+    Optionally filter based on merchant context (email history, issues).
+    Returns top N most relevant entries ranked by similarity score.
+    """
+    try:
+        if not DB_AVAILABLE:
+            return []
+
+        # Generate embedding for the query
+        query_embedding = generate_embedding(query)
+        if not query_embedding:
+            logger.warning("Failed to generate query embedding, falling back to basic search")
+            return get_knowledge_base_context(limit=limit)
+
+        conn = get_db_connection()
+        if not conn:
+            return []
+
+        cursor = conn.cursor()
+
+        # Get all knowledge base entries with embeddings
+        cursor.execute('''
+            SELECT id, category, topic, content, resource_url, embedding, tags
+            FROM knowledge_base
+            WHERE embedding IS NOT NULL
+        ''')
+
+        entries_with_scores = []
+        for row in cursor.fetchall():
+            entry_id, category, topic, content, url, embedding, tags = row
+
+            if not embedding:
+                continue
+
+            # Calculate similarity score
+            similarity = cosine_similarity(query_embedding, embedding)
+
+            # Boost score based on merchant context
+            boost = 0
+            if merchant_context:
+                # Boost if category matches merchant's recent issues
+                last_request = merchant_context.get('last_request_type', '').lower()
+                if 'integration' in last_request and category == 'integration':
+                    boost += 0.1
+                elif 'technical' in last_request and category == 'troubleshooting':
+                    boost += 0.1
+                elif 'api' in last_request and 'api' in tags:
+                    boost += 0.1
+
+                # Boost based on sentiment - if negative, prioritize troubleshooting
+                last_sentiment = merchant_context.get('last_sentiment', '').lower()
+                if last_sentiment in ['negative', 'frustrated'] and category == 'troubleshooting':
+                    boost += 0.15
+
+            final_score = similarity + boost
+
+            entries_with_scores.append({
+                'id': entry_id,
+                'category': category,
+                'topic': topic,
+                'content': content,
+                'url': url,
+                'tags': tags,
+                'similarity_score': round(final_score, 4)
+            })
+
+        conn.close()
+
+        # Sort by similarity score and return top N
+        entries_with_scores.sort(key=lambda x: x['similarity_score'], reverse=True)
+
+        # Deduplicate similar topics
+        seen_topics = set()
+        unique_entries = []
+        for entry in entries_with_scores:
+            topic_key = entry['topic'].lower()
+            if topic_key not in seen_topics:
+                seen_topics.add(topic_key)
+                unique_entries.append(entry)
+
+        logger.info(f"🔍 Semantic search found {len(unique_entries)} relevant entries")
+        return unique_entries[:limit]
+
+    except Exception as e:
+        logger.error(f"Error in semantic search: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        # Fallback to basic search
+        return get_knowledge_base_context(limit=limit)
+
 def get_knowledge_base_context(topics=None, limit=5):
     """
     Retrieve relevant Affirm documentation from knowledge base.
@@ -12665,6 +12815,34 @@ def get_merchant_context(merchant_email=None, merchant_id=None):
         ''', (merchant_id or merchant_email, merchant_email or merchant_id))
 
         cohort_info = cursor.fetchone()
+
+        # Get previous call history
+        call_where_clause = "merchant_id = %s" if merchant_id else "LOWER(merchant_email) = LOWER(%s)"
+        call_params = (merchant_id,) if merchant_id else (merchant_email,)
+
+        cursor.execute(f'''
+            SELECT
+                call_sid, call_status, call_duration, call_started_at,
+                conversation_summary, merchant_sentiment, issues_resolved, follow_up_needed
+            FROM phone_calls
+            WHERE {call_where_clause} AND call_status = 'completed'
+            ORDER BY call_started_at DESC
+            LIMIT 5
+        ''', call_params)
+
+        previous_calls = []
+        for row in cursor.fetchall():
+            previous_calls.append({
+                'call_sid': row[0],
+                'status': row[1],
+                'duration': row[2],
+                'started_at': row[3].isoformat() if row[3] else None,
+                'summary': row[4],
+                'sentiment': row[5],
+                'issues_resolved': row[6],
+                'follow_up_needed': row[7]
+            })
+
         conn.close()
 
         context = {
@@ -12673,9 +12851,12 @@ def get_merchant_context(merchant_email=None, merchant_id=None):
             'test_group': cohort_info[2] if cohort_info else None,
             'enrolled_at': cohort_info[3].isoformat() if cohort_info and cohort_info[3] else None,
             'emails': emails,
+            'previous_calls': previous_calls,
             'has_responded': any(e['type'] == 'inbound' for e in emails),
             'last_sentiment': next((e['sentiment'] for e in emails if e['sentiment']), None),
-            'last_request_type': next((e['request_type'] for e in emails if e['request_type']), None)
+            'last_request_type': next((e['request_type'] for e in emails if e['request_type']), None),
+            'total_calls': len(previous_calls),
+            'last_call_summary': previous_calls[0]['summary'] if previous_calls and previous_calls[0]['summary'] else None
         }
 
         return context
@@ -12698,18 +12879,47 @@ Cohort: {merchant_context.get('cohort', 'Unknown')}
 Has Responded: {merchant_context.get('has_responded', False)}
 Last Sentiment: {merchant_context.get('last_sentiment', 'Unknown')}
 Last Request: {merchant_context.get('last_request_type', 'Unknown')}
+Total Previous Calls: {merchant_context.get('total_calls', 0)}
 
 Recent Email History:
 """
         for email in merchant_context.get('emails', [])[:3]:
             context_summary += f"- {email['type']}: {email.get('subject', 'No subject')} ({email.get('sentiment', 'N/A')})\n"
 
-        # Get relevant knowledge base entries
-        knowledge_entries = get_knowledge_base_context(limit=3)
+        # Add previous call history
+        previous_calls = merchant_context.get('previous_calls', [])
+        if previous_calls:
+            context_summary += "\n Previous Call History:\n"
+            for call in previous_calls[:3]:  # Include last 3 calls
+                if call.get('summary'):
+                    context_summary += f"- {call['started_at']}: {call['summary']} (Sentiment: {call.get('sentiment', 'N/A')})\n"
+                    if call.get('issues_resolved'):
+                        context_summary += f"  Issues resolved: {call['issues_resolved']}\n"
+                    if call.get('follow_up_needed'):
+                        context_summary += f"  ⚠️ Follow-up needed\n"
+
+        # Build semantic search query from merchant context and question
+        search_query = ""
+        if merchant_question:
+            search_query = merchant_question
+        else:
+            # Build query from merchant context
+            last_request = merchant_context.get('last_request_type', '')
+            last_sentiment = merchant_context.get('last_sentiment', '')
+            search_query = f"Affirm integration help {last_request} {last_sentiment}"
+
+        # Get relevant knowledge base entries using semantic search
+        logger.info(f"🔍 Searching knowledge base with query: {search_query[:100]}")
+        knowledge_entries = search_knowledge_base_semantic(
+            query=search_query,
+            merchant_context=merchant_context,
+            limit=7  # Increased from 3 to 7 for better coverage
+        )
+
         knowledge_summary = "\n\n## Relevant Affirm Knowledge:\n"
         for entry in knowledge_entries:
-            knowledge_summary += f"**{entry['topic']}**: {entry['content']}\n"
-            if entry['url']:
+            knowledge_summary += f"**{entry['topic']}** (relevance: {entry.get('similarity_score', 0)}): {entry['content']}\n"
+            if entry.get('url'):
                 knowledge_summary += f"  → {entry['url']}\n"
             knowledge_summary += "\n"
 
@@ -13191,20 +13401,28 @@ def add_knowledge_base_entry():
         tags = data.get('tags', [])
         priority = data.get('priority', 5)
 
+        # Generate embedding for semantic search
+        embedding_text = f"{topic}. {content}"
+        embedding = generate_embedding(embedding_text)
+
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # Store embedding as JSON string
+        import json
+        embedding_json = json.dumps(embedding) if embedding else None
+
         cursor.execute('''
-            INSERT INTO knowledge_base (category, topic, content, resource_url, tags, priority)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO knowledge_base (category, topic, content, resource_url, tags, priority, embedding)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING id
-        ''', (category, topic, content, resource_url, tags, priority))
+        ''', (category, topic, content, resource_url, tags, priority, embedding_json))
 
         entry_id = cursor.fetchone()[0]
         conn.commit()
         conn.close()
 
-        logger.info(f"✅ Added knowledge base entry: {topic}")
+        logger.info(f"✅ Added knowledge base entry: {topic} (with embedding)")
 
         return jsonify({
             'status': 'success',
@@ -13214,6 +13432,65 @@ def add_knowledge_base_entry():
 
     except Exception as e:
         logger.error(f"Error adding knowledge base entry: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/knowledge-base/generate-embeddings', methods=['POST'])
+def generate_knowledge_base_embeddings():
+    """
+    Backfill embeddings for all existing knowledge base entries.
+    This is a one-time operation to generate embeddings for entries created before embeddings were added.
+    """
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Get all entries without embeddings
+        cursor.execute('''
+            SELECT id, topic, content
+            FROM knowledge_base
+            WHERE embedding IS NULL
+        ''')
+
+        entries = cursor.fetchall()
+        updated_count = 0
+
+        import json
+
+        for entry_id, topic, content in entries:
+            # Generate embedding
+            embedding_text = f"{topic}. {content}"
+            embedding = generate_embedding(embedding_text)
+
+            if embedding:
+                embedding_json = json.dumps(embedding)
+
+                # Update entry with embedding
+                cursor.execute('''
+                    UPDATE knowledge_base
+                    SET embedding = %s
+                    WHERE id = %s
+                ''', (embedding_json, entry_id))
+
+                updated_count += 1
+                logger.info(f"✅ Generated embedding for: {topic}")
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'status': 'success',
+            'entries_processed': len(entries),
+            'entries_updated': updated_count,
+            'message': f'Generated embeddings for {updated_count} entries'
+        })
+
+    except Exception as e:
+        logger.error(f"Error generating embeddings: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/knowledge-base/list', methods=['GET'])
