@@ -13191,16 +13191,20 @@ def twilio_voice_handler():
 
         logger.info(f"📡 WebSocket URL: {websocket_url[:80]}...")
 
-        # Stream audio to ElevenLabs WebSocket
+        # Stream audio to ElevenLabs WebSocket with status callback
+        base_url = request.url_root.rstrip('/')
         stream = connect.stream(
             url=websocket_url,
-            name='ElevenLabs Conversational AI'
+            name='ElevenLabs Conversational AI',
+            status_callback=f'{base_url}/api/twilio/stream-status'
         )
 
         # Add custom parameters for merchant context
         stream.parameter(name='merchant_email', value=merchant_email or 'unknown')
         stream.parameter(name='merchant_name', value=merchant_name)
         stream.parameter(name='merchant_id', value=merchant_id or 'unknown')
+
+        logger.info(f"📊 Stream status callback: {base_url}/api/twilio/stream-status")
 
         logger.info("✅ TwiML response: Streaming to ElevenLabs agent")
 
@@ -13380,6 +13384,31 @@ def twilio_call_status():
 
     except Exception as e:
         logger.error(f"Error processing call status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/twilio/stream-status', methods=['POST'])
+def twilio_stream_status():
+    """
+    Webhook for Twilio Media Stream status updates.
+    Logs connection status with ElevenLabs WebSocket.
+    """
+    try:
+        stream_sid = request.values.get('StreamSid')
+        stream_status = request.values.get('StreamStatus')
+        call_sid = request.values.get('CallSid')
+
+        logger.info(f"📡 Stream {stream_sid} status: {stream_status} (Call: {call_sid})")
+
+        # Log all parameters for debugging
+        all_params = dict(request.values)
+        logger.info(f"📊 Stream parameters: {all_params}")
+
+        return jsonify({'status': 'received'})
+
+    except Exception as e:
+        logger.error(f"❌ Error processing stream status: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 # ============================================================================
