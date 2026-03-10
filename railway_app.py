@@ -12817,8 +12817,16 @@ def generate_elevenlabs_audio(text):
         # Save audio bytes to file
         # ElevenLabs generate() returns an iterator of integers, convert to bytes
         audio_bytes = bytes(audio)
+
+        logger.info(f"📊 Audio data size: {len(audio_bytes)} bytes")
+
         with open(filepath, 'wb') as f:
             f.write(audio_bytes)
+
+        # Verify file was written
+        import os as os_module
+        file_size = os_module.path.getsize(filepath)
+        logger.info(f"✅ File written: {file_size} bytes")
 
         # Generate public URL
         base_url = os.getenv('BASE_URL', 'https://web-production-6dfbd.up.railway.app')
@@ -13014,7 +13022,12 @@ def twilio_voice_handler():
         response.redirect('/api/twilio/voice')
 
         logger.info("📞 TwiML response generated successfully")
-        return Response(str(response), mimetype='text/xml')
+
+        # Log the actual TwiML being sent
+        twiml_str = str(response)
+        logger.info(f"📄 TwiML Response:\n{twiml_str}")
+
+        return Response(twiml_str, mimetype='text/xml')
 
     except Exception as e:
         logger.error(f"Error in voice handler: {e}")
@@ -13450,7 +13463,17 @@ def serve_audio(filename):
     try:
         audio_dir = os.path.join(os.getcwd(), 'static', 'audio')
         logger.info(f"📁 Serving audio file: {filename} from {audio_dir}")
-        return send_from_directory(audio_dir, filename)
+
+        # Check file size before serving
+        import os as os_module
+        filepath = os_module.path.join(audio_dir, filename)
+        if os_module.path.exists(filepath):
+            file_size = os_module.path.getsize(filepath)
+            logger.info(f"📊 Serving file size: {file_size} bytes")
+        else:
+            logger.error(f"❌ File not found: {filepath}")
+
+        return send_from_directory(audio_dir, filename, mimetype='audio/mpeg')
     except Exception as e:
         logger.error(f"Error serving audio file {filename}: {e}")
         return "Audio file not found", 404
