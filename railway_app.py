@@ -13275,7 +13275,12 @@ def twilio_gather_input():
         # Generate ElevenLabs audio for AI response
         ai_audio_url = None
         if ELEVENLABS_AVAILABLE and ELEVENLABS_API_KEY:
+            logger.info("🎤 Generating ElevenLabs audio for AI response...")
             ai_audio_url = generate_elevenlabs_audio(ai_response)
+            if ai_audio_url:
+                logger.info(f"✅ AI response audio URL: {ai_audio_url}")
+            else:
+                logger.warning("⚠️ Failed to generate AI response audio, will use TTS fallback")
 
         # Create TwiML response
         response = VoiceResponse()
@@ -13323,15 +13328,25 @@ def twilio_gather_input():
 
         response.hangup()
 
+        # Log the full TwiML being sent
+        twiml_str = str(response)
         logger.info("📞 Gather response sent to Twilio")
-        return Response(str(response), mimetype='text/xml')
+        logger.info(f"📄 Gather TwiML Response:\n{twiml_str}")
+
+        return Response(twiml_str, mimetype='text/xml')
 
     except Exception as e:
-        logger.error(f"Error gathering input: {e}")
+        logger.error(f"❌ Error gathering input: {e}")
+        import traceback
+        logger.error(f"Stack trace:\n{traceback.format_exc()}")
+
         response = VoiceResponse()
         response.say("I apologize for the technical difficulty. Please email support@affirm.com for assistance.")
         response.hangup()
-        return Response(str(response), mimetype='text/xml')
+
+        error_twiml = str(response)
+        logger.error(f"📄 Error TwiML Response:\n{error_twiml}")
+        return Response(error_twiml, mimetype='text/xml')
 
 @app.route('/api/twilio/call-status', methods=['POST'])
 def twilio_call_status():
@@ -13803,21 +13818,33 @@ def serve_audio(filename):
     Serve ElevenLabs generated audio files.
     """
     try:
-        audio_dir = os.path.join(os.getcwd(), 'static', 'audio')
-        logger.info(f"📁 Serving audio file: {filename} from {audio_dir}")
+        # Log request details
+        user_agent = request.headers.get('User-Agent', 'Unknown')
+        logger.info(f"📁 Serving audio file: {filename}")
+        logger.info(f"📡 Request from: {user_agent}")
 
-        # Check file size before serving
+        audio_dir = os.path.join(os.getcwd(), 'static', 'audio')
+
+        # Check file exists and get size
         import os as os_module
         filepath = os_module.path.join(audio_dir, filename)
         if os_module.path.exists(filepath):
             file_size = os_module.path.getsize(filepath)
-            logger.info(f"📊 Serving file size: {file_size} bytes")
+            logger.info(f"✅ File found: {file_size} bytes")
         else:
             logger.error(f"❌ File not found: {filepath}")
+            logger.error(f"📂 Directory contents: {os_module.listdir(audio_dir) if os_module.path.exists(audio_dir) else 'directory does not exist'}")
+            return "Audio file not found", 404
 
-        return send_from_directory(audio_dir, filename, mimetype='audio/mpeg')
+        # Serve the file
+        response = send_from_directory(audio_dir, filename, mimetype='audio/mpeg')
+        logger.info(f"✅ Successfully served: {filename}")
+        return response
+
     except Exception as e:
-        logger.error(f"Error serving audio file {filename}: {e}")
+        logger.error(f"❌ Error serving audio file {filename}: {e}")
+        import traceback
+        logger.error(f"Stack trace:\n{traceback.format_exc()}")
         return "Audio file not found", 404
 
 if __name__ == '__main__':
