@@ -12871,6 +12871,220 @@ def twilio_call_status():
         logger.error(f"Error processing call status: {e}")
         return jsonify({'error': str(e)}), 500
 
+# ============================================================================
+# KNOWLEDGE BASE MANAGEMENT ENDPOINTS
+# ============================================================================
+
+@app.route('/api/knowledge-base/add', methods=['POST'])
+def add_knowledge_base_entry():
+    """
+    Add a new entry to the knowledge base.
+
+    Payload:
+    {
+        "category": "integration",
+        "topic": "Shopify Integration",
+        "content": "Step-by-step guide...",
+        "resource_url": "https://docs.affirm.com/shopify",
+        "tags": ["shopify", "ecommerce"],
+        "priority": 8
+    }
+    """
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        data = request.get_json()
+
+        # Required fields
+        category = data.get('category')
+        topic = data.get('topic')
+        content = data.get('content')
+
+        if not all([category, topic, content]):
+            return jsonify({'error': 'category, topic, and content are required'}), 400
+
+        # Optional fields
+        resource_url = data.get('resource_url')
+        tags = data.get('tags', [])
+        priority = data.get('priority', 5)
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT INTO knowledge_base (category, topic, content, resource_url, tags, priority)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+        ''', (category, topic, content, resource_url, tags, priority))
+
+        entry_id = cursor.fetchone()[0]
+        conn.commit()
+        conn.close()
+
+        logger.info(f"✅ Added knowledge base entry: {topic}")
+
+        return jsonify({
+            'status': 'success',
+            'entry_id': entry_id,
+            'message': f'Added knowledge base entry: {topic}'
+        })
+
+    except Exception as e:
+        logger.error(f"Error adding knowledge base entry: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/knowledge-base/list', methods=['GET'])
+def list_knowledge_base():
+    """
+    List all knowledge base entries.
+
+    Query params:
+    - category: Filter by category
+    - limit: Max entries to return (default 50)
+    """
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        category = request.args.get('category')
+        limit = int(request.args.get('limit', 50))
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        if category:
+            cursor.execute('''
+                SELECT id, category, topic, content, resource_url, tags, priority, created_at
+                FROM knowledge_base
+                WHERE category = %s
+                ORDER BY priority DESC, created_at DESC
+                LIMIT %s
+            ''', (category, limit))
+        else:
+            cursor.execute('''
+                SELECT id, category, topic, content, resource_url, tags, priority, created_at
+                FROM knowledge_base
+                ORDER BY priority DESC, created_at DESC
+                LIMIT %s
+            ''', (limit,))
+
+        entries = []
+        for row in cursor.fetchall():
+            entries.append({
+                'id': row[0],
+                'category': row[1],
+                'topic': row[2],
+                'content': row[3],
+                'resource_url': row[4],
+                'tags': row[5],
+                'priority': row[6],
+                'created_at': row[7].isoformat() if row[7] else None
+            })
+
+        conn.close()
+
+        return jsonify({
+            'status': 'success',
+            'total_entries': len(entries),
+            'entries': entries
+        })
+
+    except Exception as e:
+        logger.error(f"Error listing knowledge base: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/knowledge-base/update/<int:entry_id>', methods=['PUT'])
+def update_knowledge_base_entry(entry_id):
+    """
+    Update an existing knowledge base entry.
+    """
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        data = request.get_json()
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Build update query dynamically based on provided fields
+        update_fields = []
+        params = []
+
+        if 'category' in data:
+            update_fields.append('category = %s')
+            params.append(data['category'])
+        if 'topic' in data:
+            update_fields.append('topic = %s')
+            params.append(data['topic'])
+        if 'content' in data:
+            update_fields.append('content = %s')
+            params.append(data['content'])
+        if 'resource_url' in data:
+            update_fields.append('resource_url = %s')
+            params.append(data['resource_url'])
+        if 'tags' in data:
+            update_fields.append('tags = %s')
+            params.append(data['tags'])
+        if 'priority' in data:
+            update_fields.append('priority = %s')
+            params.append(data['priority'])
+
+        if not update_fields:
+            return jsonify({'error': 'No fields to update'}), 400
+
+        update_fields.append('updated_at = CURRENT_TIMESTAMP')
+        params.append(entry_id)
+
+        cursor.execute(f'''
+            UPDATE knowledge_base
+            SET {', '.join(update_fields)}
+            WHERE id = %s
+        ''', params)
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"✅ Updated knowledge base entry: {entry_id}")
+
+        return jsonify({
+            'status': 'success',
+            'message': f'Updated knowledge base entry {entry_id}'
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating knowledge base entry: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/knowledge-base/delete/<int:entry_id>', methods=['DELETE'])
+def delete_knowledge_base_entry(entry_id):
+    """
+    Delete a knowledge base entry.
+    """
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM knowledge_base WHERE id = %s', (entry_id,))
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"✅ Deleted knowledge base entry: {entry_id}")
+
+        return jsonify({
+            'status': 'success',
+            'message': f'Deleted knowledge base entry {entry_id}'
+        })
+
+    except Exception as e:
+        logger.error(f"Error deleting knowledge base entry: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/calls/history', methods=['GET'])
 def get_call_history():
     """
