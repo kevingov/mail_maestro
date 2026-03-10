@@ -13160,7 +13160,13 @@ def add_speech_to_response(response, text, app_url=None, is_gather=False):
 @app.route('/api/initiate-call', methods=['POST'])
 def initiate_call():
     """
-    Endpoint for Workato to trigger outgoing calls via Twilio.
+    Endpoint for Workato to trigger outgoing calls via Twilio + ElevenLabs Agent.
+
+    This uses the ElevenLabs Conversational AI Agent pattern:
+    - Twilio initiates the call
+    - Call is routed to ElevenLabs agent webhook URL
+    - ElevenLabs agent handles the conversation
+    - Agent calls back to our webhooks for merchant context/data
 
     Expected payload:
     {
@@ -13174,6 +13180,14 @@ def initiate_call():
         if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN or not TWILIO_PHONE_NUMBER:
             return jsonify({'error': 'Twilio not configured'}), 503
 
+        # Check if ElevenLabs webhook URL is configured
+        elevenlabs_webhook_url = os.getenv('ELEVENLABS_MERCHANT_WEBHOOK_URL')
+
+        if not elevenlabs_webhook_url:
+            error_msg = 'ElevenLabs Merchant webhook URL not configured. Please set ELEVENLABS_MERCHANT_WEBHOOK_URL environment variable.'
+            logger.error(error_msg)
+            return jsonify({'error': error_msg}), 503
+
         data = request.get_json()
         merchant_email = data.get('merchant_email')
         merchant_phone = data.get('merchant_phone')
@@ -13183,44 +13197,60 @@ def initiate_call():
         if not merchant_phone:
             return jsonify({'error': 'merchant_phone is required'}), 400
 
-        logger.info(f"📞 ========== INITIATING TWILIO OUTBOUND CALL ==========")
+        logger.info(f"📞 ========== INITIATING ELEVENLABS AGENT CALL ==========")
         logger.info(f"📞 To: {merchant_phone}")
         logger.info(f"📞 From: {TWILIO_PHONE_NUMBER}")
         logger.info(f"📞 Merchant: {merchant_name} ({merchant_email})")
 
+        # Normalize phone number to E.164 format
+        import re
+        normalized_phone = re.sub(r'[^\d+]', '', merchant_phone)
+        if not normalized_phone.startswith('+'):
+            if len(normalized_phone) == 10:
+                normalized_phone = '+1' + normalized_phone
+            elif len(normalized_phone) == 11 and normalized_phone.startswith('1'):
+                normalized_phone = '+' + normalized_phone
+            else:
+                normalized_phone = '+' + normalized_phone
+
+        logger.info(f"📞 Normalized phone: {normalized_phone}")
+
         # Create Twilio client
         twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
-        # Build callback URL for TwiML generation
-        # This URL will be called by Twilio to get the TwiML instructions
-        callback_url = f"{request.url_root.rstrip('/')}/api/twilio/voice"
-        callback_url += f"?merchant_email={merchant_email or 'unknown'}"
-        callback_url += f"&merchant_name={merchant_name}"
-        callback_url += f"&merchant_phone={merchant_phone}"
-        if merchant_id:
-            callback_url += f"&merchant_id={merchant_id}"
+        # Route directly to ElevenLabs agent webhook
+        # IMPORTANT: Don't add query parameters - ElevenLabs webhooks don't accept them
+        # The agent will get context by calling the get-merchant-context webhook tool
+        webhook_url = elevenlabs_webhook_url
 
-        logger.info(f"📡 Callback URL: {callback_url}")
+        logger.info(f"📡 ElevenLabs webhook URL: {webhook_url}")
+        logger.info(f"📡 Note: Agent will call get-merchant-context webhook with phone {normalized_phone}")
+
+        # Get app URL for status callbacks
+        app_url = os.getenv('BASE_URL', request.url_root.rstrip('/'))
+        if app_url.startswith('http://'):
+            app_url = app_url.replace('http://', 'https://')
+
         logger.info(f"📡 Initiating Twilio call...")
 
         # Initiate the call using Twilio API
         call = twilio_client.calls.create(
-            to=merchant_phone,
+            to=normalized_phone,
             from_=TWILIO_PHONE_NUMBER,
-            url=callback_url,
+            url=webhook_url,
             method='POST',
-            status_callback=f"{request.url_root.rstrip('/')}/api/twilio/call-status",
+            status_callback=f"{app_url}/api/twilio/call-status",
             status_callback_event=['initiated', 'ringing', 'answered', 'completed'],
             status_callback_method='POST'
         )
 
         call_sid = call.sid
-        logger.info(f"✅ Call initiated via Twilio!")
+        logger.info(f"✅ Call initiated via Twilio → ElevenLabs Agent!")
         logger.info(f"📞 Call SID: {call_sid}")
         logger.info(f"📞 Status: {call.status}")
         logger.info(f"📞 ==========================================")
 
-        # Save call record to database
+        # Save call record to database (for webhook lookups)
         if DB_AVAILABLE:
             try:
                 conn = get_db_connection()
@@ -13231,7 +13261,7 @@ def initiate_call():
                         call_status, call_started_at, triggered_by
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ''', (
-                    call_sid, merchant_id, merchant_email, merchant_name, merchant_phone,
+                    call_sid, merchant_id, merchant_email, merchant_name, normalized_phone,
                     'initiated', datetime.datetime.now(), 'workato'
                 ))
                 conn.commit()
@@ -13244,8 +13274,8 @@ def initiate_call():
             'status': 'success',
             'call_sid': call_sid,
             'merchant_email': merchant_email,
-            'merchant_phone': merchant_phone,
-            'message': 'Call initiated successfully via Twilio'
+            'merchant_phone': normalized_phone,
+            'message': 'Call initiated successfully via ElevenLabs Agent'
         })
 
     except Exception as e:
@@ -14177,6 +14207,271 @@ def serve_audio(filename):
         import traceback
         logger.error(f"Stack trace:\n{traceback.format_exc()}")
         return "Audio file not found", 404
+
+
+# ==================== ELEVENLABS MERCHANT CALLING WEBHOOKS ====================
+# These endpoints are called by the ElevenLabs Conversational AI Agent
+# to get merchant context and update data during calls
+
+@app.route('/webhooks/elevenlabs/merchant/get-merchant-context', methods=['POST', 'GET'])
+def get_merchant_context_webhook():
+    """
+    Get merchant context by phone number for ElevenLabs agent.
+    Called by the ElevenLabs agent to get merchant_id, merchant_email, etc.
+
+    Parameters (JSON body or query):
+    - to_phone: Merchant's phone number (the number being called)
+
+    Returns:
+    - merchant_id, merchant_email, merchant_name, call_sid
+    """
+    try:
+        # Get data from multiple sources (JSON, query params, form)
+        data = request.get_json(silent=True) or {}
+        if not data and request.args:
+            data = dict(request.args)
+        if not data and request.form:
+            data = dict(request.form)
+
+        logger.info("📞 ========== ELEVENLABS WEBHOOK: GET MERCHANT CONTEXT ==========")
+        logger.info(f"📞 Request data: {data}")
+
+        to_phone = data.get('to_phone') or data.get('phone') or data.get('merchant_phone')
+
+        if not to_phone:
+            return jsonify({
+                'success': False,
+                'error': 'Missing required field: to_phone (merchant phone number)'
+            }), 400
+
+        # Normalize phone number
+        import re
+        normalized_phone = re.sub(r'[^\d+]', '', to_phone)
+        if not normalized_phone.startswith('+'):
+            if len(normalized_phone) == 10:
+                normalized_phone = '+1' + normalized_phone
+            elif len(normalized_phone) == 11 and normalized_phone.startswith('1'):
+                normalized_phone = '+' + normalized_phone
+
+        logger.info(f"📞 Looking up merchant by phone: {normalized_phone}")
+
+        # Find the most recent outbound call to this phone number
+        if DB_AVAILABLE:
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT call_sid, merchant_id, merchant_email, merchant_name, merchant_phone
+                    FROM phone_calls
+                    WHERE merchant_phone = %s
+                    ORDER BY call_started_at DESC
+                    LIMIT 1
+                ''', (normalized_phone,))
+
+                call_record = cursor.fetchone()
+                conn.close()
+
+                if not call_record:
+                    return jsonify({
+                        'success': False,
+                        'error': f'No call record found for phone number {to_phone}'
+                    }), 404
+
+                call_sid, merchant_id, merchant_email, merchant_name, merchant_phone = call_record
+
+                logger.info(f"✅ Found merchant: {merchant_name} ({merchant_email})")
+
+                return jsonify({
+                    'success': True,
+                    'call_sid': call_sid,
+                    'merchant_id': merchant_id,
+                    'merchant_email': merchant_email,
+                    'merchant_name': merchant_name,
+                    'merchant_phone': merchant_phone
+                }), 200
+
+            except Exception as db_error:
+                logger.error(f"Database error: {db_error}")
+                return jsonify({
+                    'success': False,
+                    'error': f'Database error: {str(db_error)}'
+                }), 500
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Database not available'
+            }), 503
+
+    except Exception as e:
+        logger.error(f"❌ Error in get-merchant-context webhook: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }), 500
+
+
+@app.route('/webhooks/elevenlabs/merchant/get-merchant-history', methods=['POST', 'GET'])
+def get_merchant_history_webhook():
+    """
+    Get merchant's call history and support requests for ElevenLabs agent.
+
+    Parameters (JSON body or query):
+    - merchant_email: Merchant email
+    - merchant_id: Merchant ID (optional, used if email not provided)
+
+    Returns:
+    - Call history, open support requests, merchant details
+    """
+    try:
+        # Get data from multiple sources
+        data = request.get_json(silent=True) or {}
+        if not data and request.args:
+            data = dict(request.args)
+        if not data and request.form:
+            data = dict(request.form)
+
+        logger.info("📞 ========== ELEVENLABS WEBHOOK: GET MERCHANT HISTORY ==========")
+        logger.info(f"📞 Request data: {data}")
+
+        merchant_email = data.get('merchant_email')
+        merchant_id = data.get('merchant_id')
+
+        if not merchant_email and not merchant_id:
+            return jsonify({
+                'success': False,
+                'error': 'Missing required field: merchant_email or merchant_id'
+            }), 400
+
+        # Get merchant context (includes call history, open requests, etc.)
+        try:
+            context = get_merchant_context(merchant_email=merchant_email, merchant_id=merchant_id)
+
+            # Format for agent consumption
+            summary = {
+                'merchant_name': context.get('merchant_name', 'Unknown'),
+                'merchant_email': merchant_email,
+                'open_requests_count': len(context.get('open_requests', [])),
+                'open_requests': context.get('open_requests', []),
+                'call_history_count': len(context.get('call_history', [])),
+                'recent_calls': context.get('call_history', [])[:3],  # Last 3 calls
+                'last_request_type': context.get('last_request_type'),
+                'last_sentiment': context.get('last_sentiment')
+            }
+
+            logger.info(f"✅ Retrieved history for: {merchant_email}")
+
+            return jsonify({
+                'success': True,
+                'merchant': summary
+            }), 200
+
+        except Exception as ctx_error:
+            logger.error(f"Error getting merchant context: {ctx_error}")
+            return jsonify({
+                'success': False,
+                'error': f'Error retrieving merchant data: {str(ctx_error)}'
+            }), 500
+
+    except Exception as e:
+        logger.error(f"❌ Error in get-merchant-history webhook: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }), 500
+
+
+@app.route('/webhooks/elevenlabs/merchant/update-support-request', methods=['POST', 'GET'])
+def update_support_request_webhook():
+    """
+    Update or create support request from ElevenLabs agent.
+
+    Parameters (JSON body or query):
+    - merchant_email: Merchant email
+    - call_sid: Call SID (optional)
+    - request_type: Type of request (billing, technical, integration, etc.)
+    - description: Description of the issue
+    - priority: Priority (low, medium, high)
+    - status: Status (open, in_progress, resolved, closed)
+
+    Returns:
+    - Success status and request details
+    """
+    try:
+        # Get data from multiple sources
+        data = request.get_json(silent=True) or {}
+        if not data and request.args:
+            data = dict(request.args)
+        if not data and request.form:
+            data = dict(request.form)
+
+        logger.info("📞 ========== ELEVENLABS WEBHOOK: UPDATE SUPPORT REQUEST ==========")
+        logger.info(f"📞 Request data: {data}")
+
+        merchant_email = data.get('merchant_email')
+        call_sid = data.get('call_sid')
+        request_type = data.get('request_type', 'general')
+        description = data.get('description', '')
+        priority = data.get('priority', 'medium')
+        status = data.get('status', 'open')
+
+        if not merchant_email:
+            return jsonify({
+                'success': False,
+                'error': 'Missing required field: merchant_email'
+            }), 400
+
+        # Update call record with request details
+        if DB_AVAILABLE and call_sid:
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+
+                # Update phone_calls table
+                cursor.execute('''
+                    UPDATE phone_calls
+                    SET merchant_question = %s,
+                        call_status = 'completed'
+                    WHERE call_sid = %s
+                ''', (description, call_sid))
+
+                conn.commit()
+                conn.close()
+
+                logger.info(f"✅ Updated call record {call_sid} with support request")
+
+                return jsonify({
+                    'success': True,
+                    'message': 'Support request recorded successfully',
+                    'call_sid': call_sid,
+                    'request_type': request_type,
+                    'status': status
+                }), 200
+
+            except Exception as db_error:
+                logger.error(f"Database error: {db_error}")
+                return jsonify({
+                    'success': False,
+                    'error': f'Database error: {str(db_error)}'
+                }), 500
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Database not available or call_sid not provided'
+            }), 503
+
+    except Exception as e:
+        logger.error(f"❌ Error in update-support-request webhook: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }), 500
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
