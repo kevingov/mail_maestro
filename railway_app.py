@@ -13054,10 +13054,113 @@ def generate_elevenlabs_audio(text):
         logger.error(traceback.format_exc())
         return None
 
+
+def format_natural_speech(text, rate='medium', pitch='medium', volume='medium'):
+    """
+    Format text with SSML for more natural-sounding speech (Twilio TTS fallback).
+    Adds pauses, prosody, and emphasis for conversational flow.
+    """
+    # Add natural pauses after punctuation
+    text = text.replace('. ', '.<break time="0.3s"/> ')
+    text = text.replace(', ', ',<break time="0.2s"/> ')
+    text = text.replace('? ', '?<break time="0.4s"/> ')
+    text = text.replace('! ', '!<break time="0.4s"/> ')
+
+    # Wrap in SSML prosody for natural intonation
+    ssml = f'<speak><prosody rate="{rate}" pitch="{pitch}" volume="{volume}">{text}</prosody></speak>'
+    return ssml
+
+
+def generate_speech(text, app_url=None):
+    """
+    Generate speech from text using ElevenLabs or fallback to Twilio TTS.
+
+    Args:
+        text (str): Text to convert to speech
+        app_url (str): Base URL of the application (for serving audio files)
+
+    Returns:
+        tuple: (audio_url_or_ssml, use_play)
+            - If use_play is True, audio_url_or_ssml is a URL to play
+            - If use_play is False, audio_url_or_ssml is SSML text for Twilio Say
+    """
+    # Try ElevenLabs first
+    if ELEVENLABS_AVAILABLE and ELEVENLABS_API_KEY:
+        try:
+            logger.info("🎵 Attempting to generate speech with ElevenLabs...")
+            audio_url = generate_elevenlabs_audio(text)
+
+            if audio_url:
+                logger.info(f"✅ ElevenLabs audio URL: {audio_url}")
+                return audio_url, True
+            else:
+                logger.warning("⚠️  ElevenLabs returned no audio URL, falling back to Twilio TTS")
+        except Exception as e:
+            logger.warning(f"⚠️  ElevenLabs generation failed: {e}", exc_info=True)
+
+    # Fallback to Twilio TTS with SSML
+    logger.info("🔊 Using Twilio TTS with SSML")
+    ssml_text = format_natural_speech(text, rate='medium')
+    return ssml_text, False
+
+
+def add_speech_to_response(response, text, app_url=None, is_gather=False):
+    """
+    Add speech to a VoiceResponse or Gather object using ElevenLabs or Twilio TTS.
+
+    Args:
+        response: VoiceResponse or Gather object
+        text (str): Text to speak
+        app_url (str): Base URL of the application (optional)
+        is_gather (bool): True if response is a Gather object (Gather doesn't support Play)
+    """
+    # Twilio TTS voice configuration
+    VOICE_NAME = 'Polly.Joanna'  # Female voice
+    VOICE_LANGUAGE = 'en-US'
+
+    # Gather doesn't support Play verb, so always use Twilio TTS for Gather prompts
+    if is_gather:
+        logger.info("🔧 Using Twilio TTS for Gather (Gather doesn't support Play)")
+        ssml_text = format_natural_speech(text, rate='medium')
+        response.say(ssml_text, voice=VOICE_NAME, language=VOICE_LANGUAGE)
+    else:
+        # For VoiceResponse, try ElevenLabs if available
+        try:
+            logger.info(f"🎵 Generating speech for VoiceResponse (text length: {len(text)} chars)")
+
+            audio_url, use_play = generate_speech(text, app_url)
+
+            if use_play and audio_url:
+                logger.info(f"▶️  Adding <Play> verb with URL: {audio_url}")
+
+                # Verify URL is absolute
+                if not audio_url.startswith('http'):
+                    logger.error(f"❌ Audio URL is not absolute: {audio_url}")
+                    logger.info("🔧 Falling back to Twilio TTS")
+                    ssml_text = format_natural_speech(text, rate='medium')
+                    response.say(ssml_text, voice=VOICE_NAME, language=VOICE_LANGUAGE)
+                else:
+                    response.play(audio_url, loop=1)
+                    logger.info(f"✅ Successfully added <Play> verb")
+            else:
+                logger.info(f"🗣️  Adding <Say> verb with SSML")
+                if audio_url and not use_play:
+                    # audio_url contains SSML text when use_play is False
+                    response.say(audio_url, voice=VOICE_NAME, language=VOICE_LANGUAGE)
+                else:
+                    ssml_text = format_natural_speech(text, rate='medium')
+                    response.say(ssml_text, voice=VOICE_NAME, language=VOICE_LANGUAGE)
+        except Exception as e:
+            logger.warning(f"❌ Error in add_speech_to_response: {e}", exc_info=True)
+            logger.info("🔧 Falling back to Twilio TTS")
+            ssml_text = format_natural_speech(text, rate='medium')
+            response.say(ssml_text, voice=VOICE_NAME, language=VOICE_LANGUAGE)
+
+
 @app.route('/api/initiate-call', methods=['POST'])
 def initiate_call():
     """
-    Endpoint for Workato to trigger outgoing calls via ElevenLabs.
+    Endpoint for Workato to trigger outgoing calls via Twilio.
 
     Expected payload:
     {
@@ -13068,8 +13171,8 @@ def initiate_call():
     }
     """
     try:
-        if not ELEVENLABS_AVAILABLE or not ELEVENLABS_API_KEY:
-            return jsonify({'error': 'ElevenLabs not configured'}), 503
+        if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN or not TWILIO_PHONE_NUMBER:
+            return jsonify({'error': 'Twilio not configured'}), 503
 
         data = request.get_json()
         merchant_email = data.get('merchant_email')
@@ -13080,49 +13183,41 @@ def initiate_call():
         if not merchant_phone:
             return jsonify({'error': 'merchant_phone is required'}), 400
 
-        logger.info(f"📞 ========== INITIATING ELEVENLABS OUTBOUND CALL ==========")
+        logger.info(f"📞 ========== INITIATING TWILIO OUTBOUND CALL ==========")
         logger.info(f"📞 To: {merchant_phone}")
+        logger.info(f"📞 From: {TWILIO_PHONE_NUMBER}")
         logger.info(f"📞 Merchant: {merchant_name} ({merchant_email})")
-        logger.info(f"🤖 Agent ID: {ELEVENLABS_AGENT_ID}")
 
-        # Prepare ElevenLabs API request
-        # Try the agent-specific endpoint for initiating calls
-        elevenlabs_url = f"https://api.elevenlabs.io/v1/convai/agents/{ELEVENLABS_AGENT_ID}/call"
+        # Create Twilio client
+        twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
-        headers = {
-            "xi-api-key": ELEVENLABS_API_KEY,
-            "Content-Type": "application/json"
-        }
+        # Build callback URL for TwiML generation
+        # This URL will be called by Twilio to get the TwiML instructions
+        callback_url = f"{request.url_root.rstrip('/')}/api/twilio/voice"
+        callback_url += f"?merchant_email={merchant_email or 'unknown'}"
+        callback_url += f"&merchant_name={merchant_name}"
+        callback_url += f"&merchant_phone={merchant_phone}"
+        if merchant_id:
+            callback_url += f"&merchant_id={merchant_id}"
 
-        # Build payload for outbound call
-        payload = {
-            "phone_number": merchant_phone,
-            "metadata": {
-                "merchant_email": merchant_email or "unknown",
-                "merchant_name": merchant_name,
-                "merchant_id": merchant_id or "unknown"
-            }
-        }
+        logger.info(f"📡 Callback URL: {callback_url}")
+        logger.info(f"📡 Initiating Twilio call...")
 
-        logger.info(f"📡 API URL: {elevenlabs_url}")
-        logger.info(f"📋 Payload: {payload}")
+        # Initiate the call using Twilio API
+        call = twilio_client.calls.create(
+            to=merchant_phone,
+            from_=TWILIO_PHONE_NUMBER,
+            url=callback_url,
+            method='POST',
+            status_callback=f"{request.url_root.rstrip('/')}/api/twilio/call-status",
+            status_callback_event=['initiated', 'ringing', 'answered', 'completed'],
+            status_callback_method='POST'
+        )
 
-        logger.info(f"📡 Calling ElevenLabs API...")
-
-        # Make the API request
-        import requests
-        response = requests.post(elevenlabs_url, json=payload, headers=headers)
-
-        if response.status_code not in [200, 201]:
-            logger.error(f"❌ ElevenLabs API error: {response.status_code}")
-            logger.error(f"Response: {response.text}")
-            return jsonify({'error': f'ElevenLabs API error: {response.text}'}), response.status_code
-
-        result = response.json()
-        conversation_id = result.get('conversation_id') or result.get('id')
-
-        logger.info(f"✅ Call initiated via ElevenLabs!")
-        logger.info(f"📞 Conversation ID: {conversation_id}")
+        call_sid = call.sid
+        logger.info(f"✅ Call initiated via Twilio!")
+        logger.info(f"📞 Call SID: {call_sid}")
+        logger.info(f"📞 Status: {call.status}")
         logger.info(f"📞 ==========================================")
 
         # Save call record to database
@@ -13136,21 +13231,21 @@ def initiate_call():
                         call_status, call_started_at, triggered_by
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ''', (
-                    conversation_id, merchant_id, merchant_email, merchant_name, merchant_phone,
+                    call_sid, merchant_id, merchant_email, merchant_name, merchant_phone,
                     'initiated', datetime.datetime.now(), 'workato'
                 ))
                 conn.commit()
                 conn.close()
-                logger.info(f"✅ Saved call record to database: {conversation_id}")
+                logger.info(f"✅ Saved call record to database: {call_sid}")
             except Exception as db_error:
                 logger.error(f"Error saving call to database: {db_error}")
 
         return jsonify({
             'status': 'success',
-            'conversation_id': conversation_id,
+            'call_sid': call_sid,
             'merchant_email': merchant_email,
             'merchant_phone': merchant_phone,
-            'message': 'Call initiated successfully via ElevenLabs'
+            'message': 'Call initiated successfully via Twilio'
         })
 
     except Exception as e:
@@ -13162,67 +13257,278 @@ def initiate_call():
 @app.route('/api/twilio/voice', methods=['POST', 'GET'])
 def twilio_voice_handler():
     """
-    TwiML endpoint - Connects call to ElevenLabs Conversational AI agent.
-    Uses native Twilio + ElevenLabs integration for smooth conversations.
+    TwiML endpoint - Generates TwiML for merchant calls with ElevenLabs TTS.
+    Uses Twilio for telephony and ElevenLabs for natural voice generation.
     """
     try:
-        logger.info("📞 ==> Voice handler called - Connecting to ElevenLabs agent")
+        logger.info("📞 ========== VOICE HANDLER CALLED ==========")
 
         # Get merchant info from query parameters
         merchant_email = request.args.get('merchant_email', request.values.get('merchant_email'))
         merchant_name = request.args.get('merchant_name', request.values.get('merchant_name', 'Merchant'))
         merchant_id = request.args.get('merchant_id', request.values.get('merchant_id'))
+        merchant_phone = request.args.get('merchant_phone', request.values.get('merchant_phone'))
+        call_sid = request.values.get('CallSid')
 
         logger.info(f"📞 Merchant: {merchant_name} ({merchant_email})")
-        logger.info(f"🤖 Connecting to ElevenLabs agent: {ELEVENLABS_AGENT_ID}")
-        logger.info(f"🔑 Using API key: {ELEVENLABS_API_KEY[:10]}..." if ELEVENLABS_API_KEY else "⚠️ No API key set")
+        logger.info(f"📞 Call SID: {call_sid}")
 
-        # Create TwiML to connect to ElevenLabs Conversational AI
+        # Get merchant context for personalized greeting
+        context = None
+        if merchant_email or merchant_id:
+            try:
+                context = get_merchant_context(merchant_email=merchant_email, merchant_id=merchant_id)
+            except Exception as ctx_error:
+                logger.warning(f"Could not get merchant context: {ctx_error}")
+
+        # Create TwiML response
         response = VoiceResponse()
 
-        connect = response.connect()
+        # Generate personalized greeting
+        greeting = f"Hello {merchant_name}, this is Jake from Affirm's merchant success team. "
 
-        # Build WebSocket URL with API key for authentication
-        websocket_url = f'wss://api.elevenlabs.io/v1/convai/conversation?agent_id={ELEVENLABS_AGENT_ID}'
+        # Add context-specific message if available
+        if context and context.get('open_requests'):
+            num_requests = len(context['open_requests'])
+            if num_requests > 0:
+                greeting += f"I'm calling about your recent support request. "
+        else:
+            greeting += "I'm calling to check in and see how things are going with your Affirm integration. "
 
-        # Add API key to URL as query parameter
-        if ELEVENLABS_API_KEY:
-            websocket_url += f'&api_key={ELEVENLABS_API_KEY}'
-            logger.info("🔐 Added API key to WebSocket URL")
+        greeting += "How can I help you today?"
 
-        logger.info(f"📡 WebSocket URL: {websocket_url[:80]}...")
+        # Get app URL for serving audio files
+        app_url = request.url_root.rstrip('/')
 
-        # Stream audio to ElevenLabs WebSocket with status callback
+        # Use add_speech_to_response pattern (tries ElevenLabs first, falls back to Twilio TTS)
+        add_speech_to_response(response, greeting, app_url)
+
+        # Add pause for natural conversation flow
+        response.pause(length=1)
+
+        # Use Record verb to capture merchant response
         base_url = request.url_root.rstrip('/')
-        stream = connect.stream(
-            url=websocket_url,
-            name='ElevenLabs Conversational AI',
-            status_callback=f'{base_url}/api/twilio/stream-status'
+        record_callback = f"{base_url}/api/twilio/handle-merchant-response"
+        record_callback += f"?merchant_email={merchant_email or 'unknown'}"
+        record_callback += f"&merchant_name={merchant_name}"
+        record_callback += f"&merchant_phone={merchant_phone or 'unknown'}"
+        if merchant_id:
+            record_callback += f"&merchant_id={merchant_id}"
+        if call_sid:
+            record_callback += f"&call_sid={call_sid}"
+
+        from twilio.twiml.voice_response import Record as TwilioRecord
+        record = TwilioRecord(
+            action=record_callback,
+            method='POST',
+            timeout=10,  # Wait 10 seconds for response
+            finish_on_key='#',  # Allow merchant to press # to finish early
+            max_length=120,  # Max 2 minutes
+            play_beep=False,  # No beep for natural conversation
+            transcribe=True,
+            transcribe_callback=record_callback
         )
+        response.append(record)
 
-        # Add custom parameters for merchant context
-        stream.parameter(name='merchant_email', value=merchant_email or 'unknown')
-        stream.parameter(name='merchant_name', value=merchant_name)
-        stream.parameter(name='merchant_id', value=merchant_id or 'unknown')
-
-        logger.info(f"📊 Stream status callback: {base_url}/api/twilio/stream-status")
-
-        logger.info("✅ TwiML response: Streaming to ElevenLabs agent")
+        # Timeout fallback message
+        timeout_msg = "I didn't hear a response. We'll send you a follow-up email. Thank you for your time."
+        add_speech_to_response(response, timeout_msg, app_url)
+        response.hangup()
 
         twiml_str = str(response)
+        logger.info(f"✅ TwiML generated successfully")
         logger.info(f"📄 TwiML Response:\n{twiml_str}")
 
         return Response(twiml_str, mimetype='text/xml')
 
     except Exception as e:
-        logger.error(f"❌ Error connecting to ElevenLabs: {e}")
+        logger.error(f"❌ Error in voice handler: {e}")
         import traceback
         logger.error(traceback.format_exc())
 
+        # Fallback error response
         response = VoiceResponse()
         response.say("I apologize, we're experiencing technical difficulties. Please email us at support@affirm.com")
         response.hangup()
         return Response(str(response), mimetype='text/xml')
+
+
+@app.route('/api/twilio/handle-merchant-response', methods=['POST'])
+def handle_merchant_response():
+    """
+    Handle merchant's recorded response and continue the conversation.
+    """
+    try:
+        logger.info("📞 ========== HANDLING MERCHANT RESPONSE ==========")
+
+        # Get merchant info from query parameters
+        merchant_email = request.args.get('merchant_email', request.values.get('merchant_email'))
+        merchant_name = request.args.get('merchant_name', request.values.get('merchant_name', 'Merchant'))
+        merchant_id = request.args.get('merchant_id', request.values.get('merchant_id'))
+        merchant_phone = request.args.get('merchant_phone', request.values.get('merchant_phone'))
+        call_sid = request.args.get('call_sid', request.values.get('CallSid'))
+
+        # Get transcription from Twilio
+        transcription_text = request.values.get('TranscriptionText', '')
+        recording_url = request.values.get('RecordingUrl', '')
+
+        logger.info(f"📞 Merchant: {merchant_name} ({merchant_email})")
+        logger.info(f"📞 Call SID: {call_sid}")
+        logger.info(f"📝 Transcription: {transcription_text}")
+        logger.info(f"🎙️  Recording URL: {recording_url}")
+
+        # Create TwiML response
+        response = VoiceResponse()
+
+        # If no transcription, prompt again or end call
+        if not transcription_text or transcription_text.strip() == '':
+            logger.warning("⚠️  No transcription received")
+            app_url = request.url_root.rstrip('/')
+            msg = "I didn't catch that. We'll send you a follow-up email. Thank you for your time."
+            add_speech_to_response(response, msg, app_url)
+            response.hangup()
+            return Response(str(response), mimetype='text/xml')
+
+        # Get merchant context
+        context = None
+        if merchant_email or merchant_id:
+            try:
+                context = get_merchant_context(merchant_email=merchant_email, merchant_id=merchant_id)
+            except Exception as ctx_error:
+                logger.warning(f"Could not get merchant context: {ctx_error}")
+                context = {}
+
+        # Build conversation history (simplified - in production you'd retrieve from DB)
+        conversation_history = [
+            {"role": "user", "content": transcription_text}
+        ]
+
+        # Generate AI response
+        try:
+            ai_response = generate_ai_response(
+                context or {},
+                merchant_question=transcription_text,
+                conversation_history=conversation_history
+            )
+            logger.info(f"🤖 AI Response: {ai_response}")
+        except Exception as ai_error:
+            logger.error(f"Error generating AI response: {ai_error}")
+            ai_response = "Thank you for that information. Our team will review your request and follow up with you shortly via email."
+
+        # Get app URL for serving audio files
+        app_url = request.url_root.rstrip('/')
+
+        # Speak the AI response using ElevenLabs or Twilio TTS
+        add_speech_to_response(response, ai_response, app_url)
+
+        # Add pause
+        response.pause(length=1)
+
+        # Ask if they need anything else
+        followup = "Is there anything else I can help you with today?"
+        add_speech_to_response(response, followup, app_url)
+        response.pause(length=1)
+
+        # Record next response
+        base_url = request.url_root.rstrip('/')
+        record_callback = f"{base_url}/api/twilio/handle-final-response"
+        record_callback += f"?merchant_email={merchant_email or 'unknown'}"
+        record_callback += f"&merchant_name={merchant_name}"
+        record_callback += f"&merchant_phone={merchant_phone or 'unknown'}"
+        if merchant_id:
+            record_callback += f"&merchant_id={merchant_id}"
+        if call_sid:
+            record_callback += f"&call_sid={call_sid}"
+
+        from twilio.twiml.voice_response import Record as TwilioRecord
+        record = TwilioRecord(
+            action=record_callback,
+            method='POST',
+            timeout=8,
+            finish_on_key='#',
+            max_length=120,
+            play_beep=False,
+            transcribe=True,
+            transcribe_callback=record_callback
+        )
+        response.append(record)
+
+        # Timeout fallback
+        closing = "Thank you for your time. We'll follow up via email if needed. Have a great day!"
+        add_speech_to_response(response, closing, app_url)
+        response.hangup()
+
+        twiml_str = str(response)
+        logger.info(f"✅ Response TwiML generated")
+        logger.info(f"📄 TwiML:\n{twiml_str}")
+
+        # Save interaction to database
+        if DB_AVAILABLE and call_sid:
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE phone_calls
+                    SET merchant_question = %s, ai_response = %s
+                    WHERE call_sid = %s
+                ''', (transcription_text, ai_response, call_sid))
+                conn.commit()
+                conn.close()
+                logger.info("✅ Saved conversation to database")
+            except Exception as db_error:
+                logger.error(f"Error saving to database: {db_error}")
+
+        return Response(twiml_str, mimetype='text/xml')
+
+    except Exception as e:
+        logger.error(f"❌ Error handling merchant response: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+
+        response = VoiceResponse()
+        response.say("Thank you for calling. We'll follow up with you via email.")
+        response.hangup()
+        return Response(str(response), mimetype='text/xml')
+
+
+@app.route('/api/twilio/handle-final-response', methods=['POST'])
+def handle_final_response():
+    """
+    Handle the final merchant response and end the call gracefully.
+    """
+    try:
+        logger.info("📞 ========== HANDLING FINAL RESPONSE ==========")
+
+        merchant_name = request.args.get('merchant_name', request.values.get('merchant_name', 'Merchant'))
+        call_sid = request.args.get('call_sid', request.values.get('CallSid'))
+        transcription_text = request.values.get('TranscriptionText', '')
+
+        logger.info(f"📝 Final transcription: {transcription_text}")
+
+        response = VoiceResponse()
+        app_url = request.url_root.rstrip('/')
+
+        # If they said something substantive, acknowledge it
+        if transcription_text and len(transcription_text.strip()) > 5:
+            acknowledgment = "Thank you for that information. Our team will review and follow up with you shortly if needed. "
+        else:
+            acknowledgment = ""
+
+        # End call gracefully
+        closing = acknowledgment + "Thank you for your time. Have a great day!"
+        add_speech_to_response(response, closing, app_url)
+        response.hangup()
+
+        logger.info("✅ Call ending gracefully")
+        return Response(str(response), mimetype='text/xml')
+
+    except Exception as e:
+        logger.error(f"❌ Error in final response: {e}")
+        response = VoiceResponse()
+        response.say("Thank you. Goodbye.")
+        response.hangup()
+        return Response(str(response), mimetype='text/xml')
+
 
 @app.route('/api/twilio/gather-input', methods=['POST'])
 def twilio_gather_input():
