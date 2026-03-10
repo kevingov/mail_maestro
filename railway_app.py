@@ -13086,16 +13086,16 @@ def initiate_call():
         logger.info(f"🤖 Agent ID: {ELEVENLABS_AGENT_ID}")
 
         # Prepare ElevenLabs API request
-        elevenlabs_url = "https://api.elevenlabs.io/v1/convai/conversation/phone"
+        # Try the agent-specific endpoint for initiating calls
+        elevenlabs_url = f"https://api.elevenlabs.io/v1/convai/agents/{ELEVENLABS_AGENT_ID}/call"
 
         headers = {
             "xi-api-key": ELEVENLABS_API_KEY,
             "Content-Type": "application/json"
         }
 
-        # Build custom parameters to pass merchant context
+        # Build payload for outbound call
         payload = {
-            "agent_id": ELEVENLABS_AGENT_ID,
             "phone_number": merchant_phone,
             "metadata": {
                 "merchant_email": merchant_email or "unknown",
@@ -13103,6 +13103,9 @@ def initiate_call():
                 "merchant_id": merchant_id or "unknown"
             }
         }
+
+        logger.info(f"📡 API URL: {elevenlabs_url}")
+        logger.info(f"📋 Payload: {payload}")
 
         logger.info(f"📡 Calling ElevenLabs API...")
 
