@@ -472,6 +472,49 @@ def init_database():
         except Exception as e:
             logger.debug(f"Phone calls indexes check: {e}")
 
+        # Knowledge base table for Affirm documentation and resources
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS knowledge_base (
+                id SERIAL PRIMARY KEY,
+                category VARCHAR(100) NOT NULL,
+                topic VARCHAR(255) NOT NULL,
+                content TEXT NOT NULL,
+                resource_url TEXT,
+                tags TEXT[],
+                priority INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        logger.info("✅ Created knowledge_base table for documentation")
+
+        # Add indexes for knowledge base search
+        try:
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_knowledge_base_category ON knowledge_base(category)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_knowledge_base_topic ON knowledge_base(topic)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_knowledge_base_tags ON knowledge_base USING GIN(tags)')
+            logger.info("✅ Added indexes to knowledge_base table")
+        except Exception as e:
+            logger.debug(f"Knowledge base indexes check: {e}")
+
+        # Insert initial Affirm knowledge base entries
+        try:
+            cursor.execute('''
+                INSERT INTO knowledge_base (category, topic, content, resource_url, tags, priority)
+                VALUES
+                    ('integration', 'Getting Started', 'Merchants need to: 1) Create Affirm account 2) Add Affirm.js to website 3) Configure checkout with API keys 4) Test in sandbox 5) Submit for production review', 'https://docs.affirm.com/developers/integration-guide', ARRAY['setup', 'onboarding'], 10),
+                    ('integration', 'API Keys', 'Public API key goes in frontend (Affirm.js), Private API key stays on server for charge creation. Never expose private key in client code.', 'https://docs.affirm.com/developers/api-reference', ARRAY['api', 'security'], 9),
+                    ('troubleshooting', 'Checkout Not Appearing', 'Check: 1) Affirm.js loaded correctly 2) Public API key is valid 3) Minimum purchase amount met 4) Customer location eligible', 'https://docs.affirm.com/developers/troubleshooting', ARRAY['checkout', 'frontend'], 8),
+                    ('troubleshooting', 'Payment Not Processing', 'Verify: 1) Private API key is correct 2) Charge amount matches checkout token 3) Server can reach Affirm API 4) Request format matches documentation', 'https://docs.affirm.com/developers/api-reference/charges', ARRAY['payment', 'api'], 8),
+                    ('limits', 'GMV Thresholds', 'Affirm has GMV limits based on merchant tier. Contact merchant success team to review current limits or request increase. Typical tiers: Starter, Growth, Enterprise.', NULL, ARRAY['limits', 'account'], 7),
+                    ('support', 'Escalation Paths', 'Technical API issues → developer support. Account/contract → merchant success. GMV/limits → account manager. Integration help → BDR team.', NULL, ARRAY['support', 'escalation'], 6)
+                ON CONFLICT DO NOTHING
+            ''')
+            conn.commit()
+            logger.info("✅ Inserted initial knowledge base entries")
+        except Exception as e:
+            logger.debug(f"Knowledge base initial data check: {e}")
+
         conn.commit()
         conn.close()
         logger.info("✅ PostgreSQL database initialized")
@@ -12329,6 +12372,56 @@ def ingest_snowflake_data():
 # TWILIO + ELEVENLABS PHONE CALL ENDPOINTS
 # ============================================================================
 
+def get_knowledge_base_context(topics=None, limit=5):
+    """
+    Retrieve relevant Affirm documentation from knowledge base.
+    Can filter by topics/tags or return top priority entries.
+    """
+    try:
+        if not DB_AVAILABLE:
+            return []
+
+        conn = get_db_connection()
+        if not conn:
+            return []
+
+        cursor = conn.cursor()
+
+        if topics:
+            # Search by tags
+            cursor.execute('''
+                SELECT category, topic, content, resource_url
+                FROM knowledge_base
+                WHERE tags && %s
+                ORDER BY priority DESC, created_at DESC
+                LIMIT %s
+            ''', (topics, limit))
+        else:
+            # Get top priority entries
+            cursor.execute('''
+                SELECT category, topic, content, resource_url
+                FROM knowledge_base
+                ORDER BY priority DESC, created_at DESC
+                LIMIT %s
+            ''', (limit,))
+
+        knowledge_entries = []
+        for row in cursor.fetchall():
+            entry = {
+                'category': row[0],
+                'topic': row[1],
+                'content': row[2],
+                'url': row[3]
+            }
+            knowledge_entries.append(entry)
+
+        conn.close()
+        return knowledge_entries
+
+    except Exception as e:
+        logger.error(f"Error getting knowledge base: {e}")
+        return []
+
 def get_merchant_context(merchant_email=None, merchant_id=None):
     """
     Retrieve merchant context from the database for RAG.
@@ -12418,12 +12511,22 @@ Recent Email History:
         for email in merchant_context.get('emails', [])[:3]:
             context_summary += f"- {email['type']}: {email.get('subject', 'No subject')} ({email.get('sentiment', 'N/A')})\n"
 
+        # Get relevant knowledge base entries
+        knowledge_entries = get_knowledge_base_context(limit=3)
+        knowledge_summary = "\n\n## Relevant Affirm Knowledge:\n"
+        for entry in knowledge_entries:
+            knowledge_summary += f"**{entry['topic']}**: {entry['content']}\n"
+            if entry['url']:
+                knowledge_summary += f"  → {entry['url']}\n"
+            knowledge_summary += "\n"
+
         system_prompt = f"""{AFFIRM_VOICE_GUIDELINES}
 
 You are calling as an Affirm Business Development Representative to help merchants integrate with Affirm and resolve any blockers.
 
 Merchant Context:
 {context_summary}
+{knowledge_summary}
 
 Your goal is to:
 1. Help unblock the merchant and solve integration issues
@@ -12432,7 +12535,32 @@ Your goal is to:
 4. Be concise and conversational (this is a phone call, not an email)
 5. Keep responses under 100 words
 
-Remember: Be helpful, direct, and focused on solving their problem."""
+## Key Affirm Resources You Can Reference:
+
+**Integration Documentation:**
+- Developer Docs: https://docs.affirm.com/developers
+- Integration Guide: https://docs.affirm.com/developers/integration-guide
+- API Reference: https://docs.affirm.com/developers/api-reference
+
+**Common Integration Steps:**
+1. Create Affirm merchant account
+2. Add Affirm.js to website
+3. Configure checkout flow with public/private API keys
+4. Test in sandbox environment
+5. Submit for production review
+
+**Common Issues & Solutions:**
+- Checkout not appearing: Check if Affirm.js is loaded correctly
+- Payment not processing: Verify API keys are correct (public vs private)
+- Affirm logo missing: Add Affirm marketing assets from docs.affirm.com/merchants
+- GMV/Transaction limits: Contact merchant success team
+
+**When to escalate:**
+- Technical API errors: Direct to developer support
+- Account/contract issues: Connect with merchant success team
+- GMV threshold questions: Refer to account manager
+
+Remember: Be helpful, direct, and focused on solving their problem. Reference specific documentation links when helpful."""
 
         messages = [{"role": "system", "content": system_prompt}]
 
