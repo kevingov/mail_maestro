@@ -12666,7 +12666,7 @@ def search_knowledge_base_semantic(query, merchant_context=None, limit=10):
             boost = 0
             if merchant_context:
                 # Boost if category matches merchant's recent issues
-                last_request = merchant_context.get('last_request_type', '').lower()
+                last_request = (merchant_context.get('last_request_type') or '').lower()
                 if 'integration' in last_request and category == 'integration':
                     boost += 0.1
                 elif 'technical' in last_request and category == 'troubleshooting':
@@ -12675,7 +12675,7 @@ def search_knowledge_base_semantic(query, merchant_context=None, limit=10):
                     boost += 0.1
 
                 # Boost based on sentiment - if negative, prioritize troubleshooting
-                last_sentiment = merchant_context.get('last_sentiment', '').lower()
+                last_sentiment = (merchant_context.get('last_sentiment') or '').lower()
                 if last_sentiment in ['negative', 'frustrated'] and category == 'troubleshooting':
                     boost += 0.15
 
