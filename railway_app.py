@@ -32,7 +32,7 @@ from openai import OpenAI
 # Twilio and ElevenLabs imports
 try:
     from twilio.rest import Client as TwilioClient
-    from twilio.twiml.voice_response import VoiceResponse, Gather, Connect, Stream
+    from twilio.twiml.voice_response import VoiceResponse, Gather, Connect, Stream, Record
     TWILIO_AVAILABLE = True
 except ImportError:
     TWILIO_AVAILABLE = False
@@ -13317,8 +13317,7 @@ def twilio_voice_handler():
         if call_sid:
             record_callback += f"&call_sid={call_sid}"
 
-        from twilio.twiml.voice_response import Record as TwilioRecord
-        record = TwilioRecord(
+        record = Record(
             action=record_callback,
             method='POST',
             timeout=10,  # Wait 10 seconds for response
@@ -13440,8 +13439,7 @@ def handle_merchant_response():
         if call_sid:
             record_callback += f"&call_sid={call_sid}"
 
-        from twilio.twiml.voice_response import Record as TwilioRecord
-        record = TwilioRecord(
+        record = Record(
             action=record_callback,
             method='POST',
             timeout=8,
