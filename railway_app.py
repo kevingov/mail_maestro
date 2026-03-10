@@ -13057,7 +13057,7 @@ def generate_elevenlabs_audio(text):
 @app.route('/api/initiate-call', methods=['POST'])
 def initiate_call():
     """
-    Endpoint for Workato to trigger outgoing calls.
+    Endpoint for Workato to trigger outgoing calls via ElevenLabs.
 
     Expected payload:
     {
@@ -13068,11 +13068,8 @@ def initiate_call():
     }
     """
     try:
-        if not TWILIO_AVAILABLE:
-            return jsonify({'error': 'Twilio integration not available'}), 503
-
-        if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
-            return jsonify({'error': 'Twilio credentials not configured'}), 503
+        if not ELEVENLABS_AVAILABLE or not ELEVENLABS_API_KEY:
+            return jsonify({'error': 'ElevenLabs not configured'}), 503
 
         data = request.get_json()
         merchant_email = data.get('merchant_email')
@@ -13083,46 +13080,47 @@ def initiate_call():
         if not merchant_phone:
             return jsonify({'error': 'merchant_phone is required'}), 400
 
-        # Get merchant context
-        context = get_merchant_context(merchant_email=merchant_email, merchant_id=merchant_id)
-
-        # Initialize Twilio client
-        twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-
-        logger.info(f"📞 ========== INITIATING OUTBOUND CALL ==========")
-        logger.info(f"📞 From number (TWILIO_PHONE_NUMBER): {TWILIO_PHONE_NUMBER}")
-        logger.info(f"📞 To number (merchant): {merchant_phone}")
+        logger.info(f"📞 ========== INITIATING ELEVENLABS OUTBOUND CALL ==========")
+        logger.info(f"📞 To: {merchant_phone}")
         logger.info(f"📞 Merchant: {merchant_name} ({merchant_email})")
-        logger.info(f"📞 Account SID: {TWILIO_ACCOUNT_SID[:10]}...")
+        logger.info(f"🤖 Agent ID: {ELEVENLABS_AGENT_ID}")
 
-        # Build the callback URL for TwiML
-        base_url = os.getenv('BASE_URL', 'https://web-production-6dfbd.up.railway.app')
-        callback_url = f"{base_url}/api/twilio/voice?merchant_email={merchant_email}&merchant_name={merchant_name}"
-        if merchant_id:
-            callback_url += f"&merchant_id={merchant_id}"
+        # Prepare ElevenLabs API request
+        elevenlabs_url = "https://api.elevenlabs.io/v1/convai/conversation/phone"
 
-        logger.info(f"📞 TwiML callback URL: {callback_url}")
-        logger.info(f"📞 Status callback URL: {base_url}/api/twilio/call-status")
+        headers = {
+            "xi-api-key": ELEVENLABS_API_KEY,
+            "Content-Type": "application/json"
+        }
 
-        # Initiate the call
-        logger.info(f"📞 Calling Twilio API to create call...")
-        call = twilio_client.calls.create(
-            to=merchant_phone,
-            from_=TWILIO_PHONE_NUMBER,
-            url=callback_url,
-            status_callback=f"{base_url}/api/twilio/call-status",
-            status_callback_event=['completed', 'failed'],
-            record=True  # Record the call for quality assurance
-        )
+        # Build custom parameters to pass merchant context
+        payload = {
+            "agent_id": ELEVENLABS_AGENT_ID,
+            "phone_number": merchant_phone,
+            "metadata": {
+                "merchant_email": merchant_email or "unknown",
+                "merchant_name": merchant_name,
+                "merchant_id": merchant_id or "unknown"
+            }
+        }
 
-        logger.info(f"✅ Call created successfully!")
-        logger.info(f"📞 Call SID: {call.sid}")
-        logger.info(f"📞 Call Status: {call.status}")
-        logger.info(f"📞 From: {call.from_formatted}")
-        logger.info(f"📞 To: {call.to_formatted}")
+        logger.info(f"📡 Calling ElevenLabs API...")
+
+        # Make the API request
+        import requests
+        response = requests.post(elevenlabs_url, json=payload, headers=headers)
+
+        if response.status_code not in [200, 201]:
+            logger.error(f"❌ ElevenLabs API error: {response.status_code}")
+            logger.error(f"Response: {response.text}")
+            return jsonify({'error': f'ElevenLabs API error: {response.text}'}), response.status_code
+
+        result = response.json()
+        conversation_id = result.get('conversation_id') or result.get('id')
+
+        logger.info(f"✅ Call initiated via ElevenLabs!")
+        logger.info(f"📞 Conversation ID: {conversation_id}")
         logger.info(f"📞 ==========================================")
-
-        logger.info(f"📞 Initiated call to {merchant_phone} (SID: {call.sid})")
 
         # Save call record to database
         if DB_AVAILABLE:
@@ -13135,21 +13133,21 @@ def initiate_call():
                         call_status, call_started_at, triggered_by
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ''', (
-                    call.sid, merchant_id, merchant_email, merchant_name, merchant_phone,
+                    conversation_id, merchant_id, merchant_email, merchant_name, merchant_phone,
                     'initiated', datetime.datetime.now(), 'workato'
                 ))
                 conn.commit()
                 conn.close()
-                logger.info(f"✅ Saved call record to database: {call.sid}")
+                logger.info(f"✅ Saved call record to database: {conversation_id}")
             except Exception as db_error:
                 logger.error(f"Error saving call to database: {db_error}")
 
         return jsonify({
             'status': 'success',
-            'call_sid': call.sid,
+            'conversation_id': conversation_id,
             'merchant_email': merchant_email,
             'merchant_phone': merchant_phone,
-            'message': 'Call initiated successfully'
+            'message': 'Call initiated successfully via ElevenLabs'
         })
 
     except Exception as e:
