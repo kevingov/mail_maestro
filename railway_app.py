@@ -12815,8 +12815,8 @@ def generate_elevenlabs_audio(text):
         filepath = os.path.join(audio_dir, filename)
 
         # Save audio bytes to file
-        # ElevenLabs generate() returns an iterator, collect all chunks first
-        audio_bytes = b''.join(audio)
+        # ElevenLabs generate() returns an iterator of integers, convert to bytes
+        audio_bytes = bytes(audio)
         with open(filepath, 'wb') as f:
             f.write(audio_bytes)
 
