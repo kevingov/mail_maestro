@@ -12850,13 +12850,23 @@ def initiate_call():
         # Initialize Twilio client
         twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
+        logger.info(f"📞 ========== INITIATING OUTBOUND CALL ==========")
+        logger.info(f"📞 From number (TWILIO_PHONE_NUMBER): {TWILIO_PHONE_NUMBER}")
+        logger.info(f"📞 To number (merchant): {merchant_phone}")
+        logger.info(f"📞 Merchant: {merchant_name} ({merchant_email})")
+        logger.info(f"📞 Account SID: {TWILIO_ACCOUNT_SID[:10]}...")
+
         # Build the callback URL for TwiML
         base_url = os.getenv('BASE_URL', 'https://web-production-6dfbd.up.railway.app')
         callback_url = f"{base_url}/api/twilio/voice?merchant_email={merchant_email}&merchant_name={merchant_name}"
         if merchant_id:
             callback_url += f"&merchant_id={merchant_id}"
 
+        logger.info(f"📞 TwiML callback URL: {callback_url}")
+        logger.info(f"📞 Status callback URL: {base_url}/api/twilio/call-status")
+
         # Initiate the call
+        logger.info(f"📞 Calling Twilio API to create call...")
         call = twilio_client.calls.create(
             to=merchant_phone,
             from_=TWILIO_PHONE_NUMBER,
@@ -12865,6 +12875,13 @@ def initiate_call():
             status_callback_event=['completed', 'failed'],
             record=True  # Record the call for quality assurance
         )
+
+        logger.info(f"✅ Call created successfully!")
+        logger.info(f"📞 Call SID: {call.sid}")
+        logger.info(f"📞 Call Status: {call.status}")
+        logger.info(f"📞 From: {call.from_formatted}")
+        logger.info(f"📞 To: {call.to_formatted}")
+        logger.info(f"📞 ==========================================")
 
         logger.info(f"📞 Initiated call to {merchant_phone} (SID: {call.sid})")
 
