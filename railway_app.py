@@ -13465,6 +13465,40 @@ def add_knowledge_base_entry():
         logger.error(f"Error adding knowledge base entry: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/knowledge-base/migrate-embeddings', methods=['POST'])
+def migrate_embeddings_column():
+    """
+    Add embedding column to knowledge_base table if it doesn't exist.
+    """
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Add embedding column as TEXT (stores JSON array)
+        cursor.execute('''
+            ALTER TABLE knowledge_base
+            ADD COLUMN IF NOT EXISTS embedding TEXT
+        ''')
+
+        conn.commit()
+        conn.close()
+
+        logger.info("✅ Successfully added embedding column to knowledge_base table")
+
+        return jsonify({
+            'status': 'success',
+            'message': 'Embedding column added successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error migrating embeddings column: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/knowledge-base/generate-embeddings', methods=['POST'])
 def generate_knowledge_base_embeddings():
     """
