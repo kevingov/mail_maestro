@@ -5252,6 +5252,74 @@ def voice_maestro_dashboard():
                         <p class="loading">Loading call data...</p>
                     </div>
                 </div>
+
+                <!-- Knowledge Base Management -->
+                <div class="table-container" style="margin-top: 32px;">
+                    <div class="table-header">
+                        <h3>📚 Knowledge Base Management</h3>
+                    </div>
+                    <div style="padding: 24px;">
+                        <!-- Add New Entry Form -->
+                        <div style="background: #f9fafb; padding: 20px; border-radius: 8px; margin-bottom: 24px;">
+                            <h4 style="margin-bottom: 16px; color: #1f2937;">Add New Documentation</h4>
+                            <form id="knowledgeForm" style="display: grid; gap: 16px;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                                    <div>
+                                        <label style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 500; color: #374151;">Category</label>
+                                        <select id="category" required style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px;">
+                                            <option value="integration">Integration</option>
+                                            <option value="troubleshooting">Troubleshooting</option>
+                                            <option value="platforms">Platforms</option>
+                                            <option value="api">API</option>
+                                            <option value="limits">Limits</option>
+                                            <option value="support">Support</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 500; color: #374151;">Priority (1-10)</label>
+                                        <input type="number" id="priority" min="1" max="10" value="5" required style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px;">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 500; color: #374151;">Topic</label>
+                                    <input type="text" id="topic" placeholder="e.g., Shopify Integration" required style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px;">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 500; color: #374151;">Content</label>
+                                    <textarea id="content" rows="3" placeholder="Step-by-step guide or solution..." required style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; font-family: inherit;"></textarea>
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 500; color: #374151;">Resource URL (optional)</label>
+                                    <input type="url" id="resourceUrl" placeholder="https://docs.affirm.com/..." style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px;">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 4px; font-size: 13px; font-weight: 500; color: #374151;">Tags (comma-separated)</label>
+                                    <input type="text" id="tags" placeholder="shopify, ecommerce, plugin" style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px;">
+                                </div>
+                                <button type="submit" class="refresh-btn" style="width: fit-content;">➕ Add to Knowledge Base</button>
+                            </form>
+                        </div>
+
+                        <!-- Existing Entries -->
+                        <div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                                <h4 style="margin: 0; color: #1f2937;">Existing Documentation</h4>
+                                <select id="filterCategory" onchange="loadKnowledgeBase()" style="padding: 6px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;">
+                                    <option value="">All Categories</option>
+                                    <option value="integration">Integration</option>
+                                    <option value="troubleshooting">Troubleshooting</option>
+                                    <option value="platforms">Platforms</option>
+                                    <option value="api">API</option>
+                                    <option value="limits">Limits</option>
+                                    <option value="support">Support</option>
+                                </select>
+                            </div>
+                            <div id="knowledgeBaseList">
+                                <p class="loading">Loading knowledge base...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -5351,6 +5419,131 @@ def voice_maestro_dashboard():
         function viewCallDetails(callSid) {
             alert('Call details for: ' + callSid + '\\n\\nDetailed view coming soon!');
         }
+
+        // ==================== KNOWLEDGE BASE FUNCTIONS ====================
+
+        async function loadKnowledgeBase() {
+            const category = document.getElementById('filterCategory').value;
+            const url = category
+                ? `/api/knowledge-base/list?category=${category}`
+                : '/api/knowledge-base/list';
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    displayKnowledgeBase(data.entries);
+                } else {
+                    document.getElementById('knowledgeBaseList').innerHTML =
+                        '<p class="error">Error loading knowledge base</p>';
+                }
+            } catch (error) {
+                console.error('Error loading knowledge base:', error);
+                document.getElementById('knowledgeBaseList').innerHTML =
+                    '<p class="error">Error: ' + error.message + '</p>';
+            }
+        }
+
+        function displayKnowledgeBase(entries) {
+            if (entries.length === 0) {
+                document.getElementById('knowledgeBaseList').innerHTML =
+                    '<p class="loading">No entries found</p>';
+                return;
+            }
+
+            let html = '<div style="display: grid; gap: 12px;">';
+
+            entries.forEach(entry => {
+                const tags = entry.tags ? entry.tags.join(', ') : '';
+                html += `
+                    <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background: white;">
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                            <div>
+                                <span class="badge ${entry.category}" style="margin-right: 8px;">${entry.category}</span>
+                                <span style="font-weight: 600; color: #1f2937;">${entry.topic}</span>
+                            </div>
+                            <div style="display: flex; gap: 8px;">
+                                <span style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;">Priority: ${entry.priority}</span>
+                                <button onclick="deleteKnowledgeEntry(${entry.id})" style="background: #fee2e2; color: #991b1b; border: none; padding: 4px 12px; border-radius: 4px; font-size: 12px; cursor: pointer;">Delete</button>
+                            </div>
+                        </div>
+                        <p style="color: #374151; font-size: 14px; margin: 8px 0;">${entry.content}</p>
+                        ${entry.resource_url ? `<a href="${entry.resource_url}" target="_blank" style="color: #6366f1; font-size: 13px; text-decoration: none;">🔗 ${entry.resource_url}</a>` : ''}
+                        ${tags ? `<div style="margin-top: 8px; font-size: 12px; color: #6b7280;">Tags: ${tags}</div>` : ''}
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            document.getElementById('knowledgeBaseList').innerHTML = html;
+        }
+
+        async function deleteKnowledgeEntry(id) {
+            if (!confirm('Are you sure you want to delete this knowledge base entry?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/knowledge-base/delete/${id}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    alert('✅ Entry deleted successfully');
+                    loadKnowledgeBase();
+                } else {
+                    alert('❌ Error deleting entry: ' + data.error);
+                }
+            } catch (error) {
+                alert('❌ Error: ' + error.message);
+            }
+        }
+
+        // Handle form submission
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('knowledgeForm').addEventListener('submit', async function(e) {
+                e.preventDefault();
+
+                const tags = document.getElementById('tags').value
+                    .split(',')
+                    .map(t => t.trim())
+                    .filter(t => t.length > 0);
+
+                const payload = {
+                    category: document.getElementById('category').value,
+                    topic: document.getElementById('topic').value,
+                    content: document.getElementById('content').value,
+                    resource_url: document.getElementById('resourceUrl').value || null,
+                    tags: tags,
+                    priority: parseInt(document.getElementById('priority').value)
+                };
+
+                try {
+                    const response = await fetch('/api/knowledge-base/add', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const data = await response.json();
+
+                    if (data.status === 'success') {
+                        alert('✅ Knowledge base entry added successfully!');
+                        document.getElementById('knowledgeForm').reset();
+                        loadKnowledgeBase();
+                    } else {
+                        alert('❌ Error: ' + data.error);
+                    }
+                } catch (error) {
+                    alert('❌ Error adding entry: ' + error.message);
+                }
+            });
+
+            // Load knowledge base on page load
+            loadKnowledgeBase();
+        });
 
         // Load dashboard on page load
         loadDashboard();
