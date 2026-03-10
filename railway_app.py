@@ -13174,15 +13174,26 @@ def twilio_voice_handler():
 
         logger.info(f"📞 Merchant: {merchant_name} ({merchant_email})")
         logger.info(f"🤖 Connecting to ElevenLabs agent: {ELEVENLABS_AGENT_ID}")
+        logger.info(f"🔑 Using API key: {ELEVENLABS_API_KEY[:10]}..." if ELEVENLABS_API_KEY else "⚠️ No API key set")
 
         # Create TwiML to connect to ElevenLabs Conversational AI
         response = VoiceResponse()
 
         connect = response.connect()
 
+        # Build WebSocket URL with API key for authentication
+        websocket_url = f'wss://api.elevenlabs.io/v1/convai/conversation?agent_id={ELEVENLABS_AGENT_ID}'
+
+        # Add API key to URL as query parameter
+        if ELEVENLABS_API_KEY:
+            websocket_url += f'&api_key={ELEVENLABS_API_KEY}'
+            logger.info("🔐 Added API key to WebSocket URL")
+
+        logger.info(f"📡 WebSocket URL: {websocket_url[:80]}...")
+
         # Stream audio to ElevenLabs WebSocket
         stream = connect.stream(
-            url=f'wss://api.elevenlabs.io/v1/convai/conversation?agent_id={ELEVENLABS_AGENT_ID}',
+            url=websocket_url,
             name='ElevenLabs Conversational AI'
         )
 
