@@ -13386,7 +13386,7 @@ def twilio_call_status():
         logger.error(f"Error processing call status: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/twilio/stream-status', methods=['POST'])
+@app.route('/api/twilio/stream-status', methods=['POST', 'GET'])
 def twilio_stream_status():
     """
     Webhook for Twilio Media Stream status updates.
@@ -13394,10 +13394,15 @@ def twilio_stream_status():
     """
     try:
         stream_sid = request.values.get('StreamSid')
-        stream_status = request.values.get('StreamStatus')
+        stream_event = request.values.get('StreamEvent')
+        stream_error = request.values.get('StreamError')
+        stream_error_code = request.values.get('StreamErrorCode')
         call_sid = request.values.get('CallSid')
 
-        logger.info(f"📡 Stream {stream_sid} status: {stream_status} (Call: {call_sid})")
+        logger.info(f"📡 Stream {stream_sid} event: {stream_event} (Call: {call_sid})")
+
+        if stream_error:
+            logger.error(f"❌ Stream error: {stream_error} (Code: {stream_error_code})")
 
         # Log all parameters for debugging
         all_params = dict(request.values)
