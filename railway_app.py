@@ -12908,23 +12908,46 @@ def twilio_voice_handler():
     TwiML endpoint for handling the initial call connection.
     """
     try:
+        logger.info("📞 ==> Voice handler called - Starting call flow")
+
         # Get merchant info from query parameters
         merchant_email = request.args.get('merchant_email', request.values.get('merchant_email'))
         merchant_name = request.args.get('merchant_name', request.values.get('merchant_name', 'there'))
         merchant_id = request.args.get('merchant_id', request.values.get('merchant_id'))
 
+        logger.info(f"📞 Merchant info: {merchant_name} ({merchant_email})")
+
         # Get merchant context for RAG
+        logger.info("📞 Fetching merchant context from database...")
         context = get_merchant_context(merchant_email=merchant_email, merchant_id=merchant_id)
+        logger.info(f"📞 Context retrieved: {len(context.get('emails', []))} emails found")
 
         # Generate AI greeting
+        logger.info("📞 Generating AI greeting with OpenAI...")
         greeting = generate_ai_response(context)
+        logger.info(f"📞 AI greeting generated: '{greeting[:100]}...'")
+
+        # Check if ElevenLabs is available
+        if ELEVENLABS_AVAILABLE and ELEVENLABS_API_KEY:
+            logger.info("🎤 ElevenLabs is configured - attempting to generate audio")
+            audio_bytes = generate_elevenlabs_audio(greeting)
+            if audio_bytes:
+                logger.info("✅ ElevenLabs audio generated successfully")
+                logger.warning("⚠️ However, audio hosting not configured - falling back to Twilio TTS")
+            else:
+                logger.warning("⚠️ ElevenLabs generation failed - using Twilio TTS")
+        else:
+            logger.info("ℹ️ ElevenLabs not configured - using Twilio TTS")
 
         # Create TwiML response
         response = VoiceResponse()
 
-        # Use Twilio's text-to-speech or ElevenLabs
-        # For now, using Twilio's built-in TTS (you can enhance with ElevenLabs later)
-        response.say(greeting, voice='Polly.Joanna', language='en-US')
+        # Use enhanced Twilio voice (Google Neural - sounds much more natural)
+        # Available voices: https://www.twilio.com/docs/voice/twiml/say/text-speech#amazon-polly
+        # Google: en-US-Neural2-C (female), en-US-Neural2-D (male)
+        # Amazon Neural: Joanna-Neural, Matthew-Neural
+        logger.info("🔊 Using Twilio voice: Google.en-US-Neural2-C (natural female voice)")
+        response.say(greeting, voice='Google.en-US-Neural2-C', language='en-US')
 
         # Gather input from merchant
         gather = Gather(
@@ -12934,12 +12957,13 @@ def twilio_voice_handler():
             timeout=5,
             speech_timeout='auto'
         )
-        gather.say("Please tell me how I can help you today.", voice='Polly.Joanna', language='en-US')
+        gather.say("Please tell me how I can help you today.", voice='Google.en-US-Neural2-C', language='en-US')
         response.append(gather)
 
         # If no input, redirect
         response.redirect('/api/twilio/voice')
 
+        logger.info("📞 TwiML response generated successfully")
         return Response(str(response), mimetype='text/xml')
 
     except Exception as e:
@@ -12977,7 +13001,8 @@ def twilio_gather_input():
 
         # Create TwiML response
         response = VoiceResponse()
-        response.say(ai_response, voice='Polly.Joanna', language='en-US')
+        logger.info("🔊 Speaking AI response with Google Neural voice")
+        response.say(ai_response, voice='Google.en-US-Neural2-C', language='en-US')
 
         # Continue gathering input
         gather = Gather(
@@ -12987,13 +13012,14 @@ def twilio_gather_input():
             timeout=5,
             speech_timeout='auto'
         )
-        gather.say("Is there anything else I can help you with?", voice='Polly.Joanna', language='en-US')
+        gather.say("Is there anything else I can help you with?", voice='Google.en-US-Neural2-C', language='en-US')
         response.append(gather)
 
         # Option to end call
-        response.say("Thank you for your time. Have a great day!", voice='Polly.Joanna', language='en-US')
+        response.say("Thank you for your time. Have a great day!", voice='Google.en-US-Neural2-C', language='en-US')
         response.hangup()
 
+        logger.info("📞 Gather response sent to Twilio")
         return Response(str(response), mimetype='text/xml')
 
     except Exception as e:
