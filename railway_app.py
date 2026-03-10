@@ -411,7 +411,7 @@ def init_database():
                 merchant_id VARCHAR(255),
                 merchant_email VARCHAR(255),
                 merchant_name VARCHAR(255),
-                merchant_phone VARCHAR(50) NOT NULL,
+                merchant_phone_number VARCHAR(50) NOT NULL,
 
                 -- Call details
                 call_status VARCHAR(50),
@@ -444,6 +444,23 @@ def init_database():
             )
         ''')
         logger.info("✅ Created phone_calls table for call tracking")
+
+        # Rename merchant_phone to merchant_phone_number if old column exists
+        try:
+            cursor.execute('''
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'phone_calls' AND column_name = 'merchant_phone'
+                    ) THEN
+                        ALTER TABLE phone_calls RENAME COLUMN merchant_phone TO merchant_phone_number;
+                    END IF;
+                END $$;
+            ''')
+            logger.info("✅ Renamed merchant_phone to merchant_phone_number in phone_calls table")
+        except Exception as e:
+            logger.debug(f"Phone column rename check: {e}")
 
         # Add indexes for faster queries
         try:
@@ -12064,7 +12081,7 @@ def initiate_call():
                 cursor = conn.cursor()
                 cursor.execute('''
                     INSERT INTO phone_calls (
-                        call_sid, merchant_id, merchant_email, merchant_name, merchant_phone,
+                        call_sid, merchant_id, merchant_email, merchant_name, merchant_phone_number,
                         call_status, call_started_at, triggered_by
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ''', (
@@ -12296,7 +12313,7 @@ def get_call_history():
 
         cursor.execute(f'''
             SELECT
-                call_sid, merchant_id, merchant_email, merchant_name, merchant_phone,
+                call_sid, merchant_id, merchant_email, merchant_name, merchant_phone_number,
                 call_status, call_duration, call_started_at, call_ended_at,
                 conversation_summary, merchant_sentiment, call_outcome,
                 recording_url, created_at
@@ -12313,7 +12330,7 @@ def get_call_history():
                 'merchant_id': row[1],
                 'merchant_email': row[2],
                 'merchant_name': row[3],
-                'merchant_phone': row[4],
+                'merchant_phone_number': row[4],
                 'call_status': row[5],
                 'call_duration': row[6],
                 'call_started_at': row[7].isoformat() if row[7] else None,
