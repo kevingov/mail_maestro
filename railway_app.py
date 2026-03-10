@@ -4166,6 +4166,10 @@ def analytics_dashboard():
                     <span class="nav-item-icon">📊</span>
                     <span>Analytics</span>
                 </a>
+                <a href="/voice-maestro" class="nav-item">
+                    <span class="nav-item-icon">📞</span>
+                    <span>Voice Maestro</span>
+                </a>
             </div>
         </div>
 
@@ -4846,6 +4850,471 @@ def analytics_dashboard():
             </div><!-- /content-area -->
         </div><!-- /main-content -->
     </div><!-- /app-container -->
+</body>
+</html>
+    """
+
+@app.route('/voice-maestro')
+def voice_maestro_dashboard():
+    """Serve the Voice Maestro dashboard showing call analytics."""
+    return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Maestro - Mail Maestro</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .app-container {
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 72px;
+            background: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px 0;
+            box-shadow: 2px 0 4px rgba(0,0,0,0.06);
+            border-right: 1px solid #e5e7eb;
+        }
+
+        .sidebar-brand {
+            font-size: 24px;
+            margin-bottom: 40px;
+            color: #6366f1;
+        }
+
+        .sidebar-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            width: 100%;
+            align-items: center;
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            padding: 12px;
+            color: #6b7280;
+            text-decoration: none;
+            font-size: 11px;
+            font-weight: 500;
+            transition: all 0.2s;
+            cursor: pointer;
+            border-radius: 8px;
+        }
+
+        .nav-item:hover {
+            color: #1f2937;
+            background: #f3f4f6;
+        }
+
+        .nav-item.active {
+            color: #6366f1;
+            background: #eff6ff;
+        }
+
+        .nav-item-icon {
+            font-size: 24px;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .content-header {
+            background: white;
+            padding: 24px 40px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .content-header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin: 0;
+        }
+
+        .content-area {
+            flex: 1;
+            overflow-y: auto;
+            background: #f5f5f5;
+            padding: 32px 40px;
+        }
+
+        .refresh-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 14px;
+        }
+
+        .refresh-btn:hover {
+            background: var(--primary-dark);
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 32px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #6b7280;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1f2937;
+        }
+
+        .stat-change {
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        .stat-change.positive {
+            color: #10b981;
+        }
+
+        /* Table Container */
+        .table-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .table-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .table-header h3 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1f2937;
+            margin: 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: #f9fafb;
+        }
+
+        th {
+            padding: 12px 24px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        th:hover {
+            background: #f3f4f6;
+        }
+
+        td {
+            padding: 16px 24px;
+            font-size: 14px;
+            color: #1f2937;
+            border-top: 1px solid #f3f4f6;
+        }
+
+        tbody tr:hover {
+            background: #f9fafb;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge.completed {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge.failed {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .badge.initiated {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .view-details-btn {
+            background: #eff6ff;
+            color: #1e40af;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .view-details-btn:hover {
+            background: #dbeafe;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 16px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Left Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-brand">✉️</div>
+            <div class="sidebar-nav">
+                <a href="/prompts" class="nav-item">
+                    <span class="nav-item-icon">📝</span>
+                    <span>Prompts</span>
+                </a>
+                <a href="/analytics" class="nav-item">
+                    <span class="nav-item-icon">📊</span>
+                    <span>Analytics</span>
+                </a>
+                <a href="/voice-maestro" class="nav-item active">
+                    <span class="nav-item-icon">📞</span>
+                    <span>Voice Maestro</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <div class="content-header">
+                <h1>📞 Voice Maestro</h1>
+                <button class="refresh-btn" onclick="loadDashboard()">🔄 Refresh</button>
+            </div>
+
+            <div class="content-area">
+                <!-- Stats Cards -->
+                <div class="stats-grid" id="statsGrid">
+                    <div class="stat-card">
+                        <div class="stat-label">Total Calls</div>
+                        <div class="stat-value" id="totalCalls">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Completed Calls</div>
+                        <div class="stat-value" id="completedCalls">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Avg Duration</div>
+                        <div class="stat-value" id="avgDuration">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Success Rate</div>
+                        <div class="stat-value" id="successRate">-</div>
+                    </div>
+                </div>
+
+                <!-- Call History Table -->
+                <div class="table-container">
+                    <div class="table-header">
+                        <h3>📋 Call History</h3>
+                    </div>
+                    <div id="tableContent">
+                        <p class="loading">Loading call data...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function loadDashboard() {
+            try {
+                const response = await fetch('/api/calls/history?limit=100');
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    updateStats(data.calls);
+                    displayCallTable(data.calls);
+                } else {
+                    document.getElementById('tableContent').innerHTML =
+                        '<div class="error">❌ Error loading call data</div>';
+                }
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+                document.getElementById('tableContent').innerHTML =
+                    '<div class="error">❌ Error loading call data: ' + error.message + '</div>';
+            }
+        }
+
+        function updateStats(calls) {
+            const totalCalls = calls.length;
+            const completedCalls = calls.filter(c => c.call_status === 'completed').length;
+            const durations = calls.filter(c => c.call_duration).map(c => c.call_duration);
+            const avgDuration = durations.length > 0
+                ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
+                : 0;
+            const successRate = totalCalls > 0
+                ? ((completedCalls / totalCalls) * 100).toFixed(1)
+                : 0;
+
+            document.getElementById('totalCalls').textContent = totalCalls;
+            document.getElementById('completedCalls').textContent = completedCalls;
+            document.getElementById('avgDuration').textContent = avgDuration + 's';
+            document.getElementById('successRate').textContent = successRate + '%';
+        }
+
+        function displayCallTable(calls) {
+            if (calls.length === 0) {
+                document.getElementById('tableContent').innerHTML =
+                    '<p class="loading">No calls found</p>';
+                return;
+            }
+
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Merchant</th>
+                            <th>Phone</th>
+                            <th>Status</th>
+                            <th>Duration</th>
+                            <th>Date</th>
+                            <th>Sentiment</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            calls.forEach(call => {
+                const status = call.call_status || 'unknown';
+                const duration = call.call_duration
+                    ? `${call.call_duration}s`
+                    : '-';
+                const date = call.call_started_at
+                    ? new Date(call.call_started_at).toLocaleString()
+                    : new Date(call.created_at).toLocaleString();
+                const sentiment = call.merchant_sentiment || '-';
+
+                html += `
+                    <tr>
+                        <td><strong>${call.merchant_name || 'Unknown'}</strong><br>
+                            <small style="color: #6b7280;">${call.merchant_email || '-'}</small></td>
+                        <td>${call.merchant_phone || '-'}</td>
+                        <td><span class="badge ${status}">${status}</span></td>
+                        <td>${duration}</td>
+                        <td>${date}</td>
+                        <td>${sentiment}</td>
+                        <td>
+                            <button class="view-details-btn" onclick="viewCallDetails('${call.call_sid}')">
+                                View Details
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            document.getElementById('tableContent').innerHTML = html;
+        }
+
+        function viewCallDetails(callSid) {
+            alert('Call details for: ' + callSid + '\\n\\nDetailed view coming soon!');
+        }
+
+        // Load dashboard on page load
+        loadDashboard();
+
+        // Auto-refresh every 30 seconds
+        setInterval(loadDashboard, 30000);
+    </script>
 </body>
 </html>
     """
@@ -5638,6 +6107,10 @@ def prompts_ui():
                 <a href="/analytics" class="nav-item">
                     <span class="nav-item-icon">📊</span>
                     <span>Analytics</span>
+                </a>
+                <a href="/voice-maestro" class="nav-item">
+                    <span class="nav-item-icon">📞</span>
+                    <span>Voice Maestro</span>
                 </a>
             </div>
         </div>
