@@ -12772,7 +12772,7 @@ Remember: Be helpful, direct, and focused on solving their problem. Reference sp
             model=OPENAI_MODEL,
             messages=messages,
             temperature=0.7,
-            max_tokens=150
+            max_completion_tokens=150
         )
 
         return response.choices[0].message.content
