@@ -403,6 +403,58 @@ def init_database():
         except Exception as e:
             logger.debug(f"Snowflake data indexes check: {e}")
 
+        # Phone calls table for Twilio integration
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS phone_calls (
+                id SERIAL PRIMARY KEY,
+                call_sid VARCHAR(255) UNIQUE NOT NULL,
+                merchant_id VARCHAR(255),
+                merchant_email VARCHAR(255),
+                merchant_name VARCHAR(255),
+                merchant_phone VARCHAR(50) NOT NULL,
+
+                -- Call details
+                call_status VARCHAR(50),
+                call_direction VARCHAR(20) DEFAULT 'outbound',
+                call_duration INTEGER,
+                call_started_at TIMESTAMP,
+                call_ended_at TIMESTAMP,
+
+                -- Conversation data
+                conversation_transcript TEXT,
+                conversation_summary TEXT,
+                ai_greeting TEXT,
+                merchant_responses JSONB,
+
+                -- Outcomes
+                issues_resolved TEXT,
+                follow_up_needed BOOLEAN DEFAULT FALSE,
+                follow_up_notes TEXT,
+                merchant_sentiment VARCHAR(50),
+                call_outcome VARCHAR(100),
+
+                -- Recording
+                recording_url TEXT,
+                recording_sid VARCHAR(255),
+
+                -- Metadata
+                triggered_by VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        logger.info("✅ Created phone_calls table for call tracking")
+
+        # Add indexes for faster queries
+        try:
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_phone_calls_merchant_email ON phone_calls(merchant_email)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_phone_calls_merchant_id ON phone_calls(merchant_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_phone_calls_status ON phone_calls(call_status)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_phone_calls_created_at ON phone_calls(created_at)')
+            logger.info("✅ Added indexes to phone_calls table")
+        except Exception as e:
+            logger.debug(f"Phone calls indexes check: {e}")
+
         conn.commit()
         conn.close()
         logger.info("✅ PostgreSQL database initialized")
@@ -11918,6 +11970,40 @@ Remember: Be helpful, direct, and focused on solving their problem."""
         logger.error(f"Error generating AI response: {e}")
         return "I apologize, I'm having trouble connecting right now. Could you please email us at support@affirm.com?"
 
+def generate_elevenlabs_audio(text):
+    """
+    Generate audio using ElevenLabs API.
+    Returns audio bytes that can be streamed to Twilio.
+
+    To use this:
+    1. Set ELEVENLABS_API_KEY in environment
+    2. Optionally set ELEVENLABS_VOICE_ID (defaults to Rachel)
+    3. Replace Twilio's built-in TTS with this function
+
+    Example integration:
+        audio_bytes = generate_elevenlabs_audio("Hello from ElevenLabs!")
+        # Save to file or stream URL that Twilio can access
+        # Update TwiML to use <Play> instead of <Say>
+    """
+    try:
+        if not ELEVENLABS_AVAILABLE or not ELEVENLABS_API_KEY:
+            logger.warning("ElevenLabs not available, falling back to Twilio TTS")
+            return None
+
+        # Generate audio using ElevenLabs
+        audio = generate(
+            text=text,
+            voice=ELEVENLABS_VOICE_ID,
+            model="eleven_monolingual_v1"
+        )
+
+        logger.info(f"✅ Generated ElevenLabs audio for text: {text[:50]}...")
+        return audio
+
+    except Exception as e:
+        logger.error(f"Error generating ElevenLabs audio: {e}")
+        return None
+
 @app.route('/api/initiate-call', methods=['POST'])
 def initiate_call():
     """
@@ -11970,6 +12056,26 @@ def initiate_call():
         )
 
         logger.info(f"📞 Initiated call to {merchant_phone} (SID: {call.sid})")
+
+        # Save call record to database
+        if DB_AVAILABLE:
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO phone_calls (
+                        call_sid, merchant_id, merchant_email, merchant_name, merchant_phone,
+                        call_status, call_started_at, triggered_by
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (
+                    call.sid, merchant_id, merchant_email, merchant_name, merchant_phone,
+                    'initiated', datetime.datetime.now(), 'workato'
+                ))
+                conn.commit()
+                conn.close()
+                logger.info(f"✅ Saved call record to database: {call.sid}")
+            except Exception as db_error:
+                logger.error(f"Error saving call to database: {db_error}")
 
         return jsonify({
             'status': 'success',
@@ -12095,16 +12201,140 @@ def twilio_call_status():
         call_sid = request.values.get('CallSid')
         call_status = request.values.get('CallStatus')
         call_duration = request.values.get('CallDuration', 0)
+        recording_url = request.values.get('RecordingUrl')
+        recording_sid = request.values.get('RecordingSid')
 
         logger.info(f"📞 Call {call_sid} status: {call_status}, duration: {call_duration}s")
 
-        # You can log this to the database for analytics
-        # For now, just logging
+        # Update call record in database
+        if DB_AVAILABLE:
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+
+                # Calculate end time if call is completed
+                if call_status == 'completed':
+                    cursor.execute('''
+                        UPDATE phone_calls
+                        SET call_status = %s,
+                            call_duration = %s,
+                            call_ended_at = %s,
+                            recording_url = %s,
+                            recording_sid = %s,
+                            updated_at = %s
+                        WHERE call_sid = %s
+                    ''', (
+                        call_status,
+                        int(call_duration),
+                        datetime.datetime.now(),
+                        recording_url,
+                        recording_sid,
+                        datetime.datetime.now(),
+                        call_sid
+                    ))
+                else:
+                    # Update status for other states (failed, busy, no-answer, etc.)
+                    cursor.execute('''
+                        UPDATE phone_calls
+                        SET call_status = %s,
+                            updated_at = %s
+                        WHERE call_sid = %s
+                    ''', (call_status, datetime.datetime.now(), call_sid))
+
+                conn.commit()
+                conn.close()
+                logger.info(f"✅ Updated call record in database: {call_sid}")
+            except Exception as db_error:
+                logger.error(f"Error updating call in database: {db_error}")
 
         return jsonify({'status': 'received'})
 
     except Exception as e:
         logger.error(f"Error processing call status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/calls/history', methods=['GET'])
+def get_call_history():
+    """
+    Get call history with optional filters.
+
+    Query parameters:
+    - merchant_email: Filter by merchant email
+    - merchant_id: Filter by merchant ID
+    - status: Filter by call status (completed, failed, etc.)
+    - limit: Number of records (default 50)
+    """
+    try:
+        if not DB_AVAILABLE:
+            return jsonify({'error': 'Database not available'}), 503
+
+        merchant_email = request.args.get('merchant_email')
+        merchant_id = request.args.get('merchant_id')
+        status = request.args.get('status')
+        limit = int(request.args.get('limit', 50))
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Build query with filters
+        where_clauses = []
+        params = []
+
+        if merchant_email:
+            where_clauses.append("merchant_email = %s")
+            params.append(merchant_email)
+
+        if merchant_id:
+            where_clauses.append("merchant_id = %s")
+            params.append(merchant_id)
+
+        if status:
+            where_clauses.append("call_status = %s")
+            params.append(status)
+
+        where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+        cursor.execute(f'''
+            SELECT
+                call_sid, merchant_id, merchant_email, merchant_name, merchant_phone,
+                call_status, call_duration, call_started_at, call_ended_at,
+                conversation_summary, merchant_sentiment, call_outcome,
+                recording_url, created_at
+            FROM phone_calls
+            {where_sql}
+            ORDER BY created_at DESC
+            LIMIT %s
+        ''', params + [limit])
+
+        calls = []
+        for row in cursor.fetchall():
+            calls.append({
+                'call_sid': row[0],
+                'merchant_id': row[1],
+                'merchant_email': row[2],
+                'merchant_name': row[3],
+                'merchant_phone': row[4],
+                'call_status': row[5],
+                'call_duration': row[6],
+                'call_started_at': row[7].isoformat() if row[7] else None,
+                'call_ended_at': row[8].isoformat() if row[8] else None,
+                'conversation_summary': row[9],
+                'merchant_sentiment': row[10],
+                'call_outcome': row[11],
+                'recording_url': row[12],
+                'created_at': row[13].isoformat() if row[13] else None
+            })
+
+        conn.close()
+
+        return jsonify({
+            'status': 'success',
+            'total_calls': len(calls),
+            'calls': calls
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting call history: {e}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
