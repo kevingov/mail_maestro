@@ -5,7 +5,7 @@ Complete email tracking system with send and open tracking
 
 import os
 import psycopg2
-from flask import Flask, Response, request, jsonify
+from flask import Flask, Response, request, jsonify, send_from_directory
 import logging
 from io import BytesIO, StringIO
 import csv
@@ -12783,18 +12783,8 @@ Remember: Be helpful, direct, and focused on solving their problem. Reference sp
 
 def generate_elevenlabs_audio(text):
     """
-    Generate audio using ElevenLabs API.
-    Returns audio bytes that can be streamed to Twilio.
-
-    To use this:
-    1. Set ELEVENLABS_API_KEY in environment
-    2. Optionally set ELEVENLABS_VOICE_ID (defaults to Rachel)
-    3. Replace Twilio's built-in TTS with this function
-
-    Example integration:
-        audio_bytes = generate_elevenlabs_audio("Hello from ElevenLabs!")
-        # Save to file or stream URL that Twilio can access
-        # Update TwiML to use <Play> instead of <Say>
+    Generate audio using ElevenLabs API and save to file.
+    Returns the public URL that Twilio can access.
     """
     try:
         if not ELEVENLABS_AVAILABLE or not ELEVENLABS_API_KEY:
@@ -12809,10 +12799,39 @@ def generate_elevenlabs_audio(text):
         )
 
         logger.info(f"✅ Generated ElevenLabs audio for text: {text[:50]}...")
-        return audio
+
+        # Save audio to file
+        import hashlib
+        import time
+
+        # Create audio directory if it doesn't exist
+        audio_dir = os.path.join(os.getcwd(), 'static', 'audio')
+        os.makedirs(audio_dir, exist_ok=True)
+
+        # Generate unique filename
+        text_hash = hashlib.md5(text.encode()).hexdigest()[:10]
+        timestamp = int(time.time())
+        filename = f"elevenlabs_{timestamp}_{text_hash}.mp3"
+        filepath = os.path.join(audio_dir, filename)
+
+        # Save audio bytes to file
+        with open(filepath, 'wb') as f:
+            for chunk in audio:
+                f.write(chunk)
+
+        # Generate public URL
+        base_url = os.getenv('BASE_URL', 'https://web-production-6dfbd.up.railway.app')
+        audio_url = f"{base_url}/static/audio/{filename}"
+
+        logger.info(f"💾 Saved ElevenLabs audio to: {filepath}")
+        logger.info(f"🔗 Public URL: {audio_url}")
+
+        return audio_url
 
     except Exception as e:
         logger.error(f"Error generating ElevenLabs audio: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return None
 
 @app.route('/api/initiate-call', methods=['POST'])
@@ -12944,13 +12963,13 @@ def twilio_voice_handler():
         greeting = generate_ai_response(context)
         logger.info(f"📞 AI greeting generated: '{greeting[:100]}...'")
 
-        # Check if ElevenLabs is available
+        # Check if ElevenLabs is available and generate audio
+        audio_url = None
         if ELEVENLABS_AVAILABLE and ELEVENLABS_API_KEY:
             logger.info("🎤 ElevenLabs is configured - attempting to generate audio")
-            audio_bytes = generate_elevenlabs_audio(greeting)
-            if audio_bytes:
-                logger.info("✅ ElevenLabs audio generated successfully")
-                logger.warning("⚠️ However, audio hosting not configured - falling back to Twilio TTS")
+            audio_url = generate_elevenlabs_audio(greeting)
+            if audio_url:
+                logger.info(f"✅ ElevenLabs audio generated and hosted at: {audio_url}")
             else:
                 logger.warning("⚠️ ElevenLabs generation failed - using Twilio TTS")
         else:
@@ -12959,12 +12978,14 @@ def twilio_voice_handler():
         # Create TwiML response
         response = VoiceResponse()
 
-        # Use enhanced Twilio voice (Google Neural - sounds much more natural)
-        # Available voices: https://www.twilio.com/docs/voice/twiml/say/text-speech#amazon-polly
-        # Google: en-US-Neural2-C (female), en-US-Neural2-D (male)
-        # Amazon Neural: Joanna-Neural, Matthew-Neural
-        logger.info("🔊 Using Twilio voice: Google.en-US-Neural2-C (natural female voice)")
-        response.say(greeting, voice='Google.en-US-Neural2-C', language='en-US')
+        # Use ElevenLabs audio if available, otherwise use Twilio TTS
+        if audio_url:
+            logger.info("🎙️ Using ElevenLabs audio")
+            response.play(audio_url)
+        else:
+            # Use enhanced Twilio voice (Google Neural - sounds much more natural)
+            logger.info("🔊 Using Twilio voice: Google.en-US-Neural2-C (natural female voice)")
+            response.say(greeting, voice='Google.en-US-Neural2-C', language='en-US')
 
         # Gather input from merchant
         gather = Gather(
@@ -12974,7 +12995,18 @@ def twilio_voice_handler():
             timeout=5,
             speech_timeout='auto'
         )
-        gather.say("Please tell me how I can help you today.", voice='Google.en-US-Neural2-C', language='en-US')
+
+        # Generate follow-up prompt with ElevenLabs if available
+        followup_text = "Please tell me how I can help you today."
+        followup_audio_url = None
+        if ELEVENLABS_AVAILABLE and ELEVENLABS_API_KEY:
+            followup_audio_url = generate_elevenlabs_audio(followup_text)
+
+        if followup_audio_url:
+            gather.play(followup_audio_url)
+        else:
+            gather.say(followup_text, voice='Google.en-US-Neural2-C', language='en-US')
+
         response.append(gather)
 
         # If no input, redirect
@@ -13404,6 +13436,23 @@ def get_call_history():
     except Exception as e:
         logger.error(f"Error getting call history: {e}")
         return jsonify({'error': str(e)}), 500
+
+# ============================================================================
+# STATIC FILE SERVING FOR ELEVENLABS AUDIO
+# ============================================================================
+
+@app.route('/static/audio/<filename>')
+def serve_audio(filename):
+    """
+    Serve ElevenLabs generated audio files.
+    """
+    try:
+        audio_dir = os.path.join(os.getcwd(), 'static', 'audio')
+        logger.info(f"📁 Serving audio file: {filename} from {audio_dir}")
+        return send_from_directory(audio_dir, filename)
+    except Exception as e:
+        logger.error(f"Error serving audio file {filename}: {e}")
+        return "Audio file not found", 404
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
