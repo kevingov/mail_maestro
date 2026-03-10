@@ -13297,8 +13297,8 @@ def twilio_voice_handler():
 
         greeting += "How can I help you today?"
 
-        # Get app URL for serving audio files
-        app_url = request.url_root.rstrip('/')
+        # Get app URL for serving audio files (force HTTPS)
+        app_url = request.url_root.rstrip('/').replace('http://', 'https://')
 
         # Use add_speech_to_response pattern (tries ElevenLabs first, falls back to Twilio TTS)
         add_speech_to_response(response, greeting, app_url)
@@ -13307,7 +13307,8 @@ def twilio_voice_handler():
         response.pause(length=1)
 
         # Use Record verb to capture merchant response
-        base_url = request.url_root.rstrip('/')
+        # Force HTTPS for callbacks (Railway uses HTTPS)
+        base_url = request.url_root.rstrip('/').replace('http://', 'https://')
         record_callback = f"{base_url}/api/twilio/handle-merchant-response"
         record_callback += f"?merchant_email={merchant_email or 'unknown'}"
         record_callback += f"&merchant_name={merchant_name}"
@@ -13317,10 +13318,12 @@ def twilio_voice_handler():
         if call_sid:
             record_callback += f"&call_sid={call_sid}"
 
+        logger.info(f"📝 Record callback URL: {record_callback}")
+
         record = Record(
             action=record_callback,
             method='POST',
-            timeout=10,  # Wait 10 seconds for response
+            timeout=5,  # Wait 5 seconds of silence before processing
             finish_on_key='#',  # Allow merchant to press # to finish early
             max_length=120,  # Max 2 minutes
             play_beep=False,  # No beep for natural conversation
@@ -13359,6 +13362,9 @@ def handle_merchant_response():
     """
     try:
         logger.info("📞 ========== HANDLING MERCHANT RESPONSE ==========")
+        logger.info(f"📞 Request method: {request.method}")
+        logger.info(f"📞 Request args: {dict(request.args)}")
+        logger.info(f"📞 Request form: {dict(request.form)}")
 
         # Get merchant info from query parameters
         merchant_email = request.args.get('merchant_email', request.values.get('merchant_email'))
@@ -13370,23 +13376,35 @@ def handle_merchant_response():
         # Get transcription from Twilio
         transcription_text = request.values.get('TranscriptionText', '')
         recording_url = request.values.get('RecordingUrl', '')
+        recording_duration = request.values.get('RecordingDuration', '0')
 
         logger.info(f"📞 Merchant: {merchant_name} ({merchant_email})")
         logger.info(f"📞 Call SID: {call_sid}")
-        logger.info(f"📝 Transcription: {transcription_text}")
         logger.info(f"🎙️  Recording URL: {recording_url}")
+        logger.info(f"⏱️  Recording Duration: {recording_duration}s")
+        logger.info(f"📝 Transcription: {transcription_text if transcription_text else '(empty - transcription may arrive separately)'}")
 
         # Create TwiML response
         response = VoiceResponse()
 
-        # If no transcription, prompt again or end call
+        # Check if this is the action callback (immediate) or transcribe callback (has transcription)
         if not transcription_text or transcription_text.strip() == '':
-            logger.warning("⚠️  No transcription received")
-            app_url = request.url_root.rstrip('/')
-            msg = "I didn't catch that. We'll send you a follow-up email. Thank you for your time."
-            add_speech_to_response(response, msg, app_url)
-            response.hangup()
-            return Response(str(response), mimetype='text/xml')
+            # This is the action callback - recording exists but transcription not ready yet
+            if recording_url and int(recording_duration) > 0:
+                logger.info("📝 Recording received, but transcription not ready yet. Waiting for transcribe callback...")
+                # Return empty response - the transcribe_callback will handle the actual response
+                return Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', mimetype='text/xml')
+            else:
+                # No recording at all - timeout
+                logger.warning("⚠️  No recording received (timeout)")
+                app_url = request.url_root.rstrip('/').replace('http://', 'https://')
+                msg = "I didn't catch that. We'll send you a follow-up email. Thank you for your time."
+                add_speech_to_response(response, msg, app_url)
+                response.hangup()
+                return Response(str(response), mimetype='text/xml')
+
+        # If we get here, we have transcription - this is the transcribe_callback
+        logger.info("✅ Transcription received via transcribe callback")
 
         # Get merchant context
         context = None
@@ -13429,7 +13447,8 @@ def handle_merchant_response():
         response.pause(length=1)
 
         # Record next response
-        base_url = request.url_root.rstrip('/')
+        # Force HTTPS for callbacks (Railway uses HTTPS)
+        base_url = request.url_root.rstrip('/').replace('http://', 'https://')
         record_callback = f"{base_url}/api/twilio/handle-final-response"
         record_callback += f"?merchant_email={merchant_email or 'unknown'}"
         record_callback += f"&merchant_name={merchant_name}"
@@ -13630,7 +13649,7 @@ def twilio_gather_input():
         logger.error(f"📄 Error TwiML Response:\n{error_twiml}")
         return Response(error_twiml, mimetype='text/xml')
 
-@app.route('/api/twilio/call-status', methods=['POST'])
+@app.route('/api/twilio/call-status', methods=['POST', 'GET'])
 def twilio_call_status():
     """
     Webhook for call status updates (completed, failed, etc.)
