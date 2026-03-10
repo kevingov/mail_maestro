@@ -29,6 +29,22 @@ from google.auth.transport.requests import Request
 # OpenAI import
 from openai import OpenAI
 
+# Twilio and ElevenLabs imports
+try:
+    from twilio.rest import Client as TwilioClient
+    from twilio.twiml.voice_response import VoiceResponse, Gather
+    TWILIO_AVAILABLE = True
+except ImportError:
+    TWILIO_AVAILABLE = False
+    logger.warning("Twilio not available - phone call integration disabled")
+
+try:
+    from elevenlabs import generate, set_api_key, Voice
+    ELEVENLABS_AVAILABLE = True
+except ImportError:
+    ELEVENLABS_AVAILABLE = False
+    logger.warning("ElevenLabs not available - AI voice generation disabled")
+
 # Google Sheets import
 try:
     import gspread
@@ -50,6 +66,19 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 
 # OpenAI configuration
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.2")  # Can be changed to "gpt-3.5-turbo", "gpt-4-turbo", etc.
+
+# Twilio configuration
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")  # Your Twilio phone number
+
+# ElevenLabs configuration
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # Default: Rachel
+
+# Initialize ElevenLabs if available
+if ELEVENLABS_AVAILABLE and ELEVENLABS_API_KEY:
+    set_api_key(ELEVENLABS_API_KEY)
 
 # Email configuration (same as 2025_hackathon.py)
 EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
@@ -11753,6 +11782,330 @@ def ingest_snowflake_data():
             'status': 'error',
             'message': str(e)
         }), 500
+
+# ============================================================================
+# TWILIO + ELEVENLABS PHONE CALL ENDPOINTS
+# ============================================================================
+
+def get_merchant_context(merchant_email=None, merchant_id=None):
+    """
+    Retrieve merchant context from the database for RAG.
+    Returns merchant history, emails, sentiment, and integration status.
+    """
+    try:
+        if not DB_AVAILABLE:
+            return {'error': 'Database not available'}
+
+        conn = get_db_connection()
+        if not conn:
+            return {'error': 'Database connection failed'}
+
+        cursor = conn.cursor()
+
+        # Get merchant's email history
+        where_clause = "merchant_id = %s" if merchant_id else "LOWER(recipient_email) = LOWER(%s) OR LOWER(sender_email) = LOWER(%s)"
+        params = (merchant_id,) if merchant_id else (merchant_email, merchant_email)
+
+        cursor.execute(f'''
+            SELECT
+                email_type, subject, sent_at, open_count,
+                request_type, sentiment, email_body
+            FROM email_tracking
+            WHERE {where_clause}
+            ORDER BY sent_at DESC
+            LIMIT 10
+        ''', params)
+
+        emails = []
+        for row in cursor.fetchall():
+            emails.append({
+                'type': row[0],
+                'subject': row[1],
+                'sent_at': row[2].isoformat() if row[2] else None,
+                'opened': row[3] > 0,
+                'request_type': row[4],
+                'sentiment': row[5],
+                'snippet': row[6][:200] if row[6] else None
+            })
+
+        # Get merchant cohort info
+        cursor.execute('''
+            SELECT merchant_name, cohort_name, test_group, enrolled_at
+            FROM merchant_cohorts
+            WHERE merchant_id = %s OR LOWER(merchant_email) = LOWER(%s)
+            LIMIT 1
+        ''', (merchant_id or merchant_email, merchant_email or merchant_id))
+
+        cohort_info = cursor.fetchone()
+        conn.close()
+
+        context = {
+            'merchant_name': cohort_info[0] if cohort_info else 'Merchant',
+            'cohort': cohort_info[1] if cohort_info else None,
+            'test_group': cohort_info[2] if cohort_info else None,
+            'enrolled_at': cohort_info[3].isoformat() if cohort_info and cohort_info[3] else None,
+            'emails': emails,
+            'has_responded': any(e['type'] == 'inbound' for e in emails),
+            'last_sentiment': next((e['sentiment'] for e in emails if e['sentiment']), None),
+            'last_request_type': next((e['request_type'] for e in emails if e['request_type']), None)
+        }
+
+        return context
+
+    except Exception as e:
+        logger.error(f"Error getting merchant context: {e}")
+        return {'error': str(e)}
+
+def generate_ai_response(merchant_context, merchant_question=None, conversation_history=None):
+    """
+    Generate AI response using OpenAI with merchant context (RAG).
+    """
+    try:
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+        # Build context summary
+        context_summary = f"""
+Merchant: {merchant_context.get('merchant_name', 'Unknown')}
+Cohort: {merchant_context.get('cohort', 'Unknown')}
+Has Responded: {merchant_context.get('has_responded', False)}
+Last Sentiment: {merchant_context.get('last_sentiment', 'Unknown')}
+Last Request: {merchant_context.get('last_request_type', 'Unknown')}
+
+Recent Email History:
+"""
+        for email in merchant_context.get('emails', [])[:3]:
+            context_summary += f"- {email['type']}: {email.get('subject', 'No subject')} ({email.get('sentiment', 'N/A')})\n"
+
+        system_prompt = f"""{AFFIRM_VOICE_GUIDELINES}
+
+You are calling as an Affirm Business Development Representative to help merchants integrate with Affirm and resolve any blockers.
+
+Merchant Context:
+{context_summary}
+
+Your goal is to:
+1. Help unblock the merchant and solve integration issues
+2. Understand their specific challenges launching with Affirm
+3. Provide actionable next steps
+4. Be concise and conversational (this is a phone call, not an email)
+5. Keep responses under 100 words
+
+Remember: Be helpful, direct, and focused on solving their problem."""
+
+        messages = [{"role": "system", "content": system_prompt}]
+
+        # Add conversation history if provided
+        if conversation_history:
+            messages.extend(conversation_history)
+
+        # Add merchant's question/input if provided
+        if merchant_question:
+            messages.append({"role": "user", "content": merchant_question})
+        else:
+            # Initial greeting
+            messages.append({"role": "user", "content": "Start the call with a brief greeting and ask how you can help them get launched with Affirm."})
+
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=messages,
+            temperature=0.7,
+            max_tokens=150
+        )
+
+        return response.choices[0].message.content
+
+    except Exception as e:
+        logger.error(f"Error generating AI response: {e}")
+        return "I apologize, I'm having trouble connecting right now. Could you please email us at support@affirm.com?"
+
+@app.route('/api/initiate-call', methods=['POST'])
+def initiate_call():
+    """
+    Endpoint for Workato to trigger outgoing calls.
+
+    Expected payload:
+    {
+        "merchant_email": "merchant@example.com",
+        "merchant_phone": "+1234567890",
+        "merchant_name": "Merchant Name",
+        "merchant_id": "optional_merchant_id"
+    }
+    """
+    try:
+        if not TWILIO_AVAILABLE:
+            return jsonify({'error': 'Twilio integration not available'}), 503
+
+        if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
+            return jsonify({'error': 'Twilio credentials not configured'}), 503
+
+        data = request.get_json()
+        merchant_email = data.get('merchant_email')
+        merchant_phone = data.get('merchant_phone')
+        merchant_name = data.get('merchant_name', 'Merchant')
+        merchant_id = data.get('merchant_id')
+
+        if not merchant_phone:
+            return jsonify({'error': 'merchant_phone is required'}), 400
+
+        # Get merchant context
+        context = get_merchant_context(merchant_email=merchant_email, merchant_id=merchant_id)
+
+        # Initialize Twilio client
+        twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
+        # Build the callback URL for TwiML
+        base_url = os.getenv('BASE_URL', 'https://web-production-6dfbd.up.railway.app')
+        callback_url = f"{base_url}/api/twilio/voice?merchant_email={merchant_email}&merchant_name={merchant_name}"
+        if merchant_id:
+            callback_url += f"&merchant_id={merchant_id}"
+
+        # Initiate the call
+        call = twilio_client.calls.create(
+            to=merchant_phone,
+            from_=TWILIO_PHONE_NUMBER,
+            url=callback_url,
+            status_callback=f"{base_url}/api/twilio/call-status",
+            status_callback_event=['completed', 'failed'],
+            record=True  # Record the call for quality assurance
+        )
+
+        logger.info(f"📞 Initiated call to {merchant_phone} (SID: {call.sid})")
+
+        return jsonify({
+            'status': 'success',
+            'call_sid': call.sid,
+            'merchant_email': merchant_email,
+            'merchant_phone': merchant_phone,
+            'message': 'Call initiated successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error initiating call: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/twilio/voice', methods=['POST', 'GET'])
+def twilio_voice_handler():
+    """
+    TwiML endpoint for handling the initial call connection.
+    """
+    try:
+        # Get merchant info from query parameters
+        merchant_email = request.args.get('merchant_email', request.values.get('merchant_email'))
+        merchant_name = request.args.get('merchant_name', request.values.get('merchant_name', 'there'))
+        merchant_id = request.args.get('merchant_id', request.values.get('merchant_id'))
+
+        # Get merchant context for RAG
+        context = get_merchant_context(merchant_email=merchant_email, merchant_id=merchant_id)
+
+        # Generate AI greeting
+        greeting = generate_ai_response(context)
+
+        # Create TwiML response
+        response = VoiceResponse()
+
+        # Use Twilio's text-to-speech or ElevenLabs
+        # For now, using Twilio's built-in TTS (you can enhance with ElevenLabs later)
+        response.say(greeting, voice='Polly.Joanna', language='en-US')
+
+        # Gather input from merchant
+        gather = Gather(
+            input='speech',
+            action=f'/api/twilio/gather-input?merchant_email={merchant_email}&merchant_name={merchant_name}&merchant_id={merchant_id}',
+            method='POST',
+            timeout=5,
+            speech_timeout='auto'
+        )
+        gather.say("Please tell me how I can help you today.", voice='Polly.Joanna', language='en-US')
+        response.append(gather)
+
+        # If no input, redirect
+        response.redirect('/api/twilio/voice')
+
+        return Response(str(response), mimetype='text/xml')
+
+    except Exception as e:
+        logger.error(f"Error in voice handler: {e}")
+        response = VoiceResponse()
+        response.say("I apologize, we're experiencing technical difficulties. Please email us at support@affirm.com")
+        response.hangup()
+        return Response(str(response), mimetype='text/xml')
+
+@app.route('/api/twilio/gather-input', methods=['POST'])
+def twilio_gather_input():
+    """
+    Handle merchant's speech input and generate AI response.
+    """
+    try:
+        merchant_email = request.values.get('merchant_email')
+        merchant_name = request.values.get('merchant_name', 'there')
+        merchant_id = request.values.get('merchant_id')
+        speech_result = request.values.get('SpeechResult', '')
+
+        logger.info(f"📞 Merchant said: {speech_result}")
+
+        # Get merchant context
+        context = get_merchant_context(merchant_email=merchant_email, merchant_id=merchant_id)
+
+        # Get conversation history from session (simplified - you may want to store this in DB)
+        conversation_history = [
+            {"role": "user", "content": speech_result}
+        ]
+
+        # Generate AI response
+        ai_response = generate_ai_response(context, merchant_question=speech_result, conversation_history=conversation_history)
+
+        logger.info(f"🤖 AI Response: {ai_response}")
+
+        # Create TwiML response
+        response = VoiceResponse()
+        response.say(ai_response, voice='Polly.Joanna', language='en-US')
+
+        # Continue gathering input
+        gather = Gather(
+            input='speech',
+            action=f'/api/twilio/gather-input?merchant_email={merchant_email}&merchant_name={merchant_name}&merchant_id={merchant_id}',
+            method='POST',
+            timeout=5,
+            speech_timeout='auto'
+        )
+        gather.say("Is there anything else I can help you with?", voice='Polly.Joanna', language='en-US')
+        response.append(gather)
+
+        # Option to end call
+        response.say("Thank you for your time. Have a great day!", voice='Polly.Joanna', language='en-US')
+        response.hangup()
+
+        return Response(str(response), mimetype='text/xml')
+
+    except Exception as e:
+        logger.error(f"Error gathering input: {e}")
+        response = VoiceResponse()
+        response.say("I apologize for the technical difficulty. Please email support@affirm.com for assistance.")
+        response.hangup()
+        return Response(str(response), mimetype='text/xml')
+
+@app.route('/api/twilio/call-status', methods=['POST'])
+def twilio_call_status():
+    """
+    Webhook for call status updates (completed, failed, etc.)
+    """
+    try:
+        call_sid = request.values.get('CallSid')
+        call_status = request.values.get('CallStatus')
+        call_duration = request.values.get('CallDuration', 0)
+
+        logger.info(f"📞 Call {call_sid} status: {call_status}, duration: {call_duration}s")
+
+        # You can log this to the database for analytics
+        # For now, just logging
+
+        return jsonify({'status': 'received'})
+
+    except Exception as e:
+        logger.error(f"Error processing call status: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
