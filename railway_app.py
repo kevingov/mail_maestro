@@ -728,7 +728,8 @@ def get_snowflake_connection():
         'warehouse': warehouse,
         'database': database,
         'schema': schema,
-        'role': role
+        'role': role,
+        'insecure_mode': True  # Skip SSL verification for corporate network compatibility
     }
 
     # Priority: OAuth token > Password
