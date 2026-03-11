@@ -14698,6 +14698,126 @@ def update_support_request_webhook():
         }), 500
 
 
+@app.route('/webhooks/elevenlabs/merchant/get-snowflake-data', methods=['POST', 'GET'])
+def get_snowflake_merchant_data_webhook():
+    """
+    Query Snowflake for merchant data based on phone number for ElevenLabs agent.
+
+    Parameters (JSON body or query):
+    - merchant_phone: Merchant's phone number
+    - merchant_email: Merchant's email (alternative lookup)
+    - merchant_id: Merchant's ID (alternative lookup)
+
+    Returns:
+    - Merchant revenue segmentation data from Snowflake
+    """
+    try:
+        # Get data from multiple sources
+        data = request.get_json(silent=True) or {}
+        if not data and request.args:
+            data = dict(request.args)
+        if not data and request.form:
+            data = dict(request.form)
+
+        logger.info("❄️ ========== ELEVENLABS WEBHOOK: GET SNOWFLAKE DATA ==========")
+        logger.info(f"❄️ Received data: {data}")
+
+        merchant_phone = data.get('merchant_phone') or data.get('to_phone')
+        merchant_email = data.get('merchant_email')
+        merchant_id = data.get('merchant_id')
+
+        if not merchant_phone and not merchant_email and not merchant_id:
+            return jsonify({
+                'success': False,
+                'error': 'Missing required parameter: merchant_phone, merchant_email, or merchant_id'
+            }), 400
+
+        if not SNOWFLAKE_AVAILABLE:
+            logger.warning("❄️ Snowflake not available")
+            return jsonify({
+                'success': False,
+                'error': 'Snowflake not available',
+                'message': 'Data warehouse connection not configured'
+            }), 503
+
+        # Connect to Snowflake
+        logger.info("❄️ Connecting to Snowflake...")
+        conn = get_snowflake_connection()
+        cursor = conn.cursor()
+
+        # Build query based on available parameters
+        # Note: Update column names based on your actual Snowflake schema
+        query = "SELECT * FROM PROD__US.DBT_REVENUE.MERCHANT_REVENUE_SEGMENTATION_DIM WHERE "
+        params = []
+
+        if merchant_id:
+            query += "MERCHANT_ID = %s"
+            params.append(merchant_id)
+        elif merchant_email:
+            query += "MERCHANT_EMAIL = %s"
+            params.append(merchant_email)
+        elif merchant_phone:
+            # Normalize phone number (remove +1, dashes, spaces)
+            normalized_phone = merchant_phone.replace('+1', '').replace('-', '').replace(' ', '').replace('(', '').replace(')', '')
+            query += "MERCHANT_PHONE = %s"
+            params.append(normalized_phone)
+
+        query += " LIMIT 1"
+
+        logger.info(f"❄️ Executing query: {query}")
+        logger.info(f"❄️ Parameters: {params}")
+
+        cursor.execute(query, params)
+
+        # Fetch results
+        columns = [desc[0] for desc in cursor.description]
+        row = cursor.fetchone()
+
+        cursor.close()
+        conn.close()
+
+        if not row:
+            logger.warning(f"❄️ No merchant found for {merchant_phone or merchant_email or merchant_id}")
+            return jsonify({
+                'success': True,
+                'found': False,
+                'message': 'No merchant data found in Snowflake',
+                'searched_by': 'phone' if merchant_phone else ('email' if merchant_email else 'id'),
+                'searched_value': merchant_phone or merchant_email or merchant_id
+            })
+
+        # Convert to dict
+        merchant_data = dict(zip(columns, row))
+
+        logger.info(f"❄️ Found merchant data: {list(merchant_data.keys())}")
+
+        return jsonify({
+            'success': True,
+            'found': True,
+            'merchant': merchant_data,
+            'data_source': 'snowflake',
+            'table': 'MERCHANT_REVENUE_SEGMENTATION_DIM'
+        })
+
+    except ValueError as ve:
+        logger.error(f"❄️ Configuration error: {ve}")
+        return jsonify({
+            'success': False,
+            'error': 'Snowflake configuration error',
+            'message': str(ve),
+            'hint': 'Check SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER environment variables'
+        }), 500
+
+    except Exception as e:
+        logger.error(f"❌ Error in get-snowflake-data webhook: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }), 500
+
+
 # ==================== SNOWFLAKE API ENDPOINTS ====================
 
 @app.route('/api/snowflake/test', methods=['GET'])
