@@ -16,5 +16,7 @@ twilio==8.10.0
 elevenlabs==0.2.27
 setuptools>=65.0.0
 wheel>=0.40.0
-snowflake-connector-python>=3.12.0
+Cython>=0.29.0
+pyarrow>=10.0.0
+snowflake-connector-python[pandas]>=3.12.0
 pandas==2.0.3
