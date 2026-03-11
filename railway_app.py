@@ -716,20 +716,22 @@ def get_snowflake_connection():
     if not account or not user:
         raise ValueError("SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER environment variables are required")
 
+    if not password:
+        raise ValueError(
+            "SNOWFLAKE_PASSWORD environment variable is required for server environments. "
+            "Browser-based SSO (externalbrowser) does not work on Railway. "
+            "Please set SNOWFLAKE_PASSWORD in your Railway environment variables."
+        )
+
     conn_params = {
         'account': account,
         'user': user,
+        'password': password,
         'warehouse': warehouse,
         'database': database,
         'schema': schema,
         'role': role
     }
-
-    # Use password if provided, otherwise use SSO (externalbrowser)
-    if password:
-        conn_params['password'] = password
-    else:
-        conn_params['authenticator'] = 'externalbrowser'
 
     logger.info(f"Connecting to Snowflake: {account} as {user}")
 
