@@ -5628,6 +5628,21 @@ def voice_maestro_dashboard():
     </div>
 
     <script>
+        // Helper function to format date to EST
+        function formatToEST(dateString) {
+            if (!dateString) return '-';
+            const date = new Date(dateString);
+            return date.toLocaleString('en-US', {
+                timeZone: 'America/New_York',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+            }) + ' EST';
+        }
+
         async function loadDashboard() {
             try {
                 const response = await fetch('/api/calls/history?limit=100');
@@ -5693,8 +5708,8 @@ def voice_maestro_dashboard():
                     ? `${call.call_duration}s`
                     : '-';
                 const date = call.call_started_at
-                    ? new Date(call.call_started_at).toLocaleString()
-                    : new Date(call.created_at).toLocaleString();
+                    ? formatToEST(call.call_started_at)
+                    : formatToEST(call.created_at);
                 const sentiment = call.merchant_sentiment || '-';
 
                 html += `
