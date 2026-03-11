@@ -14789,6 +14789,140 @@ def update_support_request_webhook():
         }), 500
 
 
+@app.route('/webhooks/elevenlabs/merchant/send-email', methods=['POST', 'GET'])
+def send_merchant_email_webhook():
+    """
+    Send email to merchant with merchanthelp@affirm.com CC'ed.
+    Called by ElevenLabs agent when merchant needs email follow-up.
+
+    Parameters (JSON body or query):
+    - merchant_email: Merchant's email address (To)
+    - merchant_name: Merchant's name for personalization
+    - subject: Email subject line
+    - message: Email body/message
+    - issue_type: Type of issue (optional, e.g., "technical", "billing")
+
+    Returns:
+    - Success status and email details
+    """
+    try:
+        # Get data from multiple sources
+        data = request.get_json(silent=True) or {}
+        if not data and request.args:
+            data = dict(request.args)
+        if not data and request.form:
+            data = dict(request.form)
+
+        logger.info("📧 ========== ELEVENLABS WEBHOOK: SEND EMAIL ==========")
+        logger.info(f"📧 Request data: {data}")
+
+        merchant_email = data.get('merchant_email')
+        merchant_name = data.get('merchant_name', 'Valued Merchant')
+        subject = data.get('subject', 'Follow-up from Affirm')
+        message = data.get('message', '')
+        issue_type = data.get('issue_type', 'general')
+
+        if not merchant_email:
+            return jsonify({
+                'success': False,
+                'error': 'merchant_email is required'
+            }), 400
+
+        if not message:
+            return jsonify({
+                'success': False,
+                'error': 'message is required'
+            }), 400
+
+        # Build HTML email body
+        email_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ color: #29B5E8; margin-bottom: 20px; }}
+                .message {{ margin: 20px 0; }}
+                .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px; }}
+                .signature {{ margin-top: 20px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>Hi {merchant_name},</h2>
+                </div>
+                <div class="message">
+                    {message.replace(chr(10), '<br>')}
+                </div>
+                <div class="signature">
+                    <p>Best regards,<br>
+                    Jake Morgan<br>
+                    Business Development Associate<br>
+                    Affirm</p>
+                </div>
+                <div class="footer">
+                    <p>This email was sent regarding: {issue_type}</p>
+                    <p>If you have any questions, please don't hesitate to reach out to merchanthelp@affirm.com</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        # Create email message with CC
+        msg = MIMEMultipart()
+        msg["From"] = f"Jake Morgan - Affirm <{os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com')}>"
+        msg["To"] = merchant_email
+        msg["Cc"] = "merchanthelp@affirm.com"  # Always CC merchanthelp
+        msg["Subject"] = subject
+        msg["Reply-To"] = os.getenv('EMAIL_USERNAME', 'jake.morgan@affirm.com')
+        msg["Message-ID"] = f"<{uuid.uuid4()}@affirm.com>"
+
+        # Attach HTML content
+        html_part = MIMEText(email_html, 'html')
+        msg.attach(html_part)
+
+        # Send via Gmail API
+        try:
+            creds = authenticate_gmail()
+            service = build('gmail', 'v1', credentials=creds)
+
+            raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+            message_body = {'raw': raw_message}
+
+            response = service.users().messages().send(userId='me', body=message_body).execute()
+
+            logger.info(f"✅ Email sent successfully to {merchant_email} with CC to merchanthelp@affirm.com")
+            logger.info(f"📧 Gmail Message ID: {response.get('id')}")
+
+            return jsonify({
+                'success': True,
+                'message': f'Email sent to {merchant_email} with CC to merchanthelp@affirm.com',
+                'gmail_message_id': response.get('id'),
+                'recipient': merchant_email,
+                'cc': 'merchanthelp@affirm.com',
+                'subject': subject
+            })
+
+        except Exception as gmail_error:
+            logger.error(f"❌ Gmail API Error: {gmail_error}")
+            return jsonify({
+                'success': False,
+                'error': f'Failed to send email: {str(gmail_error)}'
+            }), 500
+
+    except Exception as e:
+        logger.error(f"❌ Error in send-email webhook: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }), 500
+
+
 @app.route('/webhooks/elevenlabs/merchant/get-snowflake-data', methods=['POST', 'GET'])
 def get_snowflake_merchant_data_webhook():
     """
