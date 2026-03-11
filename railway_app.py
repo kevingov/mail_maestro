@@ -5053,67 +5053,144 @@ def snowflake_page():
             </div>
         </div>
         <div class="main-content">
-            <div class="content-header"><h1>Snowflake Data Viewer</h1></div>
+            <div class="content-header"><h1>Merchant Data Viewer</h1></div>
             <div class="content-area">
-                <button class="test-btn" onclick="runTestQuery()" id="testBtn">❄️ Run Test Query</button>
+                <!-- CSV Upload Section -->
+                <div class="results-card" style="margin-bottom: 32px;">
+                    <h2>📤 Upload Merchant Data CSV</h2>
+                    <p style="color: #6b7280; margin-bottom: 16px;">Upload a CSV file to populate the merchant data table</p>
+                    <div style="display: flex; gap: 16px; align-items: center;">
+                        <input type="file" id="csvFile" accept=".csv" style="flex: 1; padding: 8px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                        <button class="test-btn" onclick="uploadCSV()" id="uploadBtn" style="margin: 0;">📤 Upload CSV</button>
+                    </div>
+                    <div id="upload-status" style="margin-top: 16px;"></div>
+                </div>
+
+                <!-- View Data Section -->
+                <div class="results-card">
+                    <h2>📊 View Merchant Data</h2>
+                    <p style="color: #6b7280; margin-bottom: 16px;">Query merchant data from PostgreSQL database</p>
+                    <button class="test-btn" onclick="viewMerchantData()" id="viewBtn" style="margin: 0;">🔍 View Data</button>
+                </div>
+
                 <div id="error-message"></div>
                 <div id="success-message"></div>
-                <div id="loading" class="loading" style="display:none;"><div class="spinner"></div><p>Querying Snowflake...</p></div>
+                <div id="loading" class="loading" style="display:none;"><div class="spinner"></div><p>Loading...</p></div>
                 <div id="results"></div>
             </div>
         </div>
     </div>
     <script>
-        async function runTestQuery() {
+        async function uploadCSV() {
+            const fileInput = document.getElementById('csvFile');
+            const uploadStatus = document.getElementById('upload-status');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const loadingEl = document.getElementById('loading');
+
+            if (!fileInput.files || fileInput.files.length === 0) {
+                uploadStatus.innerHTML = '<div class="error">Please select a CSV file</div>';
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+
+            uploadBtn.disabled = true;
+            loadingEl.style.display = 'block';
+            uploadStatus.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/merchant-data/upload-csv', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                loadingEl.style.display = 'none';
+                uploadBtn.disabled = false;
+
+                if (response.ok) {
+                    uploadStatus.innerHTML = `<div class="success">✅ ${data.message} (${data.rows_inserted} rows)</div>`;
+                    // Auto-load the data after upload
+                    setTimeout(() => viewMerchantData(), 1000);
+                } else {
+                    uploadStatus.innerHTML = `<div class="error">❌ Upload failed: ${data.error}</div>`;
+                }
+            } catch (error) {
+                loadingEl.style.display = 'none';
+                uploadBtn.disabled = false;
+                uploadStatus.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function viewMerchantData() {
             const loadingEl = document.getElementById('loading');
             const resultsEl = document.getElementById('results');
             const errorEl = document.getElementById('error-message');
             const successEl = document.getElementById('success-message');
-            const btn = document.getElementById('testBtn');
+            const viewBtn = document.getElementById('viewBtn');
+
             loadingEl.style.display = 'block';
             resultsEl.innerHTML = '';
             errorEl.innerHTML = '';
             successEl.innerHTML = '';
-            btn.disabled = true;
+            viewBtn.disabled = true;
+
             try {
-                const response = await fetch('/api/snowflake/test');
+                const response = await fetch('/api/merchant-data/query?limit=100');
                 const data = await response.json();
+
                 loadingEl.style.display = 'none';
-                btn.disabled = false;
+                viewBtn.disabled = false;
+
                 if (!response.ok) {
-                    errorEl.innerHTML = `<div class="error"><strong>Error:</strong> ${data.error || 'Unknown error'}<br>${data.message ? `<small>${data.message}</small>` : ''}${data.hint ? `<br><small><strong>Hint:</strong> ${data.hint}</small>` : ''}</div>`;
+                    errorEl.innerHTML = `<div class="error"><strong>Error:</strong> ${data.error || 'Unknown error'}</div>`;
                     return;
                 }
+
                 successEl.innerHTML = `<div class="success">✅ Query successful! Returned ${data.row_count} rows</div>`;
+
                 let html = '<div class="results-card">';
-                html += '<h2>Query</h2>';
-                html += `<div class="query-box">${data.query}</div>`;
-                html += `<h2>Results <span class="info-badge">${data.row_count} rows</span></h2>`;
+                html += '<h2>Merchant Data <span class="info-badge">${data.row_count} rows</span></h2>';
+
                 if (data.data && data.data.length > 0) {
+                    html += '<div style="overflow-x: auto;">';
                     html += '<table><thead><tr>';
-                    data.columns.forEach(col => { html += `<th>${col}</th>`; });
+                    // Show first 10 columns to keep it manageable
+                    const displayColumns = data.columns.slice(0, 15);
+                    displayColumns.forEach(col => { html += `<th>${col}</th>`; });
                     html += '</tr></thead><tbody>';
+
                     data.data.forEach(row => {
                         html += '<tr>';
-                        data.columns.forEach(col => {
+                        displayColumns.forEach(col => {
                             const value = row[col];
                             html += `<td>${value !== null && value !== undefined ? value : '<em>null</em>'}</td>`;
                         });
                         html += '</tr>';
                     });
+
                     html += '</tbody></table>';
+                    html += '</div>';
+                    if (data.columns.length > 15) {
+                        html += `<p style="margin-top: 16px; color: #6b7280; font-size: 12px;">Showing first 15 of ${data.columns.length} columns</p>`;
+                    }
                 } else {
-                    html += '<p style="color: #6b7280;">No data returned</p>';
+                    html += '<p style="color: #6b7280;">No data found. Upload a CSV file first.</p>';
                 }
+
                 html += '</div>';
                 resultsEl.innerHTML = html;
             } catch (error) {
                 loadingEl.style.display = 'none';
-                btn.disabled = false;
+                viewBtn.disabled = false;
                 errorEl.innerHTML = `<div class="error"><strong>Error:</strong> ${error.message}</div>`;
             }
         }
-        window.addEventListener('load', () => { setTimeout(runTestQuery, 500); });
+
+        // Page load - do nothing (user will manually upload CSV and view data)
     </script>
 </body>
 </html>
@@ -14830,6 +14907,317 @@ def get_snowflake_merchant_data_webhook():
             'success': False,
             'error': f'Internal server error: {str(e)}'
         }), 500
+
+
+# ==================== MERCHANT DATA TABLE (PostgreSQL) ====================
+
+def create_merchant_data_table():
+    """Create merchant_data table if it doesn't exist"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            logger.error("Database connection not available")
+            return False
+
+        cursor = conn.cursor()
+
+        # Create table with all columns from CSV
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS merchant_data (
+                id SERIAL PRIMARY KEY,
+                merchant_geo TEXT,
+                merchant_ari TEXT,
+                meta_merchant_ari TEXT,
+                meta_merchant_name TEXT,
+                is_wildcard_ari BOOLEAN,
+                merchant_name TEXT,
+                is_test_merchant BOOLEAN,
+                is_merchant_active BOOLEAN,
+                merchant_created_dt TIMESTAMP,
+                active_mordor_api_key BOOLEAN,
+                ever_used_connected_platform BOOLEAN,
+                last_used_connected_platform_partner TEXT,
+                last_used_connected_platform_id TEXT,
+                last_used_connected_platform_name TEXT,
+                submerchant_name TEXT,
+                submerchant_account_id TEXT,
+                submerchant_account_name TEXT,
+                submerchant_website TEXT,
+                connected_platform_parent_ari TEXT,
+                budgeted_connected_platform_id TEXT,
+                is_franchise_merchant BOOLEAN,
+                franchise_parent_ari TEXT,
+                franchise_merchant_name TEXT,
+                franchise_account_name TEXT,
+                franchise_account_id TEXT,
+                sales_sfdc_account_id TEXT,
+                sales_account_name TEXT,
+                sales_account_official_business_name TEXT,
+                account_type TEXT,
+                account_tas INTEGER,
+                account_family_id TEXT,
+                sales_account_family_name TEXT,
+                account_geo TEXT,
+                is_global_cs_account BOOLEAN,
+                is_global_sales_account BOOLEAN,
+                global_sales_ownership_type TEXT,
+                sales_account_merchant_agreement_version TEXT,
+                is_account_global_agreement BOOLEAN,
+                channel_type TEXT,
+                revenue_merchant_account_segment TEXT,
+                revenue_merchant_vertical TEXT,
+                new_market_type TEXT,
+                account_owner_id TEXT,
+                account_owner_name TEXT,
+                account_owner_email TEXT,
+                account_owner_rollup_manager_id TEXT,
+                account_owner_rollup_manager_name TEXT,
+                account_technical_mapped_owner_name TEXT,
+                account_technical_mapped_owner_email TEXT,
+                first_non_employee_authed_checkout_date TIMESTAMP,
+                first_capture_date TIMESTAMP,
+                second_capture_date DATE,
+                is_merchant_ari_captured BOOLEAN,
+                open_loop_partner TEXT,
+                account_website TEXT,
+                account_domain_name TEXT,
+                merchant_website TEXT,
+                merchant_domain_name TEXT,
+                franchise_website TEXT,
+                merchant_onboarding_path TEXT,
+                is_account_self_service BOOLEAN,
+                sales_sfdc_account_mss_onboarding_version TEXT,
+                smb_tier TEXT,
+                is_cs_merchant BOOLEAN,
+                cs_division TEXT,
+                cs_management_category TEXT,
+                is_spi_enabled_flag BOOLEAN,
+                last_spi_enabled_at TIMESTAMP,
+                last_spi_disabled_at TIMESTAMP,
+                meta_vertical TEXT,
+                meta_segment TEXT,
+                meta_account_owner_id TEXT,
+                meta_account_owner TEXT,
+                meta_cs_division TEXT,
+                meta_cs_management_category TEXT,
+                meta_technical_mapped_owner_name TEXT,
+                meta_technical_mapped_owner_email TEXT,
+                is_meta_closed_loop_active BOOLEAN,
+                smb_sub_segment TEXT,
+                uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_merchant_ari ON merchant_data(merchant_ari);
+            CREATE INDEX IF NOT EXISTS idx_merchant_name ON merchant_data(merchant_name);
+        """)
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        logger.info("✅ merchant_data table created/verified")
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Error creating merchant_data table: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return False
+
+
+@app.route('/api/merchant-data/upload-csv', methods=['POST'])
+def upload_merchant_csv():
+    """Upload CSV file and insert data into merchant_data table"""
+    try:
+        # Check if file is present
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+
+        file = request.files['file']
+
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+
+        if not file.filename.endswith('.csv'):
+            return jsonify({'error': 'File must be a CSV'}), 400
+
+        logger.info(f"📤 Uploading CSV file: {file.filename}")
+
+        # Create table if doesn't exist
+        create_merchant_data_table()
+
+        # Read CSV
+        import csv
+        import io
+
+        stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+        csv_reader = csv.DictReader(stream)
+
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 503
+
+        cursor = conn.cursor()
+
+        # Clear existing data (optional - comment out to append instead)
+        cursor.execute("DELETE FROM merchant_data")
+
+        rows_inserted = 0
+        for row in csv_reader:
+            # Helper function to convert string booleans
+            def to_bool(val):
+                if val == '' or val is None:
+                    return None
+                return val.lower() in ('true', '1', 'yes')
+
+            # Helper to handle empty strings
+            def to_int(val):
+                if val == '' or val is None:
+                    return None
+                try:
+                    return int(val)
+                except:
+                    return None
+
+            # Helper for timestamps
+            def to_timestamp(val):
+                if val == '' or val is None:
+                    return None
+                return val
+
+            cursor.execute("""
+                INSERT INTO merchant_data (
+                    merchant_geo, merchant_ari, meta_merchant_ari, meta_merchant_name,
+                    is_wildcard_ari, merchant_name, is_test_merchant, is_merchant_active,
+                    merchant_created_dt, active_mordor_api_key, ever_used_connected_platform,
+                    last_used_connected_platform_partner, last_used_connected_platform_id,
+                    last_used_connected_platform_name, submerchant_name, submerchant_account_id,
+                    submerchant_account_name, submerchant_website, connected_platform_parent_ari,
+                    budgeted_connected_platform_id, is_franchise_merchant, franchise_parent_ari,
+                    franchise_merchant_name, franchise_account_name, franchise_account_id,
+                    sales_sfdc_account_id, sales_account_name, sales_account_official_business_name,
+                    account_type, account_tas, account_family_id, sales_account_family_name,
+                    account_geo, is_global_cs_account, is_global_sales_account,
+                    global_sales_ownership_type, sales_account_merchant_agreement_version,
+                    is_account_global_agreement, channel_type, revenue_merchant_account_segment,
+                    revenue_merchant_vertical, new_market_type, account_owner_id,
+                    account_owner_name, account_owner_email, account_owner_rollup_manager_id,
+                    account_owner_rollup_manager_name, account_technical_mapped_owner_name,
+                    account_technical_mapped_owner_email, first_non_employee_authed_checkout_date,
+                    first_capture_date, second_capture_date, is_merchant_ari_captured,
+                    open_loop_partner, account_website, account_domain_name, merchant_website,
+                    merchant_domain_name, franchise_website, merchant_onboarding_path,
+                    is_account_self_service, sales_sfdc_account_mss_onboarding_version,
+                    smb_tier, is_cs_merchant, cs_division, cs_management_category,
+                    is_spi_enabled_flag, last_spi_enabled_at, last_spi_disabled_at,
+                    meta_vertical, meta_segment, meta_account_owner_id, meta_account_owner,
+                    meta_cs_division, meta_cs_management_category,
+                    meta_technical_mapped_owner_name, meta_technical_mapped_owner_email,
+                    is_meta_closed_loop_active, smb_sub_segment
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
+            """, (
+                row.get('MERCHANT_GEO'), row.get('MERCHANT_ARI'), row.get('META_MERCHANT_ARI'),
+                row.get('META_MERCHANT_NAME'), to_bool(row.get('IS_WILDCARD_ARI')),
+                row.get('MERCHANT_NAME'), to_bool(row.get('IS_TEST_MERCHANT')),
+                to_bool(row.get('IS_MERCHANT_ACTIVE')), to_timestamp(row.get('MERCHANT_CREATED_DT')),
+                to_bool(row.get('ACTIVE_MORDOR_API_KEY')), to_bool(row.get('EVER_USED_CONNECTED_PLATFORM')),
+                row.get('LAST_USED_CONNECTED_PLATFORM_PARTNER'), row.get('LAST_USED_CONNECTED_PLATFORM_ID'),
+                row.get('LAST_USED_CONNECTED_PLATFORM_NAME'), row.get('SUBMERCHANT_NAME'),
+                row.get('SUBMERCHANT_ACCOUNT_ID'), row.get('SUBMERCHANT_ACCOUNT_NAME'),
+                row.get('SUBMERCHANT_WEBSITE'), row.get('CONNECTED_PLATFORM_PARENT_ARI'),
+                row.get('BUDGETED_CONNECTED_PLATFORM_ID'), to_bool(row.get('IS_FRANCHISE_MERCHANT')),
+                row.get('FRANCHISE_PARENT_ARI'), row.get('FRANCHISE_MERCHANT_NAME'),
+                row.get('FRANCHISE_ACCOUNT_NAME'), row.get('FRANCHISE_ACCOUNT_ID'),
+                row.get('SALES_SFDC_ACCOUNT_ID'), row.get('SALES_ACCOUNT_NAME'),
+                row.get('SALES_ACCOUNT_OFFICIAL_BUSINESS_NAME'), row.get('ACCOUNT_TYPE'),
+                to_int(row.get('ACCOUNT_TAS')), row.get('ACCOUNT_FAMILY_ID'),
+                row.get('SALES_ACCOUNT_FAMILY_NAME'), row.get('ACCOUNT_GEO'),
+                to_bool(row.get('IS_GLOBAL_CS_ACCOUNT')), to_bool(row.get('IS_GLOBAL_SALES_ACCOUNT')),
+                row.get('GLOBAL_SALES_OWNERSHIP_TYPE'), row.get('SALES_ACCOUNT_MERCHANT_AGREEMENT_VERSION'),
+                to_bool(row.get('IS_ACCOUNT_GLOBAL_AGREEMENT')), row.get('CHANNEL_TYPE'),
+                row.get('REVENUE_MERCHANT_ACCOUNT_SEGMENT'), row.get('REVENUE_MERCHANT_VERTICAL'),
+                row.get('NEW_MARKET_TYPE'), row.get('ACCOUNT_OWNER_ID'), row.get('ACCOUNT_OWNER_NAME'),
+                row.get('ACCOUNT_OWNER_EMAIL'), row.get('ACCOUNT_OWNER_ROLLUP_MANAGER_ID'),
+                row.get('ACCOUNT_OWNER_ROLLUP_MANAGER_NAME'), row.get('ACCOUNT_TECHNICAL_MAPPED_OWNER_NAME'),
+                row.get('ACCOUNT_TECHNICAL_MAPPED_OWNER_EMAIL'),
+                to_timestamp(row.get('FIRST_NON_EMPLOYEE_AUTHED_CHECKOUT_DATE')),
+                to_timestamp(row.get('FIRST_CAPTURE_DATE')), to_timestamp(row.get('SECOND_CAPTURE_DATE')),
+                to_bool(row.get('IS_MERCHANT_ARI_CAPTURED')), row.get('OPEN_LOOP_PARTNER'),
+                row.get('ACCOUNT_WEBSITE'), row.get('ACCOUNT_DOMAIN_NAME'), row.get('MERCHANT_WEBSITE'),
+                row.get('MERCHANT_DOMAIN_NAME'), row.get('FRANCHISE_WEBSITE'),
+                row.get('MERCHANT_ONBOARDING_PATH'), to_bool(row.get('IS_ACCOUNT_SELF_SERVICE')),
+                row.get('SALES_SFDC_ACCOUNT_MSS_ONBOARDING_VERSION'), row.get('SMB_TIER'),
+                to_bool(row.get('IS_CS_MERCHANT')), row.get('CS_DIVISION'),
+                row.get('CS_MANAGEMENT_CATEGORY'), to_bool(row.get('IS_SPI_ENABLED_FLAG')),
+                to_timestamp(row.get('LAST_SPI_ENABLED_AT')), to_timestamp(row.get('LAST_SPI_DISABLED_AT')),
+                row.get('META_VERTICAL'), row.get('META_SEGMENT'), row.get('META_ACCOUNT_OWNER_ID'),
+                row.get('META_ACCOUNT_OWNER'), row.get('META_CS_DIVISION'),
+                row.get('META_CS_MANAGEMENT_CATEGORY'), row.get('META_TECHNICAL_MAPPED_OWNER_NAME'),
+                row.get('META_TECHNICAL_MAPPED_OWNER_EMAIL'), to_bool(row.get('IS_META_CLOSED_LOOP_ACTIVE')),
+                row.get('SMB_SUB_SEGMENT')
+            ))
+
+            rows_inserted += 1
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        logger.info(f"✅ Uploaded {rows_inserted} rows from CSV")
+
+        return jsonify({
+            'success': True,
+            'rows_inserted': rows_inserted,
+            'message': f'Successfully uploaded {rows_inserted} merchant records'
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Error uploading CSV: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/merchant-data/query', methods=['GET'])
+def query_merchant_data():
+    """Query merchant_data table"""
+    try:
+        limit = request.args.get('limit', 100, type=int)
+
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database not available'}), 503
+
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT * FROM merchant_data ORDER BY created_at DESC LIMIT {limit}")
+
+        columns = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+
+        results = []
+        for row in rows:
+            results.append(dict(zip(columns, row)))
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'columns': columns,
+            'row_count': len(results),
+            'data': results
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Error querying merchant data: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 # ==================== SNOWFLAKE API ENDPOINTS ====================
