@@ -13160,13 +13160,16 @@ def add_speech_to_response(response, text, app_url=None, is_gather=False):
 @app.route('/api/initiate-call', methods=['POST'])
 def initiate_call():
     """
-    Endpoint for Workato to trigger outgoing calls via Twilio + ElevenLabs Agent.
+    Endpoint for Workato to trigger outgoing calls via ElevenLabs Conversational AI.
 
-    This uses the ElevenLabs Conversational AI Agent pattern:
-    - Twilio initiates the call
-    - Call is routed to ElevenLabs agent webhook URL
-    - ElevenLabs agent handles the conversation
-    - Agent calls back to our webhooks for merchant context/data
+    Uses ElevenLabs outbound call API - the official way for outbound calls.
+    The phone number webhook (Twilio url=) causes "application error" on outbound
+    because it's designed for inbound calls. Outbound must use the API.
+
+    Required env vars:
+    - ELEVENLABS_API_KEY
+    - ELEVENLABS_AGENT_ID
+    - ELEVENLABS_AGENT_PHONE_NUMBER_ID (or ELEVENLABS_MERCHANT_WEBHOOK_URL with /phone_number/{ID})
 
     Expected payload:
     {
@@ -13177,16 +13180,29 @@ def initiate_call():
     }
     """
     try:
-        if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN or not TWILIO_PHONE_NUMBER:
-            return jsonify({'error': 'Twilio not configured'}), 503
+        import requests
 
-        # Check if ElevenLabs webhook URL is configured
-        elevenlabs_webhook_url = os.getenv('ELEVENLABS_MERCHANT_WEBHOOK_URL')
+        elevenlabs_api_key = os.getenv('ELEVENLABS_API_KEY')
+        agent_id = os.getenv('ELEVENLABS_AGENT_ID')
+        agent_phone_number_id = os.getenv('ELEVENLABS_AGENT_PHONE_NUMBER_ID')
 
-        if not elevenlabs_webhook_url:
-            error_msg = 'ElevenLabs Merchant webhook URL not configured. Please set ELEVENLABS_MERCHANT_WEBHOOK_URL environment variable.'
-            logger.error(error_msg)
-            return jsonify({'error': error_msg}), 503
+        # Extract from ELEVENLABS_MERCHANT_WEBHOOK_URL if not set directly
+        if not agent_phone_number_id:
+            webhook_url = os.getenv('ELEVENLABS_MERCHANT_WEBHOOK_URL', '')
+            match = re.search(r'/convai/phone_number/([a-zA-Z0-9_-]+)', webhook_url)
+            if match:
+                agent_phone_number_id = match.group(1)
+                logger.info(f"📡 Using agent_phone_number_id from webhook URL: {agent_phone_number_id}")
+
+        if not elevenlabs_api_key or not agent_id or not agent_phone_number_id:
+            missing = []
+            if not elevenlabs_api_key:
+                missing.append('ELEVENLABS_API_KEY')
+            if not agent_id:
+                missing.append('ELEVENLABS_AGENT_ID')
+            if not agent_phone_number_id:
+                missing.append('ELEVENLABS_AGENT_PHONE_NUMBER_ID or ELEVENLABS_MERCHANT_WEBHOOK_URL (phone_number format)')
+            return jsonify({'error': f'Missing: {", ".join(missing)}'}), 503
 
         data = request.get_json()
         merchant_email = data.get('merchant_email')
@@ -13199,11 +13215,8 @@ def initiate_call():
 
         logger.info(f"📞 ========== INITIATING ELEVENLABS AGENT CALL ==========")
         logger.info(f"📞 To: {merchant_phone}")
-        logger.info(f"📞 From: {TWILIO_PHONE_NUMBER}")
         logger.info(f"📞 Merchant: {merchant_name} ({merchant_email})")
 
-        # Normalize phone number to E.164 format
-        import re
         normalized_phone = re.sub(r'[^\d+]', '', merchant_phone)
         if not normalized_phone.startswith('+'):
             if len(normalized_phone) == 10:
@@ -13214,40 +13227,59 @@ def initiate_call():
                 normalized_phone = '+' + normalized_phone
 
         logger.info(f"📞 Normalized phone: {normalized_phone}")
+        logger.info(f"📡 ==========================================")
+        logger.info(f"📡 Using ElevenLabs outbound API")
+        logger.info(f"📡 Agent ID: {agent_id}")
+        logger.info(f"📡 Phone Number ID: {agent_phone_number_id}")
+        logger.info(f"📡 API Key: {elevenlabs_api_key[:10]}..." if elevenlabs_api_key else "⚠️  No key")
 
-        # Create Twilio client
-        twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        api_url = "https://api.elevenlabs.io/v1/convai/twilio/outbound-call"
+        headers = {"xi-api-key": elevenlabs_api_key, "Content-Type": "application/json"}
+        payload = {
+            "agent_id": agent_id,
+            "agent_phone_number_id": agent_phone_number_id,
+            "to_number": normalized_phone,
+            "conversation_initiation_client_data": {
+                "dynamic_variables": {
+                    "merchant_phone": normalized_phone,
+                    "merchant_email": merchant_email or "",
+                    "merchant_name": merchant_name or "Merchant",
+                }
+            }
+        }
 
-        # Route directly to ElevenLabs agent webhook
-        # IMPORTANT: Don't add query parameters - ElevenLabs webhooks don't accept them
-        # The agent will get context by calling the get-merchant-context webhook tool
-        webhook_url = elevenlabs_webhook_url
+        logger.info(f"📡 API URL: {api_url}")
+        logger.info(f"📋 Request payload:")
+        logger.info(f"   agent_id: {payload['agent_id']}")
+        logger.info(f"   agent_phone_number_id: {payload['agent_phone_number_id']}")
+        logger.info(f"   to_number: {payload['to_number']}")
+        logger.info(f"   dynamic_variables: {payload['conversation_initiation_client_data']['dynamic_variables']}")
+        logger.info(f"📡 Making API request to ElevenLabs...")
 
-        logger.info(f"📡 ElevenLabs webhook URL: {webhook_url}")
-        logger.info(f"📡 Note: Agent will call get-merchant-context webhook with phone {normalized_phone}")
+        resp = requests.post(api_url, json=payload, headers=headers, timeout=30)
 
-        # Get app URL for status callbacks
-        app_url = os.getenv('BASE_URL', request.url_root.rstrip('/'))
-        if app_url.startswith('http://'):
-            app_url = app_url.replace('http://', 'https://')
+        logger.info(f"📡 Response status code: {resp.status_code}")
+        logger.info(f"📡 Response headers: {dict(resp.headers)}")
+        logger.info(f"📡 Response body: {resp.text[:1000]}")
 
-        logger.info(f"📡 Initiating Twilio call...")
+        if resp.status_code != 200:
+            err_body = resp.text
+            logger.error(f"❌ ElevenLabs API error {resp.status_code}: {err_body}")
+            return jsonify({
+                'error': f'ElevenLabs API error: {resp.status_code}',
+                'detail': err_body[:500] if err_body else None
+            }), 502
 
-        # Initiate the call using Twilio API
-        call = twilio_client.calls.create(
-            to=normalized_phone,
-            from_=TWILIO_PHONE_NUMBER,
-            url=webhook_url,
-            method='POST',
-            status_callback=f"{app_url}/api/twilio/call-status",
-            status_callback_event=['initiated', 'ringing', 'answered', 'completed'],
-            status_callback_method='POST'
-        )
+        result = resp.json()
+        if not result.get('success'):
+            msg = result.get('message', 'Unknown error')
+            logger.error(f"❌ ElevenLabs outbound call failed: {msg}")
+            return jsonify({'error': f'ElevenLabs: {msg}'}), 502
 
-        call_sid = call.sid
-        logger.info(f"✅ Call initiated via Twilio → ElevenLabs Agent!")
-        logger.info(f"📞 Call SID: {call_sid}")
-        logger.info(f"📞 Status: {call.status}")
+        call_sid = result.get('callSid') or result.get('call_sid')
+        conversation_id = result.get('conversation_id')
+        logger.info(f"✅ Call initiated via ElevenLabs outbound API!")
+        logger.info(f"📞 Call SID: {call_sid}, Conversation ID: {conversation_id}")
         logger.info(f"📞 ==========================================")
 
         # Save call record to database (for webhook lookups)
