@@ -45,6 +45,15 @@ except ImportError:
     ELEVENLABS_AVAILABLE = False
     logger.warning("ElevenLabs not available - AI voice generation disabled")
 
+# Snowflake import
+try:
+    import snowflake.connector
+    import pandas as pd
+    SNOWFLAKE_AVAILABLE = True
+except ImportError:
+    SNOWFLAKE_AVAILABLE = False
+    logging.warning("Snowflake not available - data warehouse queries disabled")
+
 # Google Sheets import
 try:
     import gspread
@@ -672,8 +681,60 @@ def strip_html_tags(html_content):
     # Clean up extra whitespace
     html_content = re.sub(r'\n\s*\n\s*\n+', '\n\n', html_content)  # Multiple newlines to double
     html_content = html_content.strip()
-    
+
     return html_content
+
+
+# ==================== SNOWFLAKE CONNECTION ====================
+
+def get_snowflake_connection():
+    """
+    Create and return a Snowflake connection using environment variables.
+
+    Required environment variables:
+    - SNOWFLAKE_ACCOUNT (e.g., 'affirm')
+    - SNOWFLAKE_USER (e.g., 'your.email@affirm.com')
+    - SNOWFLAKE_WAREHOUSE (e.g., 'REPORTING_WH')
+    - SNOWFLAKE_ROLE (e.g., 'REPORTING')
+
+    Optional:
+    - SNOWFLAKE_PASSWORD (if not using SSO)
+    - SNOWFLAKE_DATABASE (default: 'PROD__US')
+    - SNOWFLAKE_SCHEMA (default: 'DBT_ANALYTICS')
+    """
+    if not SNOWFLAKE_AVAILABLE:
+        raise ImportError("Snowflake connector not installed. Run: pip install snowflake-connector-python")
+
+    account = os.getenv('SNOWFLAKE_ACCOUNT')
+    user = os.getenv('SNOWFLAKE_USER')
+    warehouse = os.getenv('SNOWFLAKE_WAREHOUSE', 'REPORTING_WH')
+    role = os.getenv('SNOWFLAKE_ROLE', 'REPORTING')
+    database = os.getenv('SNOWFLAKE_DATABASE', 'PROD__US')
+    schema = os.getenv('SNOWFLAKE_SCHEMA', 'DBT_ANALYTICS')
+    password = os.getenv('SNOWFLAKE_PASSWORD')
+
+    if not account or not user:
+        raise ValueError("SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER environment variables are required")
+
+    conn_params = {
+        'account': account,
+        'user': user,
+        'warehouse': warehouse,
+        'database': database,
+        'schema': schema,
+        'role': role
+    }
+
+    # Use password if provided, otherwise use SSO (externalbrowser)
+    if password:
+        conn_params['password'] = password
+    else:
+        conn_params['authenticator'] = 'externalbrowser'
+
+    logger.info(f"Connecting to Snowflake: {account} as {user}")
+
+    return snowflake.connector.connect(**conn_params)
+
 
 def remove_quoted_text(email_body):
     """Remove quoted/replied text from email body to avoid duplication in conversation history."""
@@ -4232,6 +4293,10 @@ def analytics_dashboard():
                     <span class="nav-item-icon">📞</span>
                     <span>Voice Maestro</span>
                 </a>
+                <a href="/snowflake" class="nav-item">
+                    <span class="nav-item-icon">❄️</span>
+                    <span>Snowflake</span>
+                </a>
             </div>
         </div>
 
@@ -4916,6 +4981,130 @@ def analytics_dashboard():
 </html>
     """
 
+@app.route('/snowflake')
+def snowflake_page():
+    """Serve the Snowflake data viewer page."""
+    return """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snowflake - Mail Maestro</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root { --primary: #29B5E8; --primary-dark: #1E90C6; --success: #10b981; --danger: #ef4444; }
+        body { font-family: 'Inter', -apple-system, sans-serif; background: #f5f5f5; color: #333; }
+        .app-container { display: flex; height: 100vh; }
+        .sidebar { width: 220px; background: #1e293b; color: white; display: flex; flex-direction: column; box-shadow: 2px 0 8px rgba(0,0,0,0.1); }
+        .sidebar-brand { padding: 24px; font-size: 32px; text-align: center; border-bottom: 1px solid #334155; }
+        .sidebar-nav { flex: 1; padding: 16px 0; }
+        .nav-item { display: flex; align-items: center; padding: 12px 24px; color: #cbd5e1; text-decoration: none; transition: all 0.2s; border-left: 3px solid transparent; }
+        .nav-item:hover { background: #334155; color: white; border-left-color: var(--primary); }
+        .nav-item.active { background: #334155; color: white; border-left-color: var(--primary); font-weight: 600; }
+        .nav-item-icon { margin-right: 12px; font-size: 18px; }
+        .main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .content-header { background: white; padding: 24px 40px; border-bottom: 1px solid #e5e7eb; }
+        .content-header h1 { font-size: 24px; font-weight: 600; color: #2c3e50; margin: 0; }
+        .content-area { flex: 1; overflow-y: auto; background: #f5f5f5; padding: 32px 40px; }
+        .test-btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 14px; margin-bottom: 24px; }
+        .test-btn:hover { background: var(--primary-dark); }
+        .test-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+        .results-card { background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); border: 1px solid #e5e7eb; margin-bottom: 24px; }
+        .results-card h2 { font-size: 18px; font-weight: 600; color: #2c3e50; margin-bottom: 16px; }
+        .query-box { background: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0; font-family: 'Monaco', monospace; font-size: 13px; color: #334155; margin-bottom: 16px; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        thead { background: #f8fafc; }
+        th { text-align: left; padding: 12px; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0; }
+        td { padding: 12px; border-bottom: 1px solid #e2e8f0; color: #334155; }
+        tr:hover { background: #f8fafc; }
+        .loading { text-align: center; padding: 40px; color: #6b7280; }
+        .spinner { border: 3px solid #f3f4f6; border-top: 3px solid var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 16px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .error { background: #fee2e2; color: #991b1b; padding: 16px; border-radius: 8px; margin: 20px 0; }
+        .success { background: #d1fae5; color: #065f46; padding: 16px; border-radius: 8px; margin: 20px 0; }
+        .info-badge { display: inline-block; background: #dbeafe; color: #1e40af; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 500; margin-left: 8px; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="sidebar">
+            <div class="sidebar-brand">❄️</div>
+            <div class="sidebar-nav">
+                <a href="/prompts" class="nav-item"><span class="nav-item-icon">📝</span><span>Prompts</span></a>
+                <a href="/analytics" class="nav-item"><span class="nav-item-icon">📊</span><span>Analytics</span></a>
+                <a href="/voice-maestro" class="nav-item"><span class="nav-item-icon">📞</span><span>Voice Maestro</span></a>
+                <a href="/snowflake" class="nav-item active"><span class="nav-item-icon">❄️</span><span>Snowflake</span></a>
+            </div>
+        </div>
+        <div class="main-content">
+            <div class="content-header"><h1>Snowflake Data Viewer</h1></div>
+            <div class="content-area">
+                <button class="test-btn" onclick="runTestQuery()" id="testBtn">❄️ Run Test Query</button>
+                <div id="error-message"></div>
+                <div id="success-message"></div>
+                <div id="loading" class="loading" style="display:none;"><div class="spinner"></div><p>Querying Snowflake...</p></div>
+                <div id="results"></div>
+            </div>
+        </div>
+    </div>
+    <script>
+        async function runTestQuery() {
+            const loadingEl = document.getElementById('loading');
+            const resultsEl = document.getElementById('results');
+            const errorEl = document.getElementById('error-message');
+            const successEl = document.getElementById('success-message');
+            const btn = document.getElementById('testBtn');
+            loadingEl.style.display = 'block';
+            resultsEl.innerHTML = '';
+            errorEl.innerHTML = '';
+            successEl.innerHTML = '';
+            btn.disabled = true;
+            try {
+                const response = await fetch('/api/snowflake/test');
+                const data = await response.json();
+                loadingEl.style.display = 'none';
+                btn.disabled = false;
+                if (!response.ok) {
+                    errorEl.innerHTML = `<div class="error"><strong>Error:</strong> ${data.error || 'Unknown error'}<br>${data.message ? `<small>${data.message}</small>` : ''}${data.hint ? `<br><small><strong>Hint:</strong> ${data.hint}</small>` : ''}</div>`;
+                    return;
+                }
+                successEl.innerHTML = `<div class="success">✅ Query successful! Returned ${data.row_count} rows</div>`;
+                let html = '<div class="results-card">';
+                html += '<h2>Query</h2>';
+                html += `<div class="query-box">${data.query}</div>`;
+                html += `<h2>Results <span class="info-badge">${data.row_count} rows</span></h2>`;
+                if (data.data && data.data.length > 0) {
+                    html += '<table><thead><tr>';
+                    data.columns.forEach(col => { html += `<th>${col}</th>`; });
+                    html += '</tr></thead><tbody>';
+                    data.data.forEach(row => {
+                        html += '<tr>';
+                        data.columns.forEach(col => {
+                            const value = row[col];
+                            html += `<td>${value !== null && value !== undefined ? value : '<em>null</em>'}</td>`;
+                        });
+                        html += '</tr>';
+                    });
+                    html += '</tbody></table>';
+                } else {
+                    html += '<p style="color: #6b7280;">No data returned</p>';
+                }
+                html += '</div>';
+                resultsEl.innerHTML = html;
+            } catch (error) {
+                loadingEl.style.display = 'none';
+                btn.disabled = false;
+                errorEl.innerHTML = `<div class="error"><strong>Error:</strong> ${error.message}</div>`;
+            }
+        }
+        window.addEventListener('load', () => { setTimeout(runTestQuery, 500); });
+    </script>
+</body>
+</html>
+    """
+
 @app.route('/voice-maestro')
 def voice_maestro_dashboard():
     """Serve the Voice Maestro dashboard showing call analytics."""
@@ -5230,6 +5419,10 @@ def voice_maestro_dashboard():
                 <a href="/voice-maestro" class="nav-item active">
                     <span class="nav-item-icon">📞</span>
                     <span>Voice Maestro</span>
+                </a>
+                <a href="/snowflake" class="nav-item">
+                    <span class="nav-item-icon">❄️</span>
+                    <span>Snowflake</span>
                 </a>
             </div>
         </div>
@@ -14502,6 +14695,73 @@ def update_support_request_webhook():
         return jsonify({
             'success': False,
             'error': f'Internal server error: {str(e)}'
+        }), 500
+
+
+# ==================== SNOWFLAKE API ENDPOINTS ====================
+
+@app.route('/api/snowflake/test', methods=['GET'])
+def snowflake_test():
+    """
+    Test Snowflake connection and run a sample query.
+    Query: SELECT * FROM PROD__US.DBT_REVENUE.MERCHANT_REVENUE_SEGMENTATION_DIM LIMIT 5
+    """
+    try:
+        if not SNOWFLAKE_AVAILABLE:
+            return jsonify({
+                'error': 'Snowflake connector not installed',
+                'message': 'Run: pip install snowflake-connector-python'
+            }), 503
+
+        logger.info("📊 Testing Snowflake connection...")
+
+        # Get connection
+        conn = get_snowflake_connection()
+        cursor = conn.cursor()
+
+        # Run test query
+        query = "SELECT * FROM PROD__US.DBT_REVENUE.MERCHANT_REVENUE_SEGMENTATION_DIM LIMIT 5"
+        logger.info(f"📊 Executing query: {query}")
+
+        cursor.execute(query)
+
+        # Fetch results
+        columns = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+
+        # Convert to list of dicts
+        results = []
+        for row in rows:
+            results.append(dict(zip(columns, row)))
+
+        cursor.close()
+        conn.close()
+
+        logger.info(f"✅ Query successful! Returned {len(results)} rows")
+
+        return jsonify({
+            'success': True,
+            'query': query,
+            'columns': columns,
+            'row_count': len(results),
+            'data': results
+        })
+
+    except ValueError as ve:
+        logger.error(f"❌ Configuration error: {ve}")
+        return jsonify({
+            'error': 'Configuration error',
+            'message': str(ve),
+            'hint': 'Set SNOWFLAKE_ACCOUNT and SNOWFLAKE_USER environment variables'
+        }), 400
+
+    except Exception as e:
+        logger.error(f"❌ Snowflake error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'error': 'Snowflake query failed',
+            'message': str(e)
         }), 500
 
 
