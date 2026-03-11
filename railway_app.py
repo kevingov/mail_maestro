@@ -15046,7 +15046,7 @@ def get_snowflake_merchant_data_webhook():
 # ==================== MERCHANT DATA TABLE (PostgreSQL) ====================
 
 def create_merchant_data_table():
-    """Create merchant_data table if it doesn't exist"""
+    """Create or recreate merchant_data table to match CSV structure"""
     try:
         conn = get_db_connection()
         if not conn:
@@ -15055,102 +15055,33 @@ def create_merchant_data_table():
 
         cursor = conn.cursor()
 
-        # Create table with all columns from CSV
+        # Drop old table if exists (to handle schema changes)
+        cursor.execute("DROP TABLE IF EXISTS merchant_data CASCADE")
+
+        # Create table with id and data as JSONB for flexibility
+        # This allows us to store any CSV structure without schema changes
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS merchant_data (
+            CREATE TABLE merchant_data (
                 id SERIAL PRIMARY KEY,
-                merchant_geo TEXT,
-                merchant_ari TEXT,
-                meta_merchant_ari TEXT,
-                meta_merchant_name TEXT,
-                is_wildcard_ari BOOLEAN,
-                merchant_name TEXT,
-                is_test_merchant BOOLEAN,
-                is_merchant_active BOOLEAN,
-                merchant_created_dt TIMESTAMP,
-                active_mordor_api_key BOOLEAN,
-                ever_used_connected_platform BOOLEAN,
-                last_used_connected_platform_partner TEXT,
-                last_used_connected_platform_id TEXT,
-                last_used_connected_platform_name TEXT,
-                submerchant_name TEXT,
-                submerchant_account_id TEXT,
-                submerchant_account_name TEXT,
-                submerchant_website TEXT,
-                connected_platform_parent_ari TEXT,
-                budgeted_connected_platform_id TEXT,
-                is_franchise_merchant BOOLEAN,
-                franchise_parent_ari TEXT,
-                franchise_merchant_name TEXT,
-                franchise_account_name TEXT,
-                franchise_account_id TEXT,
-                sales_sfdc_account_id TEXT,
-                sales_account_name TEXT,
-                sales_account_official_business_name TEXT,
-                account_type TEXT,
-                account_tas INTEGER,
-                account_family_id TEXT,
-                sales_account_family_name TEXT,
-                account_geo TEXT,
-                is_global_cs_account BOOLEAN,
-                is_global_sales_account BOOLEAN,
-                global_sales_ownership_type TEXT,
-                sales_account_merchant_agreement_version TEXT,
-                is_account_global_agreement BOOLEAN,
-                channel_type TEXT,
-                revenue_merchant_account_segment TEXT,
-                revenue_merchant_vertical TEXT,
-                new_market_type TEXT,
-                account_owner_id TEXT,
-                account_owner_name TEXT,
-                account_owner_email TEXT,
-                account_owner_rollup_manager_id TEXT,
-                account_owner_rollup_manager_name TEXT,
-                account_technical_mapped_owner_name TEXT,
-                account_technical_mapped_owner_email TEXT,
-                first_non_employee_authed_checkout_date TIMESTAMP,
-                first_capture_date TIMESTAMP,
-                second_capture_date DATE,
-                is_merchant_ari_captured BOOLEAN,
-                open_loop_partner TEXT,
-                account_website TEXT,
-                account_domain_name TEXT,
-                merchant_website TEXT,
-                merchant_domain_name TEXT,
-                franchise_website TEXT,
-                merchant_onboarding_path TEXT,
-                is_account_self_service BOOLEAN,
-                sales_sfdc_account_mss_onboarding_version TEXT,
-                smb_tier TEXT,
-                is_cs_merchant BOOLEAN,
-                cs_division TEXT,
-                cs_management_category TEXT,
-                is_spi_enabled_flag BOOLEAN,
-                last_spi_enabled_at TIMESTAMP,
-                last_spi_disabled_at TIMESTAMP,
-                meta_vertical TEXT,
-                meta_segment TEXT,
-                meta_account_owner_id TEXT,
-                meta_account_owner TEXT,
-                meta_cs_division TEXT,
-                meta_cs_management_category TEXT,
-                meta_technical_mapped_owner_name TEXT,
-                meta_technical_mapped_owner_email TEXT,
-                is_meta_closed_loop_active BOOLEAN,
-                smb_sub_segment TEXT,
+                data JSONB NOT NULL,
                 uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
-            CREATE INDEX IF NOT EXISTS idx_merchant_ari ON merchant_data(merchant_ari);
-            CREATE INDEX IF NOT EXISTS idx_merchant_name ON merchant_data(merchant_name);
+            -- Create GIN index for faster JSONB queries
+            CREATE INDEX idx_merchant_data_gin ON merchant_data USING GIN (data);
+
+            -- Create indexes for common lookups
+            CREATE INDEX idx_merchant_ari ON merchant_data ((data->>'merchant_ari'));
+            CREATE INDEX idx_merchant_name ON merchant_data ((data->>'merchant_name'));
+            CREATE INDEX idx_merchant_email ON merchant_data ((data->>'merchant_email'));
         """)
 
         conn.commit()
         cursor.close()
         conn.close()
 
-        logger.info("✅ merchant_data table created/verified")
+        logger.info("✅ merchant_data table created with JSONB structure")
         return True
 
     except Exception as e:
@@ -15197,50 +15128,16 @@ def upload_merchant_csv():
         # Clear existing data (optional - comment out to append instead)
         cursor.execute("DELETE FROM merchant_data")
 
-        # Helper functions
-        def to_bool(val):
-            if val == '' or val is None:
-                return None
-            return val.lower() in ('true', '1', 'yes')
-
-        def to_null(val):
-            return None if val == '' else val
-
         rows_inserted = 0
         for row in csv_reader:
-            # Dynamically build INSERT - convert CSV column names to lowercase DB column names
-            cols_to_insert = []
-            values = []
+            # Convert empty strings to None for cleaner JSON
+            clean_row = {k: (v if v != '' else None) for k, v in row.items()}
 
-            for csv_col, csv_val in row.items():
-                db_col = csv_col.lower()  # Convert to lowercase for DB
-
-                # Handle boolean columns
-                if db_col.startswith('is_'):
-                    cols_to_insert.append(db_col)
-                    values.append(to_bool(csv_val))
-                # Handle integer columns
-                elif db_col == 'account_tas':
-                    cols_to_insert.append(db_col)
-                    try:
-                        values.append(int(csv_val) if csv_val else None)
-                    except:
-                        values.append(None)
-                # Everything else as text (timestamps will be handled by postgres)
-                else:
-                    cols_to_insert.append(db_col)
-                    values.append(to_null(csv_val))
-
-            # Build INSERT query
-            placeholders = ', '.join(['%s'] * len(values))
-            columns_str = ', '.join(cols_to_insert)
-
-            insert_query = f"""
-                INSERT INTO merchant_data ({columns_str})
-                VALUES ({placeholders})
-            """
-
-            cursor.execute(insert_query, tuple(values))
+            # Insert as JSONB
+            cursor.execute(
+                "INSERT INTO merchant_data (data) VALUES (%s)",
+                (json.dumps(clean_row),)
+            )
             rows_inserted += 1
 
         conn.commit()
@@ -15273,17 +15170,30 @@ def query_merchant_data():
             return jsonify({'error': 'Database not available'}), 503
 
         cursor = conn.cursor()
-        cursor.execute(f"SELECT * FROM merchant_data ORDER BY created_at DESC LIMIT {limit}")
+        cursor.execute(f"SELECT id, data, uploaded_at FROM merchant_data ORDER BY created_at DESC LIMIT {limit}")
 
-        columns = [desc[0] for desc in cursor.description]
         rows = cursor.fetchall()
 
         results = []
+        all_columns = set()
+
         for row in rows:
-            results.append(dict(zip(columns, row)))
+            row_id, data, uploaded_at = row
+            # Parse JSONB data
+            merchant_data = data if isinstance(data, dict) else json.loads(data)
+            # Add metadata
+            merchant_data['_id'] = row_id
+            merchant_data['_uploaded_at'] = str(uploaded_at) if uploaded_at else None
+            results.append(merchant_data)
+
+            # Collect all column names
+            all_columns.update(merchant_data.keys())
 
         cursor.close()
         conn.close()
+
+        # Convert set to sorted list
+        columns = sorted(list(all_columns))
 
         return jsonify({
             'success': True,
@@ -15294,6 +15204,8 @@ def query_merchant_data():
 
     except Exception as e:
         logger.error(f"❌ Error querying merchant data: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 
