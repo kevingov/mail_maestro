@@ -15063,107 +15063,50 @@ def upload_merchant_csv():
         # Clear existing data (optional - comment out to append instead)
         cursor.execute("DELETE FROM merchant_data")
 
+        # Helper functions
+        def to_bool(val):
+            if val == '' or val is None:
+                return None
+            return val.lower() in ('true', '1', 'yes')
+
+        def to_null(val):
+            return None if val == '' else val
+
         rows_inserted = 0
         for row in csv_reader:
-            # Helper function to convert string booleans
-            def to_bool(val):
-                if val == '' or val is None:
-                    return None
-                return val.lower() in ('true', '1', 'yes')
+            # Dynamically build INSERT - convert CSV column names to lowercase DB column names
+            cols_to_insert = []
+            values = []
 
-            # Helper to handle empty strings
-            def to_int(val):
-                if val == '' or val is None:
-                    return None
-                try:
-                    return int(val)
-                except:
-                    return None
+            for csv_col, csv_val in row.items():
+                db_col = csv_col.lower()  # Convert to lowercase for DB
 
-            # Helper for timestamps
-            def to_timestamp(val):
-                if val == '' or val is None:
-                    return None
-                return val
+                # Handle boolean columns
+                if db_col.startswith('is_'):
+                    cols_to_insert.append(db_col)
+                    values.append(to_bool(csv_val))
+                # Handle integer columns
+                elif db_col == 'account_tas':
+                    cols_to_insert.append(db_col)
+                    try:
+                        values.append(int(csv_val) if csv_val else None)
+                    except:
+                        values.append(None)
+                # Everything else as text (timestamps will be handled by postgres)
+                else:
+                    cols_to_insert.append(db_col)
+                    values.append(to_null(csv_val))
 
-            cursor.execute("""
-                INSERT INTO merchant_data (
-                    merchant_geo, merchant_ari, meta_merchant_ari, meta_merchant_name,
-                    is_wildcard_ari, merchant_name, is_test_merchant, is_merchant_active,
-                    merchant_created_dt, active_mordor_api_key, ever_used_connected_platform,
-                    last_used_connected_platform_partner, last_used_connected_platform_id,
-                    last_used_connected_platform_name, submerchant_name, submerchant_account_id,
-                    submerchant_account_name, submerchant_website, connected_platform_parent_ari,
-                    budgeted_connected_platform_id, is_franchise_merchant, franchise_parent_ari,
-                    franchise_merchant_name, franchise_account_name, franchise_account_id,
-                    sales_sfdc_account_id, sales_account_name, sales_account_official_business_name,
-                    account_type, account_tas, account_family_id, sales_account_family_name,
-                    account_geo, is_global_cs_account, is_global_sales_account,
-                    global_sales_ownership_type, sales_account_merchant_agreement_version,
-                    is_account_global_agreement, channel_type, revenue_merchant_account_segment,
-                    revenue_merchant_vertical, new_market_type, account_owner_id,
-                    account_owner_name, account_owner_email, account_owner_rollup_manager_id,
-                    account_owner_rollup_manager_name, account_technical_mapped_owner_name,
-                    account_technical_mapped_owner_email, first_non_employee_authed_checkout_date,
-                    first_capture_date, second_capture_date, is_merchant_ari_captured,
-                    open_loop_partner, account_website, account_domain_name, merchant_website,
-                    merchant_domain_name, franchise_website, merchant_onboarding_path,
-                    is_account_self_service, sales_sfdc_account_mss_onboarding_version,
-                    smb_tier, is_cs_merchant, cs_division, cs_management_category,
-                    is_spi_enabled_flag, last_spi_enabled_at, last_spi_disabled_at,
-                    meta_vertical, meta_segment, meta_account_owner_id, meta_account_owner,
-                    meta_cs_division, meta_cs_management_category,
-                    meta_technical_mapped_owner_name, meta_technical_mapped_owner_email,
-                    is_meta_closed_loop_active, smb_sub_segment
-                ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-                )
-            """, (
-                row.get('MERCHANT_GEO'), row.get('MERCHANT_ARI'), row.get('META_MERCHANT_ARI'),
-                row.get('META_MERCHANT_NAME'), to_bool(row.get('IS_WILDCARD_ARI')),
-                row.get('MERCHANT_NAME'), to_bool(row.get('IS_TEST_MERCHANT')),
-                to_bool(row.get('IS_MERCHANT_ACTIVE')), to_timestamp(row.get('MERCHANT_CREATED_DT')),
-                to_bool(row.get('ACTIVE_MORDOR_API_KEY')), to_bool(row.get('EVER_USED_CONNECTED_PLATFORM')),
-                row.get('LAST_USED_CONNECTED_PLATFORM_PARTNER'), row.get('LAST_USED_CONNECTED_PLATFORM_ID'),
-                row.get('LAST_USED_CONNECTED_PLATFORM_NAME'), row.get('SUBMERCHANT_NAME'),
-                row.get('SUBMERCHANT_ACCOUNT_ID'), row.get('SUBMERCHANT_ACCOUNT_NAME'),
-                row.get('SUBMERCHANT_WEBSITE'), row.get('CONNECTED_PLATFORM_PARENT_ARI'),
-                row.get('BUDGETED_CONNECTED_PLATFORM_ID'), to_bool(row.get('IS_FRANCHISE_MERCHANT')),
-                row.get('FRANCHISE_PARENT_ARI'), row.get('FRANCHISE_MERCHANT_NAME'),
-                row.get('FRANCHISE_ACCOUNT_NAME'), row.get('FRANCHISE_ACCOUNT_ID'),
-                row.get('SALES_SFDC_ACCOUNT_ID'), row.get('SALES_ACCOUNT_NAME'),
-                row.get('SALES_ACCOUNT_OFFICIAL_BUSINESS_NAME'), row.get('ACCOUNT_TYPE'),
-                to_int(row.get('ACCOUNT_TAS')), row.get('ACCOUNT_FAMILY_ID'),
-                row.get('SALES_ACCOUNT_FAMILY_NAME'), row.get('ACCOUNT_GEO'),
-                to_bool(row.get('IS_GLOBAL_CS_ACCOUNT')), to_bool(row.get('IS_GLOBAL_SALES_ACCOUNT')),
-                row.get('GLOBAL_SALES_OWNERSHIP_TYPE'), row.get('SALES_ACCOUNT_MERCHANT_AGREEMENT_VERSION'),
-                to_bool(row.get('IS_ACCOUNT_GLOBAL_AGREEMENT')), row.get('CHANNEL_TYPE'),
-                row.get('REVENUE_MERCHANT_ACCOUNT_SEGMENT'), row.get('REVENUE_MERCHANT_VERTICAL'),
-                row.get('NEW_MARKET_TYPE'), row.get('ACCOUNT_OWNER_ID'), row.get('ACCOUNT_OWNER_NAME'),
-                row.get('ACCOUNT_OWNER_EMAIL'), row.get('ACCOUNT_OWNER_ROLLUP_MANAGER_ID'),
-                row.get('ACCOUNT_OWNER_ROLLUP_MANAGER_NAME'), row.get('ACCOUNT_TECHNICAL_MAPPED_OWNER_NAME'),
-                row.get('ACCOUNT_TECHNICAL_MAPPED_OWNER_EMAIL'),
-                to_timestamp(row.get('FIRST_NON_EMPLOYEE_AUTHED_CHECKOUT_DATE')),
-                to_timestamp(row.get('FIRST_CAPTURE_DATE')), to_timestamp(row.get('SECOND_CAPTURE_DATE')),
-                to_bool(row.get('IS_MERCHANT_ARI_CAPTURED')), row.get('OPEN_LOOP_PARTNER'),
-                row.get('ACCOUNT_WEBSITE'), row.get('ACCOUNT_DOMAIN_NAME'), row.get('MERCHANT_WEBSITE'),
-                row.get('MERCHANT_DOMAIN_NAME'), row.get('FRANCHISE_WEBSITE'),
-                row.get('MERCHANT_ONBOARDING_PATH'), to_bool(row.get('IS_ACCOUNT_SELF_SERVICE')),
-                row.get('SALES_SFDC_ACCOUNT_MSS_ONBOARDING_VERSION'), row.get('SMB_TIER'),
-                to_bool(row.get('IS_CS_MERCHANT')), row.get('CS_DIVISION'),
-                row.get('CS_MANAGEMENT_CATEGORY'), to_bool(row.get('IS_SPI_ENABLED_FLAG')),
-                to_timestamp(row.get('LAST_SPI_ENABLED_AT')), to_timestamp(row.get('LAST_SPI_DISABLED_AT')),
-                row.get('META_VERTICAL'), row.get('META_SEGMENT'), row.get('META_ACCOUNT_OWNER_ID'),
-                row.get('META_ACCOUNT_OWNER'), row.get('META_CS_DIVISION'),
-                row.get('META_CS_MANAGEMENT_CATEGORY'), row.get('META_TECHNICAL_MAPPED_OWNER_NAME'),
-                row.get('META_TECHNICAL_MAPPED_OWNER_EMAIL'), to_bool(row.get('IS_META_CLOSED_LOOP_ACTIVE')),
-                row.get('SMB_SUB_SEGMENT')
-            ))
+            # Build INSERT query
+            placeholders = ', '.join(['%s'] * len(values))
+            columns_str = ', '.join(cols_to_insert)
 
+            insert_query = f"""
+                INSERT INTO merchant_data ({columns_str})
+                VALUES ({placeholders})
+            """
+
+            cursor.execute(insert_query, tuple(values))
             rows_inserted += 1
 
         conn.commit()
