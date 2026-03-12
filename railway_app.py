@@ -15039,10 +15039,22 @@ def elevenlabs_merchant_lookup():
             logger.warning("⚠️ merchant_email search not available - no email column in current CSV")
 
         if merchant_phone:
-            # Normalize phone for comparison (remove non-digits except +)
-            normalized_phone = re.sub(r'[^\d+]', '', merchant_phone)
-            logger.info(f"📱 Searching by phone: '{merchant_phone}' → normalized: '{normalized_phone}'")
-            conditions.append("REPLACE(REPLACE(REPLACE(data->>'MERCHANTCONTACT_ADMIN_PHONE_NUMBER', '-', ''), '(', ''), ')', '') LIKE %s")
+            # Normalize phone for comparison (remove non-digits, then strip +1 prefix)
+            normalized_phone = re.sub(r'[^\d]', '', merchant_phone)  # Remove all non-digits
+            # Remove leading '1' if present (US country code)
+            if normalized_phone.startswith('1') and len(normalized_phone) == 11:
+                normalized_phone = normalized_phone[1:]  # Strip the leading '1'
+
+            logger.info(f"📱 Searching by phone: '{merchant_phone}' → normalized: '{normalized_phone}' (stripped +1)")
+
+            # Normalize database field: remove all non-digits, then strip leading 1 if present
+            conditions.append("""
+                CASE
+                    WHEN REGEXP_REPLACE(data->>'MERCHANTCONTACT_ADMIN_PHONE_NUMBER', '[^0-9]', '', 'g') ~ '^1[0-9]{10}$'
+                    THEN SUBSTRING(REGEXP_REPLACE(data->>'MERCHANTCONTACT_ADMIN_PHONE_NUMBER', '[^0-9]', '', 'g'), 2)
+                    ELSE REGEXP_REPLACE(data->>'MERCHANTCONTACT_ADMIN_PHONE_NUMBER', '[^0-9]', '', 'g')
+                END LIKE %s
+            """)
             params.append(f"%{normalized_phone}%")
 
         if merchant_ari:
