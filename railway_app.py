@@ -12,6 +12,7 @@ import csv
 from PIL import Image
 import uuid
 import datetime
+from datetime import timezone, timedelta
 import base64
 import email
 import pickle
@@ -69,6 +70,14 @@ logger = logging.getLogger(__name__)
 # Log Google Sheets availability
 if not GSPREAD_AVAILABLE:
     logger.warning("gspread not available - Google Sheets integration disabled")
+
+# Helper function to get current time in EST
+def now_est():
+    """Get current datetime in EST timezone"""
+    # EST is UTC-5, EDT is UTC-4
+    # Using fixed offset for EST (UTC-5)
+    est = timezone(timedelta(hours=-5))
+    return datetime.datetime.now(est).replace(tzinfo=None)  # Remove timezone info for PostgreSQL TIMESTAMP
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
@@ -13593,7 +13602,7 @@ def initiate_call():
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ''', (
                     call_sid, merchant_id, merchant_email, merchant_name, normalized_phone,
-                    'initiated', datetime.datetime.now(), 'workato'
+                    'initiated', now_est(), 'workato'
                 ))
                 conn.commit()
                 conn.close()
@@ -14044,10 +14053,10 @@ def twilio_call_status():
                     ''', (
                         call_status,
                         int(call_duration),
-                        datetime.datetime.now(),
+                        now_est(),
                         recording_url,
                         recording_sid,
-                        datetime.datetime.now(),
+                        now_est(),
                         call_sid
                     ))
                 else:
@@ -14057,7 +14066,7 @@ def twilio_call_status():
                         SET call_status = %s,
                             updated_at = %s
                         WHERE call_sid = %s
-                    ''', (call_status, datetime.datetime.now(), call_sid))
+                    ''', (call_status, now_est(), call_sid))
 
                 conn.commit()
                 conn.close()
@@ -14938,6 +14947,178 @@ def send_merchant_email_webhook():
         }), 500
 
 
+@app.route('/webhooks/elevenlabs/merchant/lookup', methods=['POST', 'GET'])
+def elevenlabs_merchant_lookup():
+    """
+    ElevenLabs tool endpoint to look up merchant information during a call.
+
+    The AI agent can use this to get real-time merchant data while talking to them.
+
+    Search by any of:
+    - merchant_phone (searches MERCHANTCONTACT_ADMIN_PHONE_NUMBER)
+    - merchant_ari (searches MERCHANT_ARI)
+    - merchant_name (partial match on MERCHANT_NAME)
+
+    Query Parameters (GET) or JSON Body (POST):
+    {
+        "merchant_phone": "+12345678900",
+        "merchant_ari": "ABC123",
+        "merchant_name": "Store Name"
+    }
+
+    Returns merchant details (6 fields from CSV):
+    - merchant_ari
+    - merchant_name
+    - merchant_domain
+    - admin_phone
+    - admin_name
+    - merchant_industry
+    """
+    try:
+        # Handle both GET and POST
+        if request.method == 'POST':
+            data = request.get_json() or {}
+        else:
+            data = request.args.to_dict()
+
+        logger.info(f"🔍 ElevenLabs merchant lookup request: {data}")
+
+        # Extract search parameters
+        merchant_email = data.get('merchant_email', '').strip()
+        merchant_phone = data.get('merchant_phone', '').strip()
+        merchant_ari = data.get('merchant_ari', '').strip()
+        merchant_name = data.get('merchant_name', '').strip()
+        sfdc_account_id = data.get('sfdc_account_id', '').strip()
+
+        # Need at least one search parameter
+        if not any([merchant_email, merchant_phone, merchant_ari, merchant_name, sfdc_account_id]):
+            return jsonify({
+                'success': False,
+                'error': 'Please provide at least one search parameter: merchant_email, merchant_phone, merchant_ari, merchant_name, or sfdc_account_id'
+            }), 400
+
+        # Check database availability
+        if not DB_AVAILABLE:
+            return jsonify({
+                'success': False,
+                'error': 'Database not available'
+            }), 503
+
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({
+                'success': False,
+                'error': 'Database connection failed'
+            }), 503
+
+        cursor = conn.cursor()
+
+        # Build query dynamically based on provided parameters
+        conditions = []
+        params = []
+
+        if merchant_email:
+            # Note: email field not in current CSV, but keeping for future compatibility
+            logger.warning("merchant_email search not available - no email column in current CSV")
+
+        if merchant_phone:
+            # Normalize phone for comparison (remove non-digits except +)
+            normalized_phone = re.sub(r'[^\d+]', '', merchant_phone)
+            conditions.append("REPLACE(REPLACE(REPLACE(data->>'MERCHANTCONTACT_ADMIN_PHONE_NUMBER', '-', ''), '(', ''), ')', '') LIKE %s")
+            params.append(f"%{normalized_phone}%")
+
+        if merchant_ari:
+            conditions.append("UPPER(data->>'MERCHANT_ARI') = UPPER(%s)")
+            params.append(merchant_ari)
+
+        if merchant_name:
+            conditions.append("LOWER(data->>'MERCHANT_NAME') LIKE LOWER(%s)")
+            params.append(f"%{merchant_name}%")
+
+        if sfdc_account_id:
+            # Note: SFDC field not in current CSV, but keeping for future compatibility
+            logger.warning("sfdc_account_id search not available - no SFDC column in current CSV")
+
+        if not conditions:
+            return jsonify({
+                'success': False,
+                'error': 'No valid search parameters provided. Use merchant_phone, merchant_ari, or merchant_name.'
+            }), 400
+
+        # Combine conditions with OR
+        where_clause = " OR ".join(conditions)
+
+        query = f"""
+            SELECT
+                data->>'MERCHANT_ARI' as merchant_ari,
+                data->>'MERCHANT_NAME' as merchant_name,
+                data->>'MERCHANT_DOMAIN' as merchant_domain,
+                data->>'MERCHANTCONTACT_ADMIN_PHONE_NUMBER' as admin_phone,
+                data->>'MERCHANTCONTACT_ADMIN_FULL_NAME' as admin_name,
+                data->>'MERCHANT_INDUSTRY' as merchant_industry
+            FROM merchant_data
+            WHERE {where_clause}
+            LIMIT 10
+        """
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+
+        if not rows:
+            logger.info(f"❌ No merchant found for search criteria")
+            return jsonify({
+                'success': False,
+                'message': 'No merchant found matching the search criteria',
+                'merchant_found': False
+            }), 404
+
+        # Convert to list of dictionaries (matching the 6 columns from sample.csv)
+        columns = [
+            'merchant_ari',
+            'merchant_name',
+            'merchant_domain',
+            'admin_phone',
+            'admin_name',
+            'merchant_industry'
+        ]
+
+        merchants = []
+        for row in rows:
+            merchant_dict = dict(zip(columns, row))
+            merchants.append(merchant_dict)
+
+        # Return first result as primary, others as alternatives
+        primary_merchant = merchants[0]
+
+        logger.info(f"✅ Found merchant: {primary_merchant.get('merchant_name')} ({primary_merchant.get('merchant_ari')})")
+
+        response = {
+            'success': True,
+            'merchant_found': True,
+            'merchant': primary_merchant,
+            'total_matches': len(merchants)
+        }
+
+        # Include alternative matches if multiple found
+        if len(merchants) > 1:
+            response['alternative_matches'] = merchants[1:]
+            response['message'] = f'Found {len(merchants)} matching merchants. Returning primary match.'
+
+        return jsonify(response)
+
+    except Exception as e:
+        logger.error(f"❌ Error in merchant lookup: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': f'Internal server error: {str(e)}'
+        }), 500
+
+
 @app.route('/webhooks/elevenlabs/merchant/get-snowflake-data', methods=['POST', 'GET'])
 def get_snowflake_merchant_data_webhook():
     """
@@ -15086,10 +15267,13 @@ def create_merchant_data_table():
             -- Create GIN index for faster JSONB queries
             CREATE INDEX idx_merchant_data_gin ON merchant_data USING GIN (data);
 
-            -- Create indexes for common lookups
-            CREATE INDEX idx_merchant_ari ON merchant_data ((data->>'merchant_ari'));
-            CREATE INDEX idx_merchant_name ON merchant_data ((data->>'merchant_name'));
-            CREATE INDEX idx_merchant_email ON merchant_data ((data->>'merchant_email'));
+            -- Create indexes for common lookups (matching sample.csv columns)
+            CREATE INDEX idx_merchant_ari ON merchant_data ((data->>'MERCHANT_ARI'));
+            CREATE INDEX idx_merchant_name ON merchant_data ((data->>'MERCHANT_NAME'));
+            CREATE INDEX idx_merchant_domain ON merchant_data ((data->>'MERCHANT_DOMAIN'));
+            CREATE INDEX idx_merchant_contact_phone ON merchant_data ((data->>'MERCHANTCONTACT_ADMIN_PHONE_NUMBER'));
+            CREATE INDEX idx_merchant_contact_name ON merchant_data ((data->>'MERCHANTCONTACT_ADMIN_FULL_NAME'));
+            CREATE INDEX idx_merchant_industry ON merchant_data ((data->>'MERCHANT_INDUSTRY'));
         """)
 
         conn.commit()
