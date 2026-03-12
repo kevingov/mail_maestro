@@ -14976,10 +14976,14 @@ def elevenlabs_merchant_lookup():
     """
     try:
         # Handle both GET and POST
+        logger.info(f"📞 Merchant lookup called - Method: {request.method}")
+
         if request.method == 'POST':
             data = request.get_json() or {}
+            logger.info(f"📥 POST request body: {data}")
         else:
             data = request.args.to_dict()
+            logger.info(f"📥 GET request params: {data}")
 
         logger.info(f"🔍 ElevenLabs merchant lookup request: {data}")
 
@@ -14990,56 +14994,69 @@ def elevenlabs_merchant_lookup():
         merchant_name = data.get('merchant_name', '').strip()
         sfdc_account_id = data.get('sfdc_account_id', '').strip()
 
+        logger.info(f"🔎 Search parameters - phone: '{merchant_phone}', ari: '{merchant_ari}', name: '{merchant_name}', email: '{merchant_email}', sfdc: '{sfdc_account_id}'")
+
         # Need at least one search parameter
         if not any([merchant_email, merchant_phone, merchant_ari, merchant_name, sfdc_account_id]):
+            logger.warning("⚠️ No search parameters provided")
             return jsonify({
                 'success': False,
                 'error': 'Please provide at least one search parameter: merchant_email, merchant_phone, merchant_ari, merchant_name, or sfdc_account_id'
             }), 400
 
         # Check database availability
+        logger.info(f"💾 DB_AVAILABLE: {DB_AVAILABLE}")
         if not DB_AVAILABLE:
+            logger.error("❌ Database not available")
             return jsonify({
                 'success': False,
                 'error': 'Database not available'
             }), 503
 
+        logger.info("🔌 Attempting database connection...")
         conn = get_db_connection()
         if not conn:
+            logger.error("❌ Database connection failed")
             return jsonify({
                 'success': False,
                 'error': 'Database connection failed'
             }), 503
 
+        logger.info("✅ Database connected successfully")
         cursor = conn.cursor()
 
         # Build query dynamically based on provided parameters
+        logger.info("🔨 Building SQL query...")
         conditions = []
         params = []
 
         if merchant_email:
             # Note: email field not in current CSV, but keeping for future compatibility
-            logger.warning("merchant_email search not available - no email column in current CSV")
+            logger.warning("⚠️ merchant_email search not available - no email column in current CSV")
 
         if merchant_phone:
             # Normalize phone for comparison (remove non-digits except +)
             normalized_phone = re.sub(r'[^\d+]', '', merchant_phone)
+            logger.info(f"📱 Searching by phone: '{merchant_phone}' → normalized: '{normalized_phone}'")
             conditions.append("REPLACE(REPLACE(REPLACE(data->>'MERCHANTCONTACT_ADMIN_PHONE_NUMBER', '-', ''), '(', ''), ')', '') LIKE %s")
             params.append(f"%{normalized_phone}%")
 
         if merchant_ari:
+            logger.info(f"🔑 Searching by ARI: '{merchant_ari}'")
             conditions.append("UPPER(data->>'MERCHANT_ARI') = UPPER(%s)")
             params.append(merchant_ari)
 
         if merchant_name:
+            logger.info(f"🏷️ Searching by name: '{merchant_name}'")
             conditions.append("LOWER(data->>'MERCHANT_NAME') LIKE LOWER(%s)")
             params.append(f"%{merchant_name}%")
 
         if sfdc_account_id:
             # Note: SFDC field not in current CSV, but keeping for future compatibility
-            logger.warning("sfdc_account_id search not available - no SFDC column in current CSV")
+            logger.warning("⚠️ sfdc_account_id search not available - no SFDC column in current CSV")
 
         if not conditions:
+            logger.error("❌ No valid search conditions built")
             return jsonify({
                 'success': False,
                 'error': 'No valid search parameters provided. Use merchant_phone, merchant_ari, or merchant_name.'
@@ -15047,6 +15064,8 @@ def elevenlabs_merchant_lookup():
 
         # Combine conditions with OR
         where_clause = " OR ".join(conditions)
+        logger.info(f"📝 WHERE clause: {where_clause}")
+        logger.info(f"📝 Query params: {params}")
 
         query = f"""
             SELECT
@@ -15061,11 +15080,14 @@ def elevenlabs_merchant_lookup():
             LIMIT 10
         """
 
+        logger.info(f"🗄️ Executing SQL query:\n{query}")
         cursor.execute(query, params)
         rows = cursor.fetchall()
+        logger.info(f"📊 Query returned {len(rows)} row(s)")
 
         cursor.close()
         conn.close()
+        logger.info("🔌 Database connection closed")
 
         if not rows:
             logger.info(f"❌ No merchant found for search criteria")
@@ -15085,9 +15107,11 @@ def elevenlabs_merchant_lookup():
             'merchant_industry'
         ]
 
+        logger.info("🔄 Converting rows to merchant dictionaries...")
         merchants = []
-        for row in rows:
+        for i, row in enumerate(rows):
             merchant_dict = dict(zip(columns, row))
+            logger.info(f"  Merchant {i+1}: {merchant_dict}")
             merchants.append(merchant_dict)
 
         # Return first result as primary, others as alternatives
@@ -15106,16 +15130,30 @@ def elevenlabs_merchant_lookup():
         if len(merchants) > 1:
             response['alternative_matches'] = merchants[1:]
             response['message'] = f'Found {len(merchants)} matching merchants. Returning primary match.'
+            logger.info(f"ℹ️ Returning {len(merchants)} total matches")
 
+        logger.info(f"📤 Sending response: {response}")
         return jsonify(response)
 
     except Exception as e:
-        logger.error(f"❌ Error in merchant lookup: {e}")
+        logger.error(f"❌❌❌ CRITICAL ERROR in merchant lookup: {e}")
+        logger.error(f"Error type: {type(e).__name__}")
         import traceback
-        logger.error(traceback.format_exc())
+        full_traceback = traceback.format_exc()
+        logger.error(f"Full traceback:\n{full_traceback}")
+
+        # Log request details for debugging
+        try:
+            logger.error(f"Request method: {request.method}")
+            logger.error(f"Request data: {data if 'data' in locals() else 'Not available'}")
+            logger.error(f"DB_AVAILABLE: {DB_AVAILABLE}")
+        except:
+            logger.error("Could not log request details")
+
         return jsonify({
             'success': False,
-            'error': f'Internal server error: {str(e)}'
+            'error': f'Internal server error: {str(e)}',
+            'error_type': type(e).__name__
         }), 500
 
 
