@@ -15412,6 +15412,56 @@ def upload_merchant_csv():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/merchant-data/debug', methods=['GET'])
+def debug_merchant_data():
+    """Debug endpoint to check merchant_data table status"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database not available'}), 503
+
+        cursor = conn.cursor()
+
+        # Get total count
+        cursor.execute("SELECT COUNT(*) FROM merchant_data")
+        total_count = cursor.fetchone()[0]
+
+        # Get sample phone numbers
+        cursor.execute("""
+            SELECT
+                data->>'MERCHANT_NAME' as name,
+                data->>'MERCHANTCONTACT_ADMIN_PHONE_NUMBER' as phone,
+                data->>'MERCHANT_ARI' as ari
+            FROM merchant_data
+            LIMIT 10
+        """)
+        sample_data = cursor.fetchall()
+
+        cursor.close()
+        conn.close()
+
+        samples = []
+        for row in sample_data:
+            samples.append({
+                'name': row[0],
+                'phone': row[1],
+                'ari': row[2]
+            })
+
+        return jsonify({
+            'success': True,
+            'total_records': total_count,
+            'sample_data': samples,
+            'message': f'Database has {total_count} merchant records'
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Error debugging merchant data: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/merchant-data/query', methods=['GET'])
 def query_merchant_data():
     """Query merchant_data table"""
