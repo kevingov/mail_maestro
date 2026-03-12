@@ -14987,12 +14987,21 @@ def elevenlabs_merchant_lookup():
 
         logger.info(f"🔍 ElevenLabs merchant lookup request: {data}")
 
-        # Extract search parameters
-        merchant_email = data.get('merchant_email', '').strip()
-        merchant_phone = data.get('merchant_phone', '').strip()
-        merchant_ari = data.get('merchant_ari', '').strip()
-        merchant_name = data.get('merchant_name', '').strip()
-        sfdc_account_id = data.get('sfdc_account_id', '').strip()
+        # Extract search parameters (support both snake_case and UPPERCASE column names)
+        merchant_email = data.get('merchant_email', '') or data.get('MERCHANTCONTACT_ADMIN_EMAIL', '')
+        merchant_email = merchant_email.strip() if merchant_email else ''
+
+        merchant_phone = data.get('merchant_phone', '') or data.get('MERCHANTCONTACT_ADMIN_PHONE_NUMBER', '')
+        merchant_phone = merchant_phone.strip() if merchant_phone else ''
+
+        merchant_ari = data.get('merchant_ari', '') or data.get('MERCHANT_ARI', '')
+        merchant_ari = merchant_ari.strip() if merchant_ari else ''
+
+        merchant_name = data.get('merchant_name', '') or data.get('MERCHANT_NAME', '')
+        merchant_name = merchant_name.strip() if merchant_name else ''
+
+        sfdc_account_id = data.get('sfdc_account_id', '') or data.get('SALESFORCE_ACCOUNT_ID', '')
+        sfdc_account_id = sfdc_account_id.strip() if sfdc_account_id else ''
 
         logger.info(f"🔎 Search parameters - phone: '{merchant_phone}', ari: '{merchant_ari}', name: '{merchant_name}', email: '{merchant_email}', sfdc: '{sfdc_account_id}'")
 
