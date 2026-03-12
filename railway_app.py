@@ -14966,13 +14966,16 @@ def elevenlabs_merchant_lookup():
         "merchant_name": "Store Name"
     }
 
-    Returns merchant details (6 fields from CSV):
+    Returns merchant details (9 fields from CSV):
     - merchant_ari
     - merchant_name
     - merchant_domain
     - admin_phone
     - admin_name
     - merchant_industry
+    - merchant_subindustry
+    - merchant_platform
+    - account_aov
     """
     try:
         # Handle both GET and POST
@@ -15074,7 +15077,10 @@ def elevenlabs_merchant_lookup():
                 data->>'MERCHANT_DOMAIN' as merchant_domain,
                 data->>'MERCHANTCONTACT_ADMIN_PHONE_NUMBER' as admin_phone,
                 data->>'MERCHANTCONTACT_ADMIN_FULL_NAME' as admin_name,
-                data->>'MERCHANT_INDUSTRY' as merchant_industry
+                data->>'MERCHANT_INDUSTRY' as merchant_industry,
+                data->>'MERCHANT_SUBINDUSTRY' as merchant_subindustry,
+                data->>'MERCHANT_PLATFORM' as merchant_platform,
+                data->>'ACCOUNT_AOV' as account_aov
             FROM merchant_data
             WHERE {where_clause}
             LIMIT 10
@@ -15097,14 +15103,17 @@ def elevenlabs_merchant_lookup():
                 'merchant_found': False
             }), 404
 
-        # Convert to list of dictionaries (matching the 6 columns from sample.csv)
+        # Convert to list of dictionaries (matching the 9 columns from sample.csv)
         columns = [
             'merchant_ari',
             'merchant_name',
             'merchant_domain',
             'admin_phone',
             'admin_name',
-            'merchant_industry'
+            'merchant_industry',
+            'merchant_subindustry',
+            'merchant_platform',
+            'account_aov'
         ]
 
         logger.info("🔄 Converting rows to merchant dictionaries...")
@@ -15312,6 +15321,9 @@ def create_merchant_data_table():
             CREATE INDEX idx_merchant_contact_phone ON merchant_data ((data->>'MERCHANTCONTACT_ADMIN_PHONE_NUMBER'));
             CREATE INDEX idx_merchant_contact_name ON merchant_data ((data->>'MERCHANTCONTACT_ADMIN_FULL_NAME'));
             CREATE INDEX idx_merchant_industry ON merchant_data ((data->>'MERCHANT_INDUSTRY'));
+            CREATE INDEX idx_merchant_subindustry ON merchant_data ((data->>'MERCHANT_SUBINDUSTRY'));
+            CREATE INDEX idx_merchant_platform ON merchant_data ((data->>'MERCHANT_PLATFORM'));
+            CREATE INDEX idx_account_aov ON merchant_data ((data->>'ACCOUNT_AOV'));
         """)
 
         conn.commit()
